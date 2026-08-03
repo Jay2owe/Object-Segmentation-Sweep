@@ -10,6 +10,7 @@ package segsweep;
 
 import ij.ImagePlus;
 import ij.ImageStack;
+import ij.io.FileInfo;
 import ij.measure.Calibration;
 import ij.measure.ResultsTable;
 import ij.process.ImageProcessor;
@@ -182,12 +183,17 @@ public final class SegSweepAnalysis {
                                               ParameterSweep displayWindow) {
         Calibration calibration = params.image().getCalibration();
         String unit = calibration == null ? "" : calibration.getUnit();
+        double pixelArea = 1.0d;
         double voxelVolume = 1.0d;
         if (calibration != null
                 && Double.isFinite(calibration.pixelWidth) && calibration.pixelWidth > 0.0d
-                && Double.isFinite(calibration.pixelHeight) && calibration.pixelHeight > 0.0d
-                && Double.isFinite(calibration.pixelDepth) && calibration.pixelDepth > 0.0d) {
-            voxelVolume = calibration.pixelWidth * calibration.pixelHeight * calibration.pixelDepth;
+                && Double.isFinite(calibration.pixelHeight) && calibration.pixelHeight > 0.0d) {
+            pixelArea = calibration.pixelWidth * calibration.pixelHeight;
+            if (Double.isFinite(calibration.pixelDepth) && calibration.pixelDepth > 0.0d) {
+                voxelVolume = pixelArea * calibration.pixelDepth;
+            } else {
+                voxelVolume = pixelArea;
+            }
         }
         LinkedHashMap<ParameterId, ParameterValueList> ranges =
                 new LinkedHashMap<ParameterId, ParameterValueList>();
@@ -196,14 +202,14 @@ public final class SegSweepAnalysis {
         }
         return new SweepProvenance(params.crop(), params.image().getWidth(),
                 params.image().getHeight(), Math.max(1, params.image().getNSlices()),
-                ranges, unit, voxelVolume);
+                ranges, unit, pixelArea, voxelVolume);
     }
 
     private static List<String> initialWarnings(SegSweepParameters params,
                                                 SweepProvenance provenance) {
         List<String> warnings = new ArrayList<String>();
-        if (!hasPhysicalCalibration(provenance.calibrationUnit())) {
-            warnings.add("Input image is uncalibrated; Objects_Per_mm3 is left blank.");
+        if (!provenance.hasMetricCalibration()) {
+            warnings.add("Input image is uncalibrated or has an unrecognised physical unit; density is left blank.");
         }
         if (provenance.belowMinimumFraction(params.minimumCropFraction())) {
             warnings.add(String.format(Locale.ROOT,
@@ -310,12 +316,11 @@ public final class SegSweepAnalysis {
                 double[] counts = new double[thresholdValues.size()];
                 ParameterCombo base = firstCombo(displayWindow);
                 for (int i = 0; i < thresholdValues.size(); i++) {
-                    double threshold = thresholdValues.get(i).doubleValue();
-                    ParameterCombo combo = comboWith(base, ParameterId.THRESHOLD,
-                            Double.valueOf(threshold));
-                    ComponentTreeResult treeResult = tree.query(toTreeQuery(combo));
-                    xs[i] = threshold;
-                    counts[i] = treeResult.objectCount();
+                    xs[i] = thresholdValues.get(i).doubleValue();
+                }
+                int[] objectCounts = tree.objectCountsAtThresholds(xs, toTreeQuery(base));
+                for (int i = 0; i < objectCounts.length; i++) {
+                    counts[i] = objectCounts[i];
                 }
                 KneeOutcome outcome = KneeDetector.detect(xs, counts,
                         displayStats[0], displayStats[1], displayStats[2]);
@@ -396,11 +401,20 @@ public final class SegSweepAnalysis {
                 }
             }
             table.setValue(SegSweepResult.COL_OBJECTS, row, result.objectCount());
-            if (result.calibrated() && Double.isFinite(result.objectsPerCalibratedVolume())) {
-                table.setValue(SegSweepResult.COL_OBJECTS_PER_MM3, row,
-                        result.objectsPerCalibratedVolume());
+            if (result.provenance().fullDepth() > 1) {
+                if (Double.isFinite(result.objectsPerCalibratedVolume())) {
+                    table.setValue(SegSweepResult.COL_OBJECTS_PER_MM3, row,
+                            result.objectsPerCalibratedVolume());
+                } else {
+                    table.setValue(SegSweepResult.COL_OBJECTS_PER_MM3, row, "");
+                }
             } else {
-                table.setValue(SegSweepResult.COL_OBJECTS_PER_MM3, row, "");
+                if (Double.isFinite(result.objectsPerCalibratedArea())) {
+                    table.setValue(SegSweepResult.COL_OBJECTS_PER_MM2, row,
+                            result.objectsPerCalibratedArea());
+                } else {
+                    table.setValue(SegSweepResult.COL_OBJECTS_PER_MM2, row, "");
+                }
             }
             if (Double.isFinite(result.meanNeighbourIou())) {
                 table.setValue(SegSweepResult.COL_MEAN_NEIGHBOUR_IOU, row,
@@ -487,10 +501,15 @@ public final class SegSweepAnalysis {
                 pick.knee().kind().name() + valueSuffix(pick.knee().parameterValue()),
                 pick.stability().kind().name() + valueSuffix(pick.stability().meanNeighbourIou()),
                 String.valueOf(pick.criteriaAgree()));
-        return SettingsTokenWriter.write(method, provenance, summary, java.time.Instant.now());
+        return SettingsTokenWriter.write(method, provenance, summary, java.time.Instant.now(),
+                imageIdentity(params == null ? null : params.image()),
+                params == null ? 0 : params.channel());
     }
 
     static SegmentationMethod methodFor(SegSweepParameters params, ParameterCombo combo) {
+        if (combo == null) {
+            return SegmentationMethod.classical("classical");
+        }
         LinkedHashMap<String, String> values = new LinkedHashMap<String, String>();
         values.put("thresh", CanonicalScale.formatNumber(Double.valueOf(
                 doubleParameter(combo, ParameterId.THRESHOLD, 0.0d))));
@@ -521,6 +540,15 @@ public final class SegSweepAnalysis {
             values.put("morph", encoded.toString());
         }
         return new SegmentationMethod(SegmentationMethod.Engine.CLASSICAL, values, "");
+    }
+
+    private static String imageIdentity(ImagePlus image) {
+        if (image == null) return "";
+        FileInfo info = image.getOriginalFileInfo();
+        if (info != null && info.fileName != null && !info.fileName.trim().isEmpty()) {
+            return info.fileName.trim();
+        }
+        return image.getTitle() == null ? "" : image.getTitle().trim();
     }
 
     private static ComponentTreeQuery toTreeQuery(ParameterCombo combo) {
@@ -703,14 +731,6 @@ public final class SegSweepAnalysis {
             out.append(flag.name());
         }
         return out.toString();
-    }
-
-    private static boolean hasPhysicalCalibration(String unit) {
-        if (unit == null) return false;
-        String trimmed = unit.trim();
-        return !trimmed.isEmpty()
-                && !"pixel".equalsIgnoreCase(trimmed)
-                && !"pixels".equalsIgnoreCase(trimmed);
     }
 
     private static String valueSuffix(double value) {

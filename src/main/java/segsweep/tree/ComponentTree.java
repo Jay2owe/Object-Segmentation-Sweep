@@ -111,6 +111,52 @@ public final class ComponentTree {
         return result(ComponentTreeResult.Status.OK, "", selected);
     }
 
+    /**
+     * Counts matching threshold cuts in one tree sweep rather than rescanning
+     * every node once per threshold. Thresholds must be finite and ascending.
+     */
+    public int[] objectCountsAtThresholds(double[] thresholds,
+                                          ComponentTreeQuery queryTemplate) {
+        if (thresholds == null) {
+            throw new IllegalArgumentException("thresholds must not be null");
+        }
+        for (int i = 0; i < thresholds.length; i++) {
+            if (!Double.isFinite(thresholds[i])) {
+                throw new IllegalArgumentException("thresholds must be finite");
+            }
+            if (i > 0 && thresholds[i] < thresholds[i - 1]) {
+                throw new IllegalArgumentException("thresholds must be ascending");
+            }
+        }
+        int[] counts = new int[thresholds.length];
+        if (thresholds.length == 0) return counts;
+        ComponentTreeQuery template = queryTemplate == null
+                ? ComponentTreeQuery.builder().build() : queryTemplate;
+        if (template.maxSize() < template.minSize()) return counts;
+
+        int[] changes = new int[thresholds.length + 1];
+        for (int i = 0; i < nodes.size(); i++) {
+            NodeData data = nodes.get(i);
+            int right = lowerBound(thresholds, data.level);
+            if (right <= 0) continue;
+            int left = data.parentId < 0
+                    ? 0 : lowerBound(thresholds, nodes.get(data.parentId).level);
+            if (left >= right) continue;
+            ComponentNode node = new ComponentNode(this, data);
+            int volume = node.voxelCount();
+            if (volume < template.minSize() || volume > template.maxSize()) continue;
+            if (!matchesAll(node, template.predicates())) continue;
+            changes[left]++;
+            changes[right]--;
+        }
+        int activeCount = 0;
+        for (int i = 0; i < thresholds.length; i++) {
+            activeCount += changes[i];
+            counts[i] = activeCount > MAX_16_BIT_LABEL ? 0 : activeCount;
+        }
+        return counts;
+    }
+
     public List<ComponentNode> nodes() {
         List<ComponentNode> views = new ArrayList<ComponentNode>(nodes.size());
         for (NodeData data : nodes) {
@@ -147,6 +193,20 @@ public final class ComponentTree {
             views.add(new ComponentNode(this, node));
         }
         return views;
+    }
+
+    private static int lowerBound(double[] values, double target) {
+        int low = 0;
+        int high = values.length;
+        while (low < high) {
+            int middle = low + (high - low) / 2;
+            if (values[middle] < target) {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
+        return low;
     }
 
     private static boolean matchesAll(ComponentNode node, List<MorphologyPredicate> predicates) {

@@ -15,6 +15,7 @@ import ij.process.ImageProcessor;
 import segsweep.sweep.ParameterId;
 import segsweep.sweep.VariationResult;
 import segsweep.tree.LazyLabelMap;
+import segsweep.ui.render.LabelMapStyler;
 
 import javax.imageio.ImageIO;
 import java.awt.Color;
@@ -260,13 +261,19 @@ public final class AutoSaveWriter {
             max = min + 1.0d;
         }
 
-        java.util.BitSet foreground = new java.util.BitSet(width * height);
+        int[] objectLabels = new int[width * height];
         int plane = width * height;
-        int[] voxels = row.iouSource().foregroundVoxelIndices();
-        for (int i = 0; i < voxels.length; i++) {
-            int voxelZ = voxels[i] / plane;
-            if (voxelZ == z - 1) {
-                foreground.set(voxels[i] - voxelZ * plane);
+        int[][] objects = row.iouSource().objectVoxelIndices();
+        for (int object = 0; object < objects.length; object++) {
+            int[] voxels = objects[object];
+            for (int i = 0; i < voxels.length; i++) {
+                int voxelZ = voxels[i] / plane;
+                if (voxelZ == z - 1) {
+                    int pixel = voxels[i] - voxelZ * plane;
+                    if (pixel >= 0 && pixel < objectLabels.length) {
+                        objectLabels[pixel] = object + 1;
+                    }
+                }
             }
         }
 
@@ -279,10 +286,12 @@ public final class AutoSaveWriter {
                 int red = gray;
                 int green = gray;
                 int blue = gray;
-                if (foreground.get(y * width + x)) {
-                    red = (int) Math.round(gray * 0.35d + 0x4D * 0.65d);
-                    green = (int) Math.round(gray * 0.35d + 0xC3 * 0.65d);
-                    blue = (int) Math.round(gray * 0.35d + 0xB2 * 0.65d);
+                int label = objectLabels[y * width + x];
+                if (label > 0) {
+                    int colour = LabelMapStyler.rgbForLabel(label);
+                    red = (int) Math.round(gray * 0.35d + ((colour >> 16) & 0xff) * 0.65d);
+                    green = (int) Math.round(gray * 0.35d + ((colour >> 8) & 0xff) * 0.65d);
+                    blue = (int) Math.round(gray * 0.35d + (colour & 0xff) * 0.65d);
                 }
                 preview.setRGB(x, y, (red << 16) | (green << 8) | blue);
             }

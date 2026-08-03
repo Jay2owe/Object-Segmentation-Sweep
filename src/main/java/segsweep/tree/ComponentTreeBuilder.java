@@ -88,7 +88,14 @@ public final class ComponentTreeBuilder {
         void build() {
             Arrays.sort(order, new java.util.Comparator<Integer>() {
                 @Override public int compare(Integer a, Integer b) {
-                    return -Float.compare(intensities[a.intValue()], intensities[b.intValue()]);
+                    float left = intensities[a.intValue()];
+                    float right = intensities[b.intValue()];
+                    boolean leftFinite = Float.isFinite(left);
+                    boolean rightFinite = Float.isFinite(right);
+                    if (leftFinite != rightFinite) {
+                        return leftFinite ? -1 : 1;
+                    }
+                    return -Float.compare(left, right);
                 }
             });
 

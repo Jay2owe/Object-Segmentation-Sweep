@@ -26,6 +26,7 @@ public final class SegSweepResult {
     public static final String COL_COMBINATION = "Combination";
     public static final String COL_OBJECTS = "Objects";
     public static final String COL_OBJECTS_PER_MM3 = "Objects_Per_mm3";
+    public static final String COL_OBJECTS_PER_MM2 = "Objects_Per_mm2";
     public static final String COL_MEAN_NEIGHBOUR_IOU = "Mean_Neighbour_IoU";
     public static final String COL_STABILITY_ELIGIBLE = "Stability_Eligible";
     public static final String COL_DURATION_MS = "Duration_ms";

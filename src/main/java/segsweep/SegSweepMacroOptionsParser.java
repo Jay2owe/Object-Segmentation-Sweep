@@ -142,6 +142,14 @@ public final class SegSweepMacroOptionsParser {
             options.setHideDisplay(true);
         } else if ("show_display".equals(flag)) {
             options.setHideDisplay(false);
+        } else if ("hide_grid".equals(flag)) {
+            options.setShowGrid(false);
+        } else if ("show_grid".equals(flag)) {
+            options.setShowGrid(true);
+        } else if ("hide_tables".equals(flag)) {
+            options.setShowTables(false);
+        } else if ("show_tables".equals(flag)) {
+            options.setShowTables(true);
         } else {
             throw new IllegalArgumentException("Unknown Object Segmentation Sweep macro flag: " + flag);
         }

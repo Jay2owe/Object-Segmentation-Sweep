@@ -199,16 +199,21 @@ public final class SegSweepClassicalStrategy implements VariationStrategy {
     private SweepProvenance provenanceFor(ParameterSweep displayWindow) {
         Calibration calibration = source.getCalibration();
         String unit = calibration == null ? "" : calibration.getUnit();
+        double pixelArea = 1.0d;
         double voxelVolume = 1.0d;
         if (calibration != null
                 && Double.isFinite(calibration.pixelWidth) && calibration.pixelWidth > 0.0d
-                && Double.isFinite(calibration.pixelHeight) && calibration.pixelHeight > 0.0d
-                && Double.isFinite(calibration.pixelDepth) && calibration.pixelDepth > 0.0d) {
-            voxelVolume = calibration.pixelWidth * calibration.pixelHeight * calibration.pixelDepth;
+                && Double.isFinite(calibration.pixelHeight) && calibration.pixelHeight > 0.0d) {
+            pixelArea = calibration.pixelWidth * calibration.pixelHeight;
+            if (Double.isFinite(calibration.pixelDepth) && calibration.pixelDepth > 0.0d) {
+                voxelVolume = pixelArea * calibration.pixelDepth;
+            } else {
+                voxelVolume = pixelArea;
+            }
         }
         return new SweepProvenance(crop, source.getWidth(), source.getHeight(),
                 Math.max(1, source.getStackSize()), displayedRanges(displayWindow),
-                unit, voxelVolume);
+                unit, pixelArea, voxelVolume);
     }
 
     private static java.util.LinkedHashMap<ParameterId, ParameterValueList> displayedRanges(

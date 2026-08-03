@@ -11,6 +11,7 @@ package segsweep;
 import ij.ImagePlus;
 import ij.ImageStack;
 import ij.process.ByteProcessor;
+import ij.process.ShortProcessor;
 import org.junit.Test;
 import segsweep.sweep.ParameterCombo;
 import segsweep.sweep.ParameterId;
@@ -63,6 +64,32 @@ public class SegSweepDialogTest {
     }
 
     @Test
+    public void suggestedRangeUsesSelectedChannel() {
+        ImageStack stack = new ImageStack(8, 8);
+        ShortProcessor channelOne = new ShortProcessor(8, 8);
+        ShortProcessor channelTwo = new ShortProcessor(8, 8);
+        for (int y = 0; y < 8; y++) {
+            for (int x = 0; x < 8; x++) {
+                channelOne.set(x, y, x < 4 ? 10 : 20);
+                channelTwo.set(x, y, x < 4 ? 1000 : 2000);
+            }
+        }
+        stack.addSlice("c1", channelOne);
+        stack.addSlice("c2", channelTwo);
+        ImagePlus image = new ImagePlus("two-channel", stack);
+        image.setDimensions(2, 1, 1);
+        SegSweepMacroOptions options = SegSweepMacroOptions.defaults();
+        options.setChannel(2);
+
+        SegSweepMacroOptions suggested = SegSweepDialog.applySuggestedRange(
+                image, options, ParameterId.THRESHOLD);
+
+        for (Object value : suggested.primaryAxis().valueList().values()) {
+            assertTrue(((Number) value).doubleValue() > 500.0d);
+        }
+    }
+
+    @Test
     public void warningsStatusTextSurfacesResultWarnings() {
         SegSweepResult result = SegSweep.run(SegSweepParameters.builder()
                 .image(SegSweepAnalysisTest.designedKneeStack(false))
@@ -85,6 +112,9 @@ public class SegSweepDialogTest {
         String token = SegSweep_.settingsTokenForSelected(result, selected);
         assertTrue(token.contains("criterion\tmanual"));
         assertTrue(token.contains("thresh=50"));
+        assertTrue(token.contains("image\tstage-12-knee"));
+        assertTrue(token.contains("channel\t1"));
+        assertTrue(!token.contains("# Written 1970-01-01T00:00:00Z"));
     }
 
     @Test

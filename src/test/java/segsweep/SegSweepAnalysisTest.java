@@ -76,7 +76,7 @@ public class SegSweepAnalysisTest {
                 .pickCriterion(SegSweepParameters.PickCriterion.KNEE)
                 .build());
 
-        assertEquals("", result.sweepTable().getStringValue(SegSweepResult.COL_OBJECTS_PER_MM3, 0));
+        assertEquals("", result.sweepTable().getStringValue(SegSweepResult.COL_OBJECTS_PER_MM2, 0));
         assertTrue(result.sweepTable().getStringValue(SegSweepResult.COL_FLAGS, 0)
                 .contains("UNCALIBRATED"));
         assertContains(result.warnings(), "uncalibrated");
@@ -261,12 +261,28 @@ public class SegSweepAnalysisTest {
         assertTrue(manual.pickedSettingsToken().contains("channel=1"));
     }
 
+    @Test
+    public void noPickTokenDoesNotInventSegmentationParameters() {
+        SegSweepResult result = SegSweep.run(SegSweepParameters.builder()
+                .image(designedKneeStack(true))
+                .axis(ParameterId.THRESHOLD, 10, 30, 10)
+                .pickCriterion(SegSweepParameters.PickCriterion.NONE)
+                .build());
+
+        assertNull(result.pickedCombo());
+        assertTrue(result.pickedSettingsToken().contains("settings\tclassical"));
+        assertTrue(!result.pickedSettingsToken().contains("thresh=0"));
+        assertTrue(!result.pickedSettingsToken().contains("minSize=0"));
+        assertTrue(result.pickedSettingsToken().contains("image\tstage-12-knee"));
+        assertTrue(result.pickedSettingsToken().contains("channel\t1"));
+    }
+
     private static void assertSweepColumns(ResultsTable table) {
         for (String column : Arrays.asList(
                 SegSweepResult.COL_COMBINATION,
                 ParameterId.THRESHOLD.displayLabel(),
                 SegSweepResult.COL_OBJECTS,
-                SegSweepResult.COL_OBJECTS_PER_MM3,
+                SegSweepResult.COL_OBJECTS_PER_MM2,
                 SegSweepResult.COL_MEAN_NEIGHBOUR_IOU,
                 SegSweepResult.COL_STABILITY_ELIGIBLE,
                 SegSweepResult.COL_DURATION_MS,

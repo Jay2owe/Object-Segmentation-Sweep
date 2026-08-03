@@ -53,8 +53,8 @@ public class AutoSaveWriterTest {
         assertEquals(1, picked.materializationCount());
         BufferedImage montage = ImageIO.read(new File(output, "grid.png"));
         assertNotNull(montage);
-        assertTrue("Expected rendered teal foreground pixels inside the montage cells",
-                containsRenderedForeground(montage));
+        assertTrue("Expected distinct per-object overlay colours inside the montage cells",
+                distinctOverlayHueCount(montage) >= 2);
 
         String readme = text(new File(output, "README.txt"));
         assertTrue(readme.contains("displayed range"));
@@ -163,7 +163,8 @@ public class AutoSaveWriterTest {
         return file.getAbsolutePath().replace('\\', '/');
     }
 
-    private static boolean containsRenderedForeground(BufferedImage image) {
+    private static int distinctOverlayHueCount(BufferedImage image) {
+        java.util.Set<Integer> hues = new java.util.HashSet<Integer>();
         int maxX = Math.min(image.getWidth() - 1, 205);
         int maxY = Math.min(image.getHeight() - 1, 150);
         for (int y = 15; y <= maxY; y++) {
@@ -172,9 +173,14 @@ public class AutoSaveWriterTest {
                 int r = (rgb >> 16) & 0xff;
                 int g = (rgb >> 8) & 0xff;
                 int b = rgb & 0xff;
-                if (g > r + 15 && b > r + 15) return true;
+                int high = Math.max(r, Math.max(g, b));
+                int low = Math.min(r, Math.min(g, b));
+                if (high - low > 35) {
+                    float[] hsb = java.awt.Color.RGBtoHSB(r, g, b, null);
+                    hues.add(Integer.valueOf((int) Math.floor(hsb[0] * 12.0f)));
+                }
             }
         }
-        return false;
+        return hues.size();
     }
 }

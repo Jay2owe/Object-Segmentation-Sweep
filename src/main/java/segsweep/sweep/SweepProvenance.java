@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 public final class SweepProvenance implements Serializable {
@@ -25,6 +26,7 @@ public final class SweepProvenance implements Serializable {
     private final int fullDepth;
     private final Map<ParameterId, ParameterValueList> displayedRanges;
     private final String calibrationUnit;
+    private final double pixelArea;
     private final double voxelVolume;
 
     public SweepProvenance(CropSpec crop,
@@ -33,6 +35,18 @@ public final class SweepProvenance implements Serializable {
                            int fullDepth,
                            Map<ParameterId, ParameterValueList> displayedRanges,
                            String calibrationUnit,
+                           double voxelVolume) {
+        this(crop, fullWidth, fullHeight, fullDepth, displayedRanges,
+                calibrationUnit, voxelVolume, voxelVolume);
+    }
+
+    public SweepProvenance(CropSpec crop,
+                           int fullWidth,
+                           int fullHeight,
+                           int fullDepth,
+                           Map<ParameterId, ParameterValueList> displayedRanges,
+                           String calibrationUnit,
+                           double pixelArea,
                            double voxelVolume) {
         if (crop == null) {
             throw new IllegalArgumentException("crop must not be null");
@@ -43,6 +57,9 @@ public final class SweepProvenance implements Serializable {
         if (displayedRanges == null) {
             throw new IllegalArgumentException("displayedRanges must not be null");
         }
+        if (!Double.isFinite(pixelArea) || pixelArea <= 0.0d) {
+            throw new IllegalArgumentException("pixelArea must be a positive finite value");
+        }
         if (!Double.isFinite(voxelVolume) || voxelVolume <= 0.0d) {
             throw new IllegalArgumentException("voxelVolume must be a positive finite value");
         }
@@ -52,6 +69,7 @@ public final class SweepProvenance implements Serializable {
         this.fullDepth = fullDepth;
         this.displayedRanges = Collections.unmodifiableMap(copyDisplayedRanges(displayedRanges));
         this.calibrationUnit = calibrationUnit == null ? "" : calibrationUnit.trim();
+        this.pixelArea = pixelArea;
         this.voxelVolume = voxelVolume;
     }
 
@@ -83,6 +101,48 @@ public final class SweepProvenance implements Serializable {
         return voxelVolume;
     }
 
+    public double pixelArea() {
+        return pixelArea;
+    }
+
+    /** Returns the number of millimetres represented by one calibration unit. */
+    public double millimetresPerCalibrationUnit() {
+        String unit = calibrationUnit.toLowerCase(Locale.ROOT).trim();
+        if (unit.equals("nm") || unit.equals("nanometer") || unit.equals("nanometers")
+                || unit.equals("nanometre") || unit.equals("nanometres")) {
+            return 1.0e-6d;
+        }
+        if (unit.equals("um") || unit.equals("µm") || unit.equals("μm")
+                || unit.equals("micron") || unit.equals("microns")
+                || unit.equals("micrometer") || unit.equals("micrometers")
+                || unit.equals("micrometre") || unit.equals("micrometres")) {
+            return 1.0e-3d;
+        }
+        if (unit.equals("mm") || unit.equals("millimeter") || unit.equals("millimeters")
+                || unit.equals("millimetre") || unit.equals("millimetres")) {
+            return 1.0d;
+        }
+        if (unit.equals("cm") || unit.equals("centimeter") || unit.equals("centimeters")
+                || unit.equals("centimetre") || unit.equals("centimetres")) {
+            return 10.0d;
+        }
+        if (unit.equals("m") || unit.equals("meter") || unit.equals("meters")
+                || unit.equals("metre") || unit.equals("metres")) {
+            return 1000.0d;
+        }
+        if (unit.equals("in") || unit.equals("inch") || unit.equals("inches")) {
+            return 25.4d;
+        }
+        if (unit.equals("angstrom") || unit.equals("angstroms") || unit.equals("å")) {
+            return 1.0e-7d;
+        }
+        return Double.NaN;
+    }
+
+    public boolean hasMetricCalibration() {
+        return Double.isFinite(millimetresPerCalibrationUnit());
+    }
+
     public double cropFraction() {
         Rectangle bounds = crop.boundsFor(fullWidth, fullHeight);
         double cropArea = (double) bounds.width * (double) bounds.height;
@@ -107,7 +167,8 @@ public final class SweepProvenance implements Serializable {
         }
         if (!displayedRanges.equals(other.displayedRanges)) return false;
         if (!calibrationUnit.equals(other.calibrationUnit)) return false;
-        return Double.compare(voxelVolume, other.voxelVolume) == 0;
+        return Double.compare(pixelArea, other.pixelArea) == 0
+                && Double.compare(voxelVolume, other.voxelVolume) == 0;
     }
 
     public String toCanonicalJson() {
@@ -118,6 +179,7 @@ public final class SweepProvenance implements Serializable {
         root.put("fullDepth", Integer.valueOf(fullDepth));
         root.put("fullHeight", Integer.valueOf(fullHeight));
         root.put("fullWidth", Integer.valueOf(fullWidth));
+        root.put("pixelArea", Double.valueOf(pixelArea));
         root.put("voxelVolume", Double.valueOf(voxelVolume));
         return CanonicalJson.write(root);
     }
@@ -131,6 +193,9 @@ public final class SweepProvenance implements Serializable {
         CropSpec crop = CropSpec.fromCanonicalObject(stringObject(root.get("crop"), "crop"));
         Map<ParameterId, ParameterValueList> ranges =
                 parseDisplayedRanges(stringObject(root.get("displayedRanges"), "displayedRanges"));
+        double voxelVolume = doubleValue(root.get("voxelVolume"), "voxelVolume");
+        double pixelArea = root.containsKey("pixelArea")
+                ? doubleValue(root.get("pixelArea"), "pixelArea") : voxelVolume;
         return new SweepProvenance(
                 crop,
                 intValue(root.get("fullWidth"), "fullWidth"),
@@ -138,7 +203,8 @@ public final class SweepProvenance implements Serializable {
                 intValue(root.get("fullDepth"), "fullDepth"),
                 ranges,
                 stringValue(root.get("calibrationUnit"), "calibrationUnit"),
-                doubleValue(root.get("voxelVolume"), "voxelVolume"));
+                pixelArea,
+                voxelVolume);
     }
 
     private LinkedHashMap<String, Object> displayedRangesObject() {
@@ -249,6 +315,8 @@ public final class SweepProvenance implements Serializable {
         result = 31 * result + fullDepth;
         result = 31 * result + displayedRanges.hashCode();
         result = 31 * result + calibrationUnit.hashCode();
+        long areaBits = Double.doubleToLongBits(pixelArea);
+        result = 31 * result + (int) (areaBits ^ (areaBits >>> 32));
         long bits = Double.doubleToLongBits(voxelVolume);
         result = 31 * result + (int) (bits ^ (bits >>> 32));
         return result;

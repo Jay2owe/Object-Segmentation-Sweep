@@ -25,6 +25,7 @@ import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JDialog;
+import javax.swing.ImageIcon;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JProgressBar;
@@ -241,7 +242,7 @@ public final class VariationGridWindow extends JDialog {
         if (cell != null) {
             cell.setResult(result);
             resultArrived = true;
-            setPickSelectedEnabled(selectedCombo != null || resultArrived);
+            setPickSelectedEnabled(selectedCombo != null);
         }
     }
 
@@ -266,7 +267,7 @@ public final class VariationGridWindow extends JDialog {
                 stabilityCell.setPickBadge(new PickBadge(PickBadge.Kind.STABILITY));
             }
         }
-        setActionStatus(pickStatusText(knee, stability, pickResult.criteriaAgree()));
+        setActionStatus(pickStatusText(pickResult));
     }
 
     private VariationCellPanel cellForCombo(ParameterCombo combo) {
@@ -283,6 +284,10 @@ public final class VariationGridWindow extends JDialog {
 
     public void attachObjectOverlayActionListener(ActionListener listener) {
         objectOverlayCheckBox.addActionListener(listener);
+    }
+
+    public void attachObjectOverlaySourceActionListener(ActionListener listener) {
+        objectOverlaySourceChoice.addActionListener(listener);
     }
 
     public void attachLutToggleActionListener(ActionListener listener) {
@@ -316,6 +321,19 @@ public final class VariationGridWindow extends JDialog {
 
     public void setObjectOverlaySourceEnabled(boolean enabled) {
         objectOverlaySourceChoice.setEnabled(enabled);
+    }
+
+    public void setObjectOverlayEnabledForAll(boolean enabled) {
+        for (int i = 0; i < cells.size(); i++) cells.get(i).setObjectOverlayEnabled(enabled);
+    }
+
+    public void setObjectOverlaySourceRawForAll(boolean raw) {
+        for (int i = 0; i < cells.size(); i++) cells.get(i).setObjectOverlaySourceRaw(raw);
+    }
+
+    public void setObjectDisplaySettingsForAll(
+            segsweep.ui.render.PreviewDisplaySettings settings) {
+        for (int i = 0; i < cells.size(); i++) cells.get(i).setObjectDisplaySettings(settings);
     }
 
     public void setLutToggleText(String text, String tooltip) {
@@ -450,11 +468,12 @@ public final class VariationGridWindow extends JDialog {
                 new VariationComparisonSelection.Opener() {
                     @Override public void openComparison(VariationCellPanel left,
                                                          VariationCellPanel right) {
+                        showComparison(left, right);
                     }
                 });
         for (int i = 0; i < combos.size(); i++) {
             final VariationComparisonSelection compareSelection = selection[0];
-            cells.add(new VariationCellPanel(combos.get(i), source,
+            VariationCellPanel cell = new VariationCellPanel(combos.get(i), source,
                     null,
                     new java.util.function.BiConsumer<ParameterCombo, VariationCellPanel>() {
                         @Override public void accept(ParameterCombo combo,
@@ -462,9 +481,38 @@ public final class VariationGridWindow extends JDialog {
                             compareSelection.handleShiftClick(cell);
                         }
                     },
-                    i));
+                    i);
+            cell.setRawSource(source);
+            cell.setObjectRawCrop(source);
+            cells.add(cell);
         }
         return cells;
+    }
+
+    private static void showComparison(VariationCellPanel left, VariationCellPanel right) {
+        if (left == null || right == null || GraphicsEnvironment.isHeadless()) return;
+        ImagePlus leftLabels = left.materialiseForDisplay();
+        ImagePlus rightLabels = right.materialiseForDisplay();
+        if (leftLabels == null || rightLabels == null) return;
+        JDialog dialog = new JDialog((Window) null, "Segmentation comparison",
+                Dialog.ModalityType.MODELESS);
+        JPanel pair = new JPanel(new GridLayout(1, 2, 8, 0));
+        pair.add(comparisonPanel(left, leftLabels));
+        pair.add(comparisonPanel(right, rightLabels));
+        dialog.add(pair);
+        dialog.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
+        dialog.pack();
+        dialog.setLocationByPlatform(true);
+        dialog.setVisible(true);
+    }
+
+    private static JPanel comparisonPanel(VariationCellPanel cell, ImagePlus labels) {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.add(new JLabel(formatCombo(cell.combo()), SwingConstants.CENTER), BorderLayout.NORTH);
+        int slice = Math.max(1, (labels.getStackSize() + 1) / 2);
+        java.awt.Image image = labels.getStack().getProcessor(slice).getBufferedImage();
+        panel.add(new JScrollPane(new JLabel(new ImageIcon(image))), BorderLayout.CENTER);
+        return panel;
     }
 
     private void configureToolBar() {
@@ -692,7 +740,7 @@ public final class VariationGridWindow extends JDialog {
 
     private void selectCombo(ParameterCombo combo) {
         selectedCombo = combo;
-        setPickSelectedEnabled(resultArrived || selectedCombo != null);
+        setPickSelectedEnabled(selectedCombo != null);
         setActionStatus("Selected " + formatCombo(combo));
     }
 
@@ -706,32 +754,31 @@ public final class VariationGridWindow extends JDialog {
         return index >= 0 && index < cells.size() ? cells.get(index) : null;
     }
 
-    private String pickStatusText(KneeOutcome knee,
-                                  StabilityOutcome stability,
-                                  boolean agree) {
-        String kneeText = "Knee: " + outcomeValue(knee);
-        String stabilityText = "Stability: " + outcomeValue(stability);
-        return agree
+    private String pickStatusText(PickResult pick) {
+        KneeOutcome knee = pick.knee();
+        StabilityOutcome stability = pick.stability();
+        String kneeText = "Knee: " + outcomeValue(knee, pick.kneeCombo());
+        String stabilityText = "Stability: "
+                + outcomeValue(stability, pick.stabilityCombo());
+        return pick.criteriaAgree()
                 ? kneeText + ". " + stabilityText + ". Criteria agree."
                 : kneeText + ". " + stabilityText + ". Criteria disagree.";
     }
 
-    private String outcomeValue(KneeOutcome knee) {
+    private String outcomeValue(KneeOutcome knee, ParameterCombo combo) {
         if (knee == null || knee.kind() != KneeOutcome.Kind.KNEE_AT) {
             return knee == null ? "unavailable" : knee.kind().name().toLowerCase(Locale.ROOT);
         }
-        VariationCellPanel cell = cellAt(knee.index());
-        return cell == null ? formatNumber(knee.parameterValue()) : formatCombo(cell.combo());
+        return combo == null ? formatNumber(knee.parameterValue()) : formatCombo(combo);
     }
 
-    private String outcomeValue(StabilityOutcome stability) {
+    private String outcomeValue(StabilityOutcome stability, ParameterCombo combo) {
         if (stability == null || stability.kind() != StabilityOutcome.Kind.STABLE_AT) {
             return stability == null
                     ? "unavailable"
                     : stability.kind().name().toLowerCase(Locale.ROOT);
         }
-        VariationCellPanel cell = cellAt(stability.index());
-        return cell == null ? "index " + stability.index() : formatCombo(cell.combo());
+        return combo == null ? "index " + stability.index() : formatCombo(combo);
     }
 
     private static String formatCombo(ParameterCombo combo) {

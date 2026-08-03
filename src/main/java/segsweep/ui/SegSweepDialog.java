@@ -21,6 +21,7 @@ import segsweep.sweep.ParameterSweep;
 import segsweep.sweep.ParameterValueList;
 import segsweep.sweep.RangeSuggester;
 import segsweep.sweep.ResourceGuard;
+import segsweep.sweep.SourceImageView;
 
 import javax.swing.Box;
 import javax.swing.BoxLayout;
@@ -172,9 +173,18 @@ public final class SegSweepDialog {
             throw new IllegalArgumentException("An image is required to suggest a display range.");
         }
         ParameterId safeAxis = axis == null ? ParameterId.THRESHOLD : axis;
-        ParameterValueList suggested = safeAxis == ParameterId.THRESHOLD
-                ? RangeSuggester.suggestThresholdDisplayWindow(image, options.crop())
-                : RangeSuggester.suggestSizeDisplayWindow(image, options.crop());
+        ImagePlus analysed = SourceImageView.selectedChannelAndCrop(
+                image, options.channel(), options.crop());
+        ParameterValueList suggested;
+        try {
+            suggested = safeAxis == ParameterId.THRESHOLD
+                    ? RangeSuggester.suggestThresholdDisplayWindow(analysed, CropSpec.full())
+                    : RangeSuggester.suggestSizeDisplayWindow(analysed, CropSpec.full());
+        } finally {
+            analysed.changes = false;
+            analysed.close();
+            analysed.flush();
+        }
         SegSweepMacroOptions out = copyOf(options);
         out.setPrimaryAxis(SegSweepMacroOptions.AxisSpec.values(safeAxis, suggested));
         return out;
@@ -489,9 +499,8 @@ public final class SegSweepDialog {
             if (autosaveField != null && autosaveField.getText().trim().length() > 0) {
                 options.setAutosave(autosaveField.getText());
             }
-            if (showGrid != null && !showGrid.isSelected()) {
-                options.setHideDisplay(true);
-            }
+            if (showGrid != null) options.setShowGrid(showGrid.isSelected());
+            if (showTables != null) options.setShowTables(showTables.isSelected());
             options.validate();
             return options;
         }

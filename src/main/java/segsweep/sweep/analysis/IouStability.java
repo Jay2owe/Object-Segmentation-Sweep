@@ -310,6 +310,16 @@ public final class IouStability {
             }
             return indexes;
         }
+
+        /** Returns one voxel-index array per selected tree object. */
+        public int[][] objectVoxelIndices() {
+            if (!treeBacked) return new int[0][];
+            int[][] objects = new int[treeNodes.size()][];
+            for (int i = 0; i < treeNodes.size(); i++) {
+                objects[i] = treeNodes.get(i).voxelIndices();
+            }
+            return objects;
+        }
     }
 
     private static final class TopologyBuild {

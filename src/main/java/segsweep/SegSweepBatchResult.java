@@ -19,8 +19,10 @@ import java.awt.Rectangle;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * Summary returned by the Object Segmentation Sweep batch runner.
@@ -105,60 +107,58 @@ public final class SegSweepBatchResult {
 
     public List<String> incomparableReasons() {
         List<String> reasons = new ArrayList<String>();
-        ImageResult first = firstPicked();
-        if (first == null) {
-            reasons.add("No successful image picks are available.");
-            return reasons;
-        }
-        for (int i = 0; i < imageResults.size(); i++) {
-            ImageResult current = imageResults.get(i);
-            if (current.result().pickedCombo() == null || current.result().pick() == null) {
-                reasons.add(current.image().getName() + ": no picked combination was available.");
-                continue;
+        for (Map.Entry<String, List<ImageResult>> entry : groupedByFolder().entrySet()) {
+            List<String> folderReasons = incomparableReasons(entry.getValue());
+            String folder = displayFolder(entry.getKey());
+            for (int i = 0; i < folderReasons.size(); i++) {
+                reasons.add(folder + ": " + folderReasons.get(i));
             }
-            collectProvenanceReasons(reasons, first, current);
-            collectKneeReasons(reasons, first, current);
         }
         return dedupe(reasons);
     }
 
     public ResultsTable batchPicksTable() {
         ResultsTable table = new ResultsTable();
-        List<String> reasons = incomparableReasons();
-        boolean comparable = reasons.isEmpty();
-        for (int i = 0; i < imageResults.size(); i++) {
-            ImageResult rowResult = imageResults.get(i);
-            SegSweepResult result = rowResult.result();
-            int row = table.getCounter();
+        for (Map.Entry<String, List<ImageResult>> entry : groupedByFolder().entrySet()) {
+            List<ImageResult> folderResults = entry.getValue();
+            List<String> reasons = incomparableReasons(folderResults);
+            boolean comparable = reasons.isEmpty();
+            for (int i = 0; i < folderResults.size(); i++) {
+                ImageResult rowResult = folderResults.get(i);
+                SegSweepResult result = rowResult.result();
+                int row = table.getCounter();
+                table.incrementCounter();
+                table.setValue("Folder", row, rowResult.relativeFolder());
+                table.setValue("Group", row, rowResult.groupKey());
+                table.setValue("Image", row, rowResult.image().getName());
+                table.setValue("Criterion", row,
+                        result.parameters().pickCriterion().name().toLowerCase(Locale.ROOT));
+                ParameterCombo picked = result.pickedCombo();
+                table.setValue("Picked", row, picked == null ? "" : formatPicked(picked));
+                PickResult pick = result.pick();
+                table.setValue("Knee_Outcome", row,
+                        pick == null ? "" : pick.knee().kind().name());
+                table.setValue("Criteria_Agree", row,
+                        pick == null ? "" : String.valueOf(pick.criteriaAgree()));
+                table.setValue("Comparable_Set", row, String.valueOf(comparable));
+                table.setValue("Incomparable_Reasons", row,
+                        comparable ? "" : join(reasons, "; "));
+            }
+            int summary = table.getCounter();
             table.incrementCounter();
-            table.setValue("Folder", row, rowResult.relativeFolder());
-            table.setValue("Group", row, rowResult.groupKey());
-            table.setValue("Image", row, rowResult.image().getName());
-            table.setValue("Criterion", row,
-                    result.parameters().pickCriterion().name().toLowerCase(Locale.ROOT));
-            ParameterCombo picked = result.pickedCombo();
-            table.setValue("Picked", row, picked == null ? "" : formatPicked(picked));
-            PickResult pick = result.pick();
-            table.setValue("Knee_Outcome", row,
-                    pick == null ? "" : pick.knee().kind().name());
-            table.setValue("Criteria_Agree", row,
-                    pick == null ? "" : String.valueOf(pick.criteriaAgree()));
-            table.setValue("Comparable_Set", row, String.valueOf(comparable));
-            table.setValue("Incomparable_Reasons", row, comparable ? "" : join(reasons, "; "));
+            table.setValue("Folder", summary, displayFolder(entry.getKey()));
+            table.setValue("Group", summary, "");
+            table.setValue("Image", summary, "SUMMARY");
+            table.setValue("Criterion", summary, "");
+            table.setValue("Picked", summary, comparable
+                    ? "Comparable picks: " + folderResults.size()
+                    : "Not comparable");
+            table.setValue("Knee_Outcome", summary, "");
+            table.setValue("Criteria_Agree", summary, "");
+            table.setValue("Comparable_Set", summary, String.valueOf(comparable));
+            table.setValue("Incomparable_Reasons", summary,
+                    comparable ? "" : join(reasons, "; "));
         }
-        int summary = table.getCounter();
-        table.incrementCounter();
-        table.setValue("Folder", summary, "SUMMARY");
-        table.setValue("Group", summary, "");
-        table.setValue("Image", summary, "");
-        table.setValue("Criterion", summary, "");
-        table.setValue("Picked", summary, comparable
-                ? "Comparable picks: " + imageResults.size()
-                : "Not comparable");
-        table.setValue("Knee_Outcome", summary, "");
-        table.setValue("Criteria_Agree", summary, "");
-        table.setValue("Comparable_Set", summary, String.valueOf(comparable));
-        table.setValue("Incomparable_Reasons", summary, comparable ? "" : join(reasons, "; "));
         return table;
     }
 
@@ -176,14 +176,52 @@ public final class SegSweepBatchResult {
         return table;
     }
 
-    private ImageResult firstPicked() {
+    private LinkedHashMap<String, List<ImageResult>> groupedByFolder() {
+        LinkedHashMap<String, List<ImageResult>> grouped =
+                new LinkedHashMap<String, List<ImageResult>>();
         for (int i = 0; i < imageResults.size(); i++) {
             ImageResult result = imageResults.get(i);
+            List<ImageResult> folder = grouped.get(result.relativeFolder());
+            if (folder == null) {
+                folder = new ArrayList<ImageResult>();
+                grouped.put(result.relativeFolder(), folder);
+            }
+            folder.add(result);
+        }
+        return grouped;
+    }
+
+    private static List<String> incomparableReasons(List<ImageResult> folderResults) {
+        List<String> reasons = new ArrayList<String>();
+        ImageResult first = firstPicked(folderResults);
+        if (first == null) {
+            reasons.add("No successful image picks are available.");
+            return reasons;
+        }
+        for (int i = 0; i < folderResults.size(); i++) {
+            ImageResult current = folderResults.get(i);
+            if (current.result().pickedCombo() == null || current.result().pick() == null) {
+                reasons.add(current.image().getName() + ": no picked combination was available.");
+                continue;
+            }
+            collectProvenanceReasons(reasons, first, current);
+            collectKneeReasons(reasons, first, current);
+        }
+        return dedupe(reasons);
+    }
+
+    private static ImageResult firstPicked(List<ImageResult> folderResults) {
+        for (int i = 0; i < folderResults.size(); i++) {
+            ImageResult result = folderResults.get(i);
             if (result.result().pickedCombo() != null && result.result().pick() != null) {
                 return result;
             }
         }
         return null;
+    }
+
+    private static String displayFolder(String relativeFolder) {
+        return relativeFolder == null || relativeFolder.isEmpty() ? "." : relativeFolder;
     }
 
     private static void collectProvenanceReasons(List<String> reasons,
@@ -206,6 +244,7 @@ public final class SegSweepBatchResult {
             reasons.add(current.image().getName() + ": displayed range differs.");
         }
         if (!a.calibrationUnit().equals(b.calibrationUnit())
+                || Double.compare(a.pixelArea(), b.pixelArea()) != 0
                 || Double.compare(a.voxelVolume(), b.voxelVolume()) != 0) {
             reasons.add(current.image().getName() + ": calibration differs.");
         }

@@ -37,7 +37,21 @@ public class CountDensityTest {
         assertTrue(result.calibrated());
         assertFalse(result.flags().contains(VariationResult.Flag.UNCALIBRATED));
         assertEquals(12.0d / (10.0d * 10.0d * 2.0d * 0.024d),
-                result.objectsPerCalibratedVolume(), 1.0e-12);
+                result.objectsPerCalibratedVolume() / 1.0e9d, 1.0e-12);
+        assertTrue(Double.isNaN(result.objectsPerCalibratedArea()));
+    }
+
+    @Test
+    public void twoDimensionalDensityUsesSquareMillimetresAndIsNotVolume() {
+        SweepProvenance provenance = provenance(
+                CropSpec.custom(new Rectangle(0, 0, 10, 10)),
+                10, 10, 1, "micron", 0.04d, 0.08d);
+        VariationResult result = VariationResult.success(combo(), labelMap(),
+                8, 3L, null, provenance);
+
+        assertEquals(8.0d / (10.0d * 10.0d * 0.04d),
+                result.objectsPerCalibratedArea() / 1.0e6d, 1.0e-12);
+        assertTrue(Double.isNaN(result.objectsPerCalibratedVolume()));
     }
 
     @Test
@@ -101,5 +115,19 @@ public class CountDensityTest {
                 new LinkedHashMap<ParameterId, ParameterValueList>();
         ranges.put(ParameterId.THRESHOLD, ParameterValueList.ofInts(10));
         return new SweepProvenance(crop, width, height, depth, ranges, unit, voxelVolume);
+    }
+
+    private static SweepProvenance provenance(CropSpec crop,
+                                              int width,
+                                              int height,
+                                              int depth,
+                                              String unit,
+                                              double pixelArea,
+                                              double voxelVolume) {
+        Map<ParameterId, ParameterValueList> ranges =
+                new LinkedHashMap<ParameterId, ParameterValueList>();
+        ranges.put(ParameterId.THRESHOLD, ParameterValueList.ofInts(10));
+        return new SweepProvenance(crop, width, height, depth, ranges,
+                unit, pixelArea, voxelVolume);
     }
 }

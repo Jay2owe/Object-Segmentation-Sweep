@@ -47,6 +47,8 @@ public class VariationGridWindowBadgingTest {
                             window.cellsForTest().get(1).badgeForTest().kind());
                     assertTrue(window.statusLabelForTest().getText()
                             .contains("Criteria agree"));
+                    assertTrue(window.statusLabelForTest().getText().contains("20"));
+                    assertFalse(window.statusLabelForTest().getText().contains("32"));
                 } finally {
                     window.dispose();
                 }

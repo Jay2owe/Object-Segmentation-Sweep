@@ -142,9 +142,9 @@ public final class SegSweepBatchRunner {
         try {
             writer.write("Object Segmentation Sweep batch output.\n\n"
                     + "Each image subfolder contains one single-image autosave tree.\n"
-                    + "batch_picks.csv lists one pick row per successful image plus a comparable-set summary.\n"
+                    + "batch_picks.csv lists one pick row per successful image plus one comparable-set summary per source folder.\n"
                     + "batch_failures.csv lists images that failed while later images continued.\n"
-                    + "Comparable summaries require matching provenance and knee display-range conditions.\n"
+                    + "Within each source folder, comparable summaries require matching provenance and knee display-range conditions.\n"
                     + "No mean or median pick is reported for incomparable settings.\n\n"
                     + "Processed images: " + result.processedImages() + "\n"
                     + "Failed images: " + result.failedImages() + "\n");

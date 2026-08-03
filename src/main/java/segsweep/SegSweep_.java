@@ -12,6 +12,7 @@ import ij.IJ;
 import ij.ImagePlus;
 import ij.Macro;
 import ij.WindowManager;
+import ij.gui.GenericDialog;
 import ij.io.FileInfo;
 import ij.plugin.PlugIn;
 import ij.plugin.frame.Recorder;
@@ -19,12 +20,16 @@ import segsweep.sweep.ParameterCombo;
 import segsweep.sweep.ParameterId;
 import segsweep.sweep.ParameterValueList;
 import segsweep.sweep.ParameterSweep;
+import segsweep.sweep.SourceImageView;
 import segsweep.sweep.VariationResult;
 import segsweep.token.SettingsTokenWriter;
 import segsweep.ui.SegSweepDialog;
 import segsweep.ui.grid.VariationGridWindow;
+import segsweep.ui.render.PreviewDisplaySettings;
 
 import java.awt.GraphicsEnvironment;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 import java.io.File;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -64,7 +69,9 @@ public class SegSweep_ implements PlugIn {
                 throw new IllegalArgumentException("No source image was found. Provide image=[path or title] or open an image.");
             }
             SegSweepResult result = SegSweep.run(options.toParameters(image));
-            autoSaveIfRequested(result, options, image);
+            if (shouldAutoSaveImmediately(options)) {
+                autoSaveIfRequested(result, options, image);
+            }
             showMacroResult(result, options, image);
             return result;
         } catch (Exception ex) {
@@ -93,7 +100,9 @@ public class SegSweep_ implements PlugIn {
                 try {
                     IJ.showStatus(COMMAND_NAME + ": running sweep...");
                     SegSweepResult result = SegSweep.run(runOptions.toParameters(runImage));
-                    autoSaveIfRequested(result, runOptions, runImage);
+                    if (shouldAutoSaveImmediately(runOptions)) {
+                        autoSaveIfRequested(result, runOptions, runImage);
+                    }
                     showMacroResult(result, runOptions, runImage);
                     IJ.showStatus(COMMAND_NAME + ": done.");
                 } catch (Exception ex) {
@@ -112,14 +121,27 @@ public class SegSweep_ implements PlugIn {
             logWarnings(result);
             return;
         }
-        if (result.sweepTable() != null) {
+        if (options.showTables() && result.sweepTable() != null) {
             result.sweepTable().show("Sweep Results");
         }
-        if (result.pickTable() != null && result.pickTable().size() > 0) {
+        if (options.showTables() && result.pickTable() != null && result.pickTable().size() > 0) {
             result.pickTable().show("Sweep Pick");
         }
+        if (!options.showGrid()) {
+            logWarnings(result);
+            return;
+        }
+        final ImagePlus displaySource = SourceImageView.selectedChannelAndCrop(
+                image, result.parameters().channel(), result.parameters().crop());
         final VariationGridWindow grid = new VariationGridWindow(null, COMMAND_NAME,
-                displayWindow(result), image);
+                displayWindow(result), displaySource);
+        grid.addWindowListener(new WindowAdapter() {
+            @Override public void windowClosed(WindowEvent e) {
+                displaySource.changes = false;
+                displaySource.close();
+                displaySource.flush();
+            }
+        });
         List<VariationResult> results = result.results();
         for (int i = 0; i < results.size(); i++) {
             grid.setResult(results.get(i));
@@ -130,13 +152,68 @@ public class SegSweep_ implements PlugIn {
         if (warnings.length() > 0) {
             grid.setActionStatus(warnings);
         }
+        final PreviewDisplaySettings[] displaySettings =
+                new PreviewDisplaySettings[] { PreviewDisplaySettings.of(
+                        displaySource.getDisplayRangeMin(), displaySource.getDisplayRangeMax(),
+                        PreviewDisplaySettings.LutMode.CHANNEL, "Grays") };
+        grid.attachObjectOverlayActionListener(new java.awt.event.ActionListener() {
+            @Override public void actionPerformed(java.awt.event.ActionEvent e) {
+                boolean enabled = grid.isObjectOverlaySelected();
+                grid.setObjectOverlaySourceEnabled(enabled);
+                grid.setObjectOverlayEnabledForAll(enabled);
+            }
+        });
+        grid.attachObjectOverlaySourceActionListener(new java.awt.event.ActionListener() {
+            @Override public void actionPerformed(java.awt.event.ActionEvent e) {
+                boolean raw = grid.isObjectOverlaySourceRaw();
+                grid.setObjectOverlaySourceRawForAll(raw);
+            }
+        });
+        grid.attachLutToggleActionListener(new java.awt.event.ActionListener() {
+            @Override public void actionPerformed(java.awt.event.ActionEvent e) {
+                PreviewDisplaySettings current = displaySettings[0];
+                PreviewDisplaySettings.LutMode mode = current.getLutMode()
+                        == PreviewDisplaySettings.LutMode.GREY
+                        ? PreviewDisplaySettings.LutMode.CHANNEL
+                        : PreviewDisplaySettings.LutMode.GREY;
+                displaySettings[0] = PreviewDisplaySettings.of(
+                        current.getDisplayMin(), current.getDisplayMax(), mode,
+                        current.getChannelLutName());
+                applyDisplaySettings(grid, displaySettings[0]);
+                grid.setLutToggleText(mode == PreviewDisplaySettings.LutMode.GREY
+                                ? "Channel LUT" : "Grey LUT",
+                        "Toggle the source LUT for all tiles.");
+            }
+        });
+        grid.attachBrightnessActionListener(new java.awt.event.ActionListener() {
+            @Override public void actionPerformed(java.awt.event.ActionEvent e) {
+                PreviewDisplaySettings current = displaySettings[0];
+                GenericDialog dialog = new GenericDialog("Sweep brightness/contrast");
+                dialog.addNumericField("Minimum", current.getDisplayMin(), 3);
+                dialog.addNumericField("Maximum", current.getDisplayMax(), 3);
+                dialog.showDialog();
+                if (dialog.wasCanceled()) return;
+                double min = dialog.getNextNumber();
+                double max = dialog.getNextNumber();
+                if (!Double.isFinite(min) || !Double.isFinite(max) || max <= min) {
+                    grid.setActionStatus("Brightness range requires a finite maximum above minimum.");
+                    return;
+                }
+                displaySettings[0] = PreviewDisplaySettings.of(min, max,
+                        current.getLutMode(), current.getChannelLutName());
+                applyDisplaySettings(grid, displaySettings[0]);
+            }
+        });
         grid.attachPickSelectedActionListener(new java.awt.event.ActionListener() {
             @Override public void actionPerformed(java.awt.event.ActionEvent e) {
                 ParameterCombo selected = grid.selectedCombo();
-                ParameterCombo chosen = selected == null ? result.pickedCombo() : selected;
-                String token = settingsTokenForSelected(result, chosen);
-                SegSweepResult chosenResult = result.withPickedSelection(chosen, token);
-                IJ.log(COMMAND_NAME + ": picked " + chosen);
+                if (selected == null) {
+                    grid.setActionStatus("Select a completed cell before picking it.");
+                    return;
+                }
+                String token = settingsTokenForSelected(result, selected);
+                SegSweepResult chosenResult = result.withPickedSelection(selected, token);
+                IJ.log(COMMAND_NAME + ": picked " + selected);
                 IJ.log(token);
                 if (chosenResult.pickedLabelMap() != null) {
                     ImagePlus labels = chosenResult.pickedLabelMap().get();
@@ -165,15 +242,41 @@ public class SegSweep_ implements PlugIn {
     }
 
     static String settingsTokenForSelected(SegSweepResult result, ParameterCombo selected) {
-        ParameterCombo combo = selected == null ? null : selected;
+        return settingsTokenForSelected(result, selected, Instant.now());
+    }
+
+    static String settingsTokenForSelected(SegSweepResult result,
+                                           ParameterCombo selected,
+                                           Instant writtenAt) {
         SettingsTokenWriter.PickSummary summary = SettingsTokenWriter.PickSummary.of(
                 "manual",
                 "",
                 "",
                 "manual grid pick");
         return SettingsTokenWriter.write(
-                SegSweepAnalysis.methodFor(result.parameters(), combo),
-                result.provenance(), summary, Instant.EPOCH);
+                SegSweepAnalysis.methodFor(result.parameters(), selected),
+                result.provenance(), summary, writtenAt,
+                imageIdentity(result.parameters().image()), result.parameters().channel());
+    }
+
+    static boolean shouldAutoSaveImmediately(SegSweepMacroOptions options) {
+        return shouldAutoSaveImmediately(options, GraphicsEnvironment.isHeadless());
+    }
+
+    static boolean shouldAutoSaveImmediately(SegSweepMacroOptions options, boolean headless) {
+        return options != null && (headless || options.hideDisplay() || !options.showGrid());
+    }
+
+    private static void applyDisplaySettings(VariationGridWindow grid,
+                                             PreviewDisplaySettings settings) {
+        grid.setObjectDisplaySettingsForAll(settings);
+    }
+
+    private static String imageIdentity(ImagePlus image) {
+        if (image == null) return "";
+        FileInfo info = image.getOriginalFileInfo();
+        if (info != null && hasText(info.fileName)) return info.fileName.trim();
+        return hasText(image.getTitle()) ? image.getTitle().trim() : "";
     }
 
     File autoSaveIfRequested(SegSweepResult result,

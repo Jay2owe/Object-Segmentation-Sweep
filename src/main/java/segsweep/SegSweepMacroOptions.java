@@ -37,6 +37,8 @@ public final class SegSweepMacroOptions {
     private long stabilityBudgetMs = 0L;
     private String autosave;
     private boolean hideDisplay;
+    private boolean showGrid = true;
+    private boolean showTables = true;
 
     public String image() {
         return image;
@@ -137,6 +139,22 @@ public final class SegSweepMacroOptions {
         this.hideDisplay = hideDisplay;
     }
 
+    public boolean showGrid() {
+        return showGrid;
+    }
+
+    public void setShowGrid(boolean showGrid) {
+        this.showGrid = showGrid;
+    }
+
+    public boolean showTables() {
+        return showTables;
+    }
+
+    public void setShowTables(boolean showTables) {
+        this.showTables = showTables;
+    }
+
     public SegSweepParameters toParameters(ImagePlus source) {
         validate();
         SegSweepParameters.Builder builder = SegSweepParameters.builder()
@@ -183,6 +201,9 @@ public final class SegSweepMacroOptions {
         append(tokens, "autosave", autosave);
         if (hideDisplay) {
             tokens.add("hide_display");
+        } else {
+            if (!showGrid) tokens.add("hide_grid");
+            if (!showTables) tokens.add("hide_tables");
         }
         return join(tokens);
     }

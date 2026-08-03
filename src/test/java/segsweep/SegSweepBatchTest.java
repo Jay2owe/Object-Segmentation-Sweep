@@ -147,6 +147,29 @@ public class SegSweepBatchTest {
     }
 
     @Test
+    public void foldersAreAggregatedIndependently() {
+        SegSweepResult full = runResult(CropSpec.full());
+        SegSweepResult crop = runResult(CropSpec.custom(new Rectangle(0, 0, 20, 8)));
+        List<SegSweepBatchResult.ImageResult> rows =
+                new ArrayList<SegSweepBatchResult.ImageResult>();
+        rows.add(new SegSweepBatchResult.ImageResult(
+                new File("one.tif"), "folder-a", "all", full, null));
+        rows.add(new SegSweepBatchResult.ImageResult(
+                new File("two.tif"), "folder-b", "all", crop, null));
+
+        SegSweepBatchResult batch = new SegSweepBatchResult(2, 2, 0, null,
+                rows, new ArrayList<SegSweepBatchResult.BatchFailure>());
+        ResultsTable picks = batch.batchPicksTable();
+
+        assertTrue(batch.allComparable());
+        int summaries = 0;
+        for (int row = 0; row < picks.getCounter(); row++) {
+            if ("SUMMARY".equals(picks.getStringValue("Image", row))) summaries++;
+        }
+        assertEquals(2, summaries);
+    }
+
+    @Test
     public void successfulAnalysesWithoutPicksAreNotComparable() {
         SegSweepResult noPick = SegSweep.run(SegSweepParameters.builder()
                 .image(SegSweepAnalysisTest.designedKneeStack(true))

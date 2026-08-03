@@ -22,6 +22,7 @@ import java.util.Arrays;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertFalse;
 
 public class SegSweepMacroOptionsTest {
 
@@ -114,6 +115,33 @@ public class SegSweepMacroOptionsTest {
         assertEquals(6, result.sweepTable().size());
     }
 
+    @Test
+    public void gridAndTableVisibilityRoundTripIndependently() {
+        boolean[] values = { false, true };
+        for (boolean grid : values) {
+            for (boolean tables : values) {
+                SegSweepMacroOptions options = SegSweepMacroOptions.defaults();
+                options.setShowGrid(grid);
+                options.setShowTables(tables);
+                SegSweepMacroOptions replayed = SegSweepMacroOptionsParser.parse(
+                        options.toMacroOptions());
+                assertEquals(grid, replayed.showGrid());
+                assertEquals(tables, replayed.showTables());
+            }
+        }
+    }
+
+    @Test
+    public void visibleGridDefersAutosaveUntilManualReview() {
+        SegSweepMacroOptions options = SegSweepMacroOptions.defaults();
+        options.setAutosave("output");
+        assertFalse(SegSweep_.shouldAutoSaveImmediately(options, false));
+        options.setShowGrid(false);
+        assertTrue(SegSweep_.shouldAutoSaveImmediately(options, false));
+        options.setShowGrid(true);
+        assertTrue(SegSweep_.shouldAutoSaveImmediately(options, true));
+    }
+
     private static void assertRoundTripsToSameSweepCsv(SegSweepMacroOptions options) {
         String recorded = options.toMacroOptions();
         SegSweepMacroOptions replayed = SegSweepMacroOptionsParser.parse(recorded);
@@ -133,6 +161,7 @@ public class SegSweepMacroOptionsTest {
                 ParameterId.MIN_SIZE.displayLabel(),
                 SegSweepResult.COL_OBJECTS,
                 SegSweepResult.COL_OBJECTS_PER_MM3,
+                SegSweepResult.COL_OBJECTS_PER_MM2,
                 SegSweepResult.COL_MEAN_NEIGHBOUR_IOU,
                 SegSweepResult.COL_STABILITY_ELIGIBLE,
                 SegSweepResult.COL_DURATION_MS,

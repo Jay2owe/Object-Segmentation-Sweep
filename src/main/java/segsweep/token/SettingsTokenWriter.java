@@ -34,6 +34,15 @@ public final class SettingsTokenWriter {
                                SweepProvenance provenance,
                                PickSummary pickSummary,
                                Instant writtenAt) {
+        return write(method, provenance, pickSummary, writtenAt, "", 0);
+    }
+
+    public static String write(SegmentationMethod method,
+                               SweepProvenance provenance,
+                               PickSummary pickSummary,
+                               Instant writtenAt,
+                               String imageIdentity,
+                               int channel) {
         if (provenance == null) {
             throw new IllegalArgumentException("provenance must not be null");
         }
@@ -47,6 +56,10 @@ public final class SettingsTokenWriter {
         out.append("# Object Segmentation Sweep ").append(VERSION).append('\n');
         out.append("# Written ").append(safeInstant.toString()).append('\n');
         out.append('\n');
+        if (imageIdentity != null && !imageIdentity.trim().isEmpty()) {
+            out.append("image\t").append(lineValue(imageIdentity)).append('\n');
+        }
+        if (channel > 0) out.append("channel\t").append(channel).append('\n');
         out.append("settings\t").append(SegmentationTokenParser.format(safeMethod)).append('\n');
         out.append("engine\t").append(safeMethod.engineName()).append('\n');
         if (!safePick.criterion.isEmpty()) out.append("criterion\t").append(safePick.criterion).append('\n');
@@ -57,10 +70,15 @@ public final class SettingsTokenWriter {
         appendDisplayedRanges(out, provenance);
         out.append("region\t").append(regionLine(provenance)).append('\n');
         out.append("calibration\tunit=").append(emptyAsUncalibrated(provenance.calibrationUnit()))
+                .append("; pixel_area=").append(CanonicalScale.formatNumber(Double.valueOf(provenance.pixelArea())))
                 .append("; voxel_volume=").append(CanonicalScale.formatNumber(Double.valueOf(provenance.voxelVolume())))
                 .append('\n');
         out.append("provenance\t").append(provenance.toCanonicalJson()).append('\n');
         return out.toString();
+    }
+
+    private static String lineValue(String value) {
+        return value.replace('\t', ' ').replace('\r', ' ').replace('\n', ' ').trim();
     }
 
     private static void appendDisplayedRanges(StringBuilder out, SweepProvenance provenance) {

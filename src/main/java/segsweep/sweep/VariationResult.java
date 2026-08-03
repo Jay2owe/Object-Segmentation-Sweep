@@ -223,7 +223,7 @@ public final class VariationResult {
     }
 
     public double objectsPerCalibratedVolume() {
-        if (!calibrated()) {
+        if (!calibrated() || provenance.fullDepth() <= 1) {
             return Double.NaN;
         }
         Rectangle crop = provenance.crop().boundsFor(
@@ -231,12 +231,30 @@ public final class VariationResult {
         double croppedVoxelCount = (double) crop.width
                 * (double) crop.height
                 * (double) provenance.fullDepth();
-        double volume = provenance.voxelVolume() * croppedVoxelCount;
+        double mmPerUnit = provenance.millimetresPerCalibrationUnit();
+        double volume = provenance.voxelVolume() * croppedVoxelCount
+                * mmPerUnit * mmPerUnit * mmPerUnit;
         return volume > 0.0d ? objectCount / volume : Double.NaN;
     }
 
     public double getObjectsPerCalibratedVolume() {
         return objectsPerCalibratedVolume();
+    }
+
+    public double objectsPerCalibratedArea() {
+        if (!calibrated() || provenance.fullDepth() != 1) {
+            return Double.NaN;
+        }
+        Rectangle crop = provenance.crop().boundsFor(
+                provenance.fullWidth(), provenance.fullHeight());
+        double mmPerUnit = provenance.millimetresPerCalibrationUnit();
+        double area = provenance.pixelArea() * (double) crop.width * (double) crop.height
+                * mmPerUnit * mmPerUnit;
+        return area > 0.0d ? objectCount / area : Double.NaN;
+    }
+
+    public double getObjectsPerCalibratedArea() {
+        return objectsPerCalibratedArea();
     }
 
     public double meanNeighbourIou() {
@@ -331,21 +349,9 @@ public final class VariationResult {
         if (error != null) {
             out.add(Flag.FAILED);
         }
-        if (!hasPhysicalCalibration(provenance.calibrationUnit())) {
+        if (!provenance.hasMetricCalibration()) {
             out.add(Flag.UNCALIBRATED);
         }
         return out;
-    }
-
-    private static boolean hasPhysicalCalibration(String unit) {
-        if (unit == null) {
-            return false;
-        }
-        String trimmed = unit.trim();
-        if (trimmed.isEmpty()) {
-            return false;
-        }
-        return !"pixel".equalsIgnoreCase(trimmed)
-                && !"pixels".equalsIgnoreCase(trimmed);
     }
 }
