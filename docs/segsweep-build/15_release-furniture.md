@@ -1,4 +1,4 @@
-# Stage 14 — Release furniture
+# Stage 15 - Release furniture
 
 Add the repo documentation, citation metadata and publishing audit, deploy locally, and confirm the
 plugin is ready to hand to the publishing skills.
@@ -13,7 +13,7 @@ was set up to avoid.
 
 ## Prerequisites
 
-- All of stages 01–13 complete.
+- All of stages 01-14 complete.
 
 ## Read first
 
@@ -23,6 +23,8 @@ was set up to avoid.
 - `../../../ImageJ Plugins/Object Segmentation Sweep/drafts/wiki-page.md` and `../../../ImageJ Plugins/Object Segmentation Sweep/drafts/sites-yml-entry.md` — drafted, and both stay drafts
   until this stage's exit gate passes
 - `../../../ImageJ Plugins/Object Segmentation Sweep/03_BUILD_PLAN.md` — the "Publishing pathway" and "Adoption plan" sections
+- `../../../ImageJ Plugins/Object Segmentation Sweep/04_SWEEP_ENGINE.md` — final README must describe
+  compute-once tree behaviour accurately
 - `Experiments\Plugin-Publishing-Pathway\CHECKLIST.md` and steps `01`, `04`, `05`, `06`
 - `Experiments\CPC\CITATION.cff`, `CHANGELOG.md`, `PUBLISHING_AUDIT.md` — the models
 
@@ -94,7 +96,8 @@ citations to two plugins at once:
 **Correct the README against reality.** The draft was written before any code existed. Walk its
 Features list item by item against the built plugin and delete anything that did not land — a README
 promising a feature that is not there is worse than a shorter README. In particular check: whether
-the second sweep axis survived stage 12's kill-criterion check, and whether the connectivity default
+the second sweep axis survived stage 13's kill-criterion check, whether morphology axes landed as
+specified by `04_SWEEP_ENGINE.md`, and whether the connectivity default
 matches 3D Objects Counter+ or differs (stage 02) — if it differs, **say so in the README**, because
 a silent difference in object counts between two of your own plugins is a bug report waiting to
 happen.
@@ -104,7 +107,7 @@ happen.
 - Knee and stability are heuristics, not proofs.
 - There is no null model in v0.1.0, so the plugin cannot say whether a knee differs from chance.
   Deferred to v0.2.0.
-- Results are conditional on the crop and range recorded in `picked_settings.txt`.
+- Results are conditional on the crop and displayed range recorded in `picked_settings.txt`.
 - Classical engine only; StarDist and Cellpose are v0.2.0.
 
 ## Exit gate

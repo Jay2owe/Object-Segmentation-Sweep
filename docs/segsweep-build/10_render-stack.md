@@ -1,14 +1,14 @@
-# Stage 09 — Rendering stack
+# Stage 10 - Rendering stack
 
 Lift the label-map and threshold overlay renderers, the preview panel and the Swing theme.
 
 ## Why this stage exists
 
-The grid in stage 10 is only useful because each cell shows a *label map* — objects individually
-coloured over the raw image — rather than a binary mask. That distinction is the plugin's most
+The grid in stage 11 is only useful because each cell shows a *label map* - objects individually
+coloured over the raw image - rather than a binary mask. That distinction is the plugin's most
 visible difference from Auto Threshold's "Try all", and it lives entirely in these five classes.
-Lifting them separately keeps stage 10 focused on the grid's interaction logic instead of pixel
-rendering.
+Lifting them separately keeps stage 11 focused on the grid's interaction logic instead of pixel
+rendering. In v0.1 classical, those label maps are supplied lazily by the component tree.
 
 ## Prerequisites
 
@@ -19,6 +19,8 @@ May run in parallel with stages 02 and 03.
 ## Read first
 
 - `docs/segsweep-build/00_overview.md`
+- `../../../ImageJ Plugins/Object Segmentation Sweep/04_SWEEP_ENGINE.md` - lazy label-map
+  materialisation semantics
 - Parent files under `Experiments\FLASH\src\main\java\flash\pipeline\`:
   - `ui/preview/LabelMapStyler.java` (69) — per-object colouring
   - `ui/preview/ObjectOverlayRenderer.java` (241)
@@ -40,12 +42,12 @@ May run in parallel with stages 02 and 03.
 ## Out of scope
 
 - `LargePreviewDialog`, `ComparisonPreviewDialog`, `PreviewPairPanel` — the parent's two-up
-  before/after viewer. Stage 10's shift-click comparison uses the grid's own cells; `PreviewPairPanel`
+  before/after viewer. Stage 11's shift-click comparison uses the grid's own cells; `PreviewPairPanel`
   is 2,629 lines serving a different workflow. **Do not lift it.**
 - `HistogramPanel`, `MinMaxControlPanel`, `FijiStyleRangeSliderPanel`, `ThresholdControlPanel`,
   `ObjectSizeFilterPreview`, `PipelineFigureExporter` — FLASH's config-stage furniture, not needed
   here.
-- The grid itself — stage 10.
+- The grid itself - stage 11.
 
 ## Files touched
 
@@ -88,7 +90,7 @@ than inventing one — check `Experiments\FLASH\src\test\java\flash\pipeline\ui\
 3. `grep -rni "flash" src/main/java/segsweep/ui/` returns nothing.
 4. A manual or automated render check: a 3-object synthetic label map renders with three visually
    distinct colours over the raw image, and the same map with `PreviewDisplaySettings` toggled to
-   raw shows the underlying image. Save the two renders as test artefacts so stage 10 has a
+   raw shows the underlying image. Save the two renders as test artefacts so stage 11 has a
    reference.
 5. Tests run without a display (`-Djava.awt.headless=true`) or are correctly skipped with a stated
    reason — not silently passing.

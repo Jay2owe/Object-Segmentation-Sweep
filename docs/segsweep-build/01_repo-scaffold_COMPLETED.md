@@ -39,7 +39,7 @@ artefacts, not source.
 - Create the package tree: `segsweep`, `segsweep.sweep`, `segsweep.sweep.analysis`,
   `segsweep.token`, `segsweep.ui`, `segsweep.ui.grid`, `segsweep.ui.render`, `segsweep.util`.
 - `src/main/resources/plugins.config` with the single entry.
-- `segsweep/SegSweep_.java` — a stub `PlugIn` that shows an "under construction" message. Stage 12
+- `segsweep/SegSweep_.java` — a stub `PlugIn` that shows an "under construction" message. Stage 13
   replaces it.
 - Copy `LabelUtils.java` and `ui/ToggleSwitch.java` **verbatim**, changing only the package
   declaration.
@@ -49,8 +49,8 @@ artefacts, not source.
 ## Out of scope
 
 - Any sweep, labelling, UI or analysis logic — stages 02 onward.
-- `CITATION.cff`, `CHANGELOG.md`, `PUBLISHING_AUDIT.md`, the real `README.md` — stage 14.
-- Creating the GitHub remote or the update site — stage 14 and the publishing skills.
+- `CITATION.cff`, `CHANGELOG.md`, `PUBLISHING_AUDIT.md`, the real `README.md` — stage 15.
+- Creating the GitHub remote or the update site — stage 15 and the publishing skills.
 - Moving `docs/segsweep-build/` into the new repo — do that at the end of this stage, and note it in
   the commit message so later stages know where to look.
 

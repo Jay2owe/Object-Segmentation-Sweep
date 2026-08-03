@@ -1,4 +1,4 @@
-# Stage 12 — Dialog, plugin entry and macro recording
+# Stage 13 - Dialog, plugin entry and macro recording
 
 Build the three-section dialog, replace the stub entry class, and make every option
 macro-recordable.
@@ -13,12 +13,14 @@ cut it to a single axis before release.**
 
 ## Prerequisites
 
-- `10_grid-reviewer`, `11_analysis-and-api` complete.
+- `11_grid-reviewer`, `12_analysis-and-api` complete.
 
 ## Read first
 
 - `docs/segsweep-build/00_overview.md`
 - `../../../ImageJ Plugins/Object Segmentation Sweep/02_CONTRACT.md` — the "Dialog" and "Macro options" sections; the option table is the spec
+- `../../../ImageJ Plugins/Object Segmentation Sweep/04_SWEEP_ENGINE.md` — `from`/`to`/`step` are
+  display windows, not compute budgets
 - `../../../ImageJ Plugins/Object Segmentation Sweep/00_CASE.md` — the "It could become FLASH in miniature" risk and the kill criteria
 - CPC's models under `Experiments\CPC\src\main\java\cpc\`:
   `ui/CPCDialog.java` (460) — Input / Analysis / Output structure; **only the Analysis section
@@ -33,19 +35,20 @@ cut it to a single axis before release.**
 - `SegSweepDialog` — three sections, `ToggleSwitch` for booleans, CPC's spacing and header
   conventions.
 - `SegSweep_` — replace stage 01's stub. Route macro options versus interactive; on completion open
-  the grid from stage 10 and wire pick-selected back to the result.
+  the grid from stage 11 and wire pick-selected back to the result.
 - `SegSweepMacroOptions` and `SegSweepMacroOptionsParser` — the full option table from
   `02_CONTRACT.md`, with `hide_display`.
 - Macro recorder integration: a recorded run replays identically.
 - Surface `SegSweepResult.warnings()` in the dialog and in the grid's status line.
-- The **"suggest range"** button, calling stage 08's `RangeSuggester`.
+- The **"suggest range"** button, calling stage 09's `RangeSuggester`; label it as a display-range
+  suggestion.
 - A live combination count and cost estimate, with `ResourceGuard`'s refusal shown *before* the user
   presses Run.
 
 ## Out of scope
 
-- Batch — stage 13 adds a separate dialog, not a tab.
-- Auto-save — stage 13.
+- Batch — stage 14 adds a separate dialog, not a tab.
+- Auto-save — stage 14.
 - Anything that adds a third sweep axis, a preset system, or a config file. Those are the parent's
   shape.
 
@@ -72,7 +75,7 @@ INPUT
 
 ANALYSIS
   Engine:           [Classical ▾]
-  Sweep:            [Threshold ▾]   From [10]  To [60]  Step [5]   [Suggest range]
+  Display:          [Threshold ▾]   From [10]  To [60]  Step [5]   [Suggest range]
   Also sweep:       [none ▾]        From [  ]  To [  ]  Step [ ]
   Choose value by:  [Knee and stability ▾]
   → 11 combinations, ~340 MB, ~18 s estimated
@@ -82,8 +85,9 @@ OUTPUT
   Save to:          [alongside input                    ] [Browse…]
 ```
 
-The cost line updates live and turns into `ResourceGuard`'s refusal reason when the sweep is too
-large — the user learns before pressing Run, not forty minutes in.
+The cost line updates live and turns into `ResourceGuard`'s refusal reason when the tree build is
+too large. It must not imply that narrowing `from`/`to` reduces classical compute cost; narrowing the
+range reduces the displayed combinations, not the computed tree.
 
 **Macro options** — implement exactly the table in `02_CONTRACT.md`:
 
@@ -96,11 +100,14 @@ run("Object Segmentation Sweep",
 `step2`, `values2`, `crop`, `pick`, `min_crop_fraction`, `stability_budget_ms`, `autosave`,
 `hide_display`.
 
+The option names remain `sweep`, `from`, `to` and `step` for contract compatibility, but dialog help
+and saved reports call them displayed ranges/windows.
+
 `values` and `from`/`to`/`step` are mutually exclusive — reject both together with a readable
 message rather than silently preferring one.
 
 **`hide_display` is a real headless path**, not a cosmetic flag: no grid, no windows, no dialog. It
-routes straight to `SegSweep.run` and then to stage 13's auto-save.
+routes straight to `SegSweep.run` and then to stage 14's auto-save.
 
 **Entry routing**, following `CPC_.java`:
 
@@ -128,9 +135,10 @@ UI). Assert this; warnings that die in a return value are the same defect class 
 3. Every option in the `02_CONTRACT.md` table parses, and an unknown option produces a readable
    error rather than being ignored.
 4. `values` together with `from`/`to`/`step` is rejected with a message naming both.
-5. `hide_display` opens no window and shows no dialog — reuse stage 11's purity assertions.
+5. `hide_display` opens no window and shows no dialog — reuse stage 12's purity assertions.
 6. `ResourceGuard` refusal appears in the dialog before Run is pressed, with its reason text.
-7. **Suggest range** populates From/To/Step from the image histogram and the resulting sweep runs.
+7. **Suggest range** populates From/To/Step from the image histogram and the resulting display
+   window runs.
 8. Warnings from `SegSweepResult` appear in the grid status line, and in `IJ.log` under
    `hide_display`.
 9. Pick-selected in the grid returns a combination and the settings token reflects it.
@@ -153,3 +161,5 @@ UI). Assert this; warnings that die in a return value are the same defect class 
   the user; recording the pick would make replays non-reproducible in a way that looks reproducible.
 - **Channel selection on hyperstacks** is a classic source of off-by-one between the dialog's 1-based
   display and IJ's internal indexing. Test with a 3-channel hyperstack specifically.
+- **Range wording matters.** Do not tell users the public range limits computation for classical.
+  It limits what they inspect and report; `ResourceGuard` governs the tree build.
