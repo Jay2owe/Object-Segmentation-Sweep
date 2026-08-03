@@ -252,8 +252,10 @@ public final class VariationGridWindow extends JDialog {
         }
         KneeOutcome knee = pickResult.knee();
         StabilityOutcome stability = pickResult.stability();
-        VariationCellPanel kneeCell = cellAt(knee.index());
-        VariationCellPanel stabilityCell = cellAt(stability.index());
+        VariationCellPanel kneeCell = pickResult.kneeCombo() == null
+                ? cellAt(knee.index()) : cellForCombo(pickResult.kneeCombo());
+        VariationCellPanel stabilityCell = pickResult.stabilityCombo() == null
+                ? cellAt(stability.index()) : cellForCombo(pickResult.stabilityCombo());
         if (pickResult.criteriaAgree() && kneeCell != null) {
             kneeCell.setPickBadge(new PickBadge(PickBadge.Kind.BOTH));
         } else {
@@ -265,6 +267,18 @@ public final class VariationGridWindow extends JDialog {
             }
         }
         setActionStatus(pickStatusText(knee, stability, pickResult.criteriaAgree()));
+    }
+
+    private VariationCellPanel cellForCombo(ParameterCombo combo) {
+        if (combo == null) return null;
+        VariationCellPanel exact = cellsByCombo.get(combo);
+        if (exact != null) return exact;
+        for (Map.Entry<ParameterCombo, VariationCellPanel> entry : cellsByCombo.entrySet()) {
+            if (entry.getKey().hasSameCoordinates(combo)) {
+                return entry.getValue();
+            }
+        }
+        return null;
     }
 
     public void attachObjectOverlayActionListener(ActionListener listener) {

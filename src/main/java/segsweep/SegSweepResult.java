@@ -161,6 +161,22 @@ public final class SegSweepResult {
         return warnings;
     }
 
+    /** Returns a result view whose picked combo/labels/settings reflect a manual grid choice. */
+    public SegSweepResult withPickedSelection(ParameterCombo combo, String settingsToken) {
+        LazyLabelMap selectedLabels = null;
+        if (combo != null) {
+            for (int i = 0; i < results.size(); i++) {
+                VariationResult result = results.get(i);
+                if (combo.equals(result.combo()) && result.hasLabelMap()) {
+                    selectedLabels = result.labelMap();
+                    break;
+                }
+            }
+        }
+        return new SegSweepResult(parameters, sweepTable, pickTable, pick, combo,
+                selectedLabels, results, provenance, settingsToken, warnings);
+    }
+
     private static List<VariationResult> immutableCopy(List<VariationResult> input) {
         if (input == null) return Collections.emptyList();
         return Collections.unmodifiableList(new ArrayList<VariationResult>(input));

@@ -127,6 +127,11 @@ public final class ComponentNode {
     }
 
     int[] voxels() {
-        return data.voxels;
+        return tree.voxels(data);
+    }
+
+    /** Returns the voxel indexes belonging to this component at its tree level. */
+    public int[] voxelIndices() {
+        return tree.voxels(data);
     }
 }

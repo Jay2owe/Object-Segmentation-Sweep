@@ -11,6 +11,7 @@ package segsweep;
 import ij.ImagePlus;
 import ij.WindowManager;
 import ij.io.FileSaver;
+import ij.measure.ResultsTable;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -143,6 +144,27 @@ public class SegSweepBatchTest {
 
         assertTrue(batch.allComparable());
         assertTrue(batch.batchPicksTable().toString().contains("Comparable"));
+    }
+
+    @Test
+    public void successfulAnalysesWithoutPicksAreNotComparable() {
+        SegSweepResult noPick = SegSweep.run(SegSweepParameters.builder()
+                .image(SegSweepAnalysisTest.designedKneeStack(true))
+                .axis(ParameterId.THRESHOLD, 10, 30, 10)
+                .pickCriterion(SegSweepParameters.PickCriterion.NONE)
+                .build());
+        List<SegSweepBatchResult.ImageResult> rows =
+                new ArrayList<SegSweepBatchResult.ImageResult>();
+        rows.add(new SegSweepBatchResult.ImageResult(
+                new File("none.tif"), "", "all", noPick, null));
+        SegSweepBatchResult batch = new SegSweepBatchResult(1, 1, 0, null,
+                rows, new ArrayList<SegSweepBatchResult.BatchFailure>());
+
+        assertFalse(batch.allComparable());
+        assertTrue(batch.incomparableReasons().get(0).toLowerCase(java.util.Locale.ROOT)
+                .contains("no successful image picks"));
+        ResultsTable picks = batch.batchPicksTable();
+        assertEquals("Not comparable", picks.getStringValue("Picked", picks.getCounter() - 1));
     }
 
     private static SegSweepResult runResult(CropSpec crop) {

@@ -166,7 +166,7 @@ public final class SegSweepClassicalStrategy implements VariationStrategy {
 
     private ComponentTreeQuery toTreeQuery(ParameterCombo combo) {
         ComponentTreeQuery.Builder builder = ComponentTreeQuery.builder()
-                .threshold(intParameter(combo, ParameterId.THRESHOLD, 0))
+                .threshold(thresholdParameter(combo))
                 .minSize(intParameter(combo, ParameterId.MIN_SIZE, 0))
                 .maxSize(intParameter(combo, ParameterId.MAX_SIZE, Integer.MAX_VALUE));
         for (int i = 0; i < baseMorphPredicates.size(); i++) {
@@ -261,6 +261,21 @@ public final class SegSweepClassicalStrategy implements VariationStrategy {
             return Math.max(0, (int) Math.round(Double.parseDouble(String.valueOf(value))));
         } catch (NumberFormatException e) {
             return fallback;
+        }
+    }
+
+    private static double thresholdParameter(ParameterCombo combo) {
+        Object value = combo == null ? null : combo.get(ParameterId.THRESHOLD);
+        if (value == null) return 0.0d;
+        if (value instanceof Number) {
+            double parsed = ((Number) value).doubleValue();
+            return Double.isFinite(parsed) ? parsed : 0.0d;
+        }
+        try {
+            double parsed = Double.parseDouble(String.valueOf(value));
+            return Double.isFinite(parsed) ? parsed : 0.0d;
+        } catch (NumberFormatException e) {
+            return 0.0d;
         }
     }
 

@@ -34,9 +34,14 @@ public class VariationGridWindowBadgingTest {
                 VariationGridWindow window = window();
                 try {
                     window.setPickResult(new PickResult(
-                            KneeOutcome.kneeAt(1, 20.0, 10.0, 30.0, 10.0, ""),
+                            KneeOutcome.kneeAt(32, 20.0, 10.0, 30.0, 10.0, ""),
                             stableAtOne(),
-                            GridTestFixtures.provenance()));
+                            GridTestFixtures.provenance(),
+                            ParameterCombo.builder()
+                                    .put(segsweep.sweep.ParameterId.THRESHOLD,
+                                            Double.valueOf(20.0d))
+                                    .build(),
+                            GridTestFixtures.combo(20)));
 
                     assertEquals(PickBadge.Kind.BOTH,
                             window.cellsForTest().get(1).badgeForTest().kind());

@@ -12,6 +12,7 @@ import ij.IJ;
 import ij.ImagePlus;
 import ij.Macro;
 import ij.WindowManager;
+import ij.io.FileInfo;
 import ij.plugin.PlugIn;
 import ij.plugin.frame.Recorder;
 import segsweep.sweep.ParameterCombo;
@@ -19,7 +20,6 @@ import segsweep.sweep.ParameterId;
 import segsweep.sweep.ParameterValueList;
 import segsweep.sweep.ParameterSweep;
 import segsweep.sweep.VariationResult;
-import segsweep.token.SegmentationMethod;
 import segsweep.token.SettingsTokenWriter;
 import segsweep.ui.SegSweepDialog;
 import segsweep.ui.grid.VariationGridWindow;
@@ -64,6 +64,7 @@ public class SegSweep_ implements PlugIn {
                 throw new IllegalArgumentException("No source image was found. Provide image=[path or title] or open an image.");
             }
             SegSweepResult result = SegSweep.run(options.toParameters(image));
+            autoSaveIfRequested(result, options, image);
             showMacroResult(result, options, image);
             return result;
         } catch (Exception ex) {
@@ -92,6 +93,7 @@ public class SegSweep_ implements PlugIn {
                 try {
                     IJ.showStatus(COMMAND_NAME + ": running sweep...");
                     SegSweepResult result = SegSweep.run(runOptions.toParameters(runImage));
+                    autoSaveIfRequested(result, runOptions, runImage);
                     showMacroResult(result, runOptions, runImage);
                     IJ.showStatus(COMMAND_NAME + ": done.");
                 } catch (Exception ex) {
@@ -131,10 +133,25 @@ public class SegSweep_ implements PlugIn {
         grid.attachPickSelectedActionListener(new java.awt.event.ActionListener() {
             @Override public void actionPerformed(java.awt.event.ActionEvent e) {
                 ParameterCombo selected = grid.selectedCombo();
-                IJ.log(COMMAND_NAME + ": picked "
-                        + (selected == null ? result.pickedCombo() : selected));
-                IJ.log(settingsTokenForSelected(result,
-                        selected == null ? result.pickedCombo() : selected));
+                ParameterCombo chosen = selected == null ? result.pickedCombo() : selected;
+                String token = settingsTokenForSelected(result, chosen);
+                SegSweepResult chosenResult = result.withPickedSelection(chosen, token);
+                IJ.log(COMMAND_NAME + ": picked " + chosen);
+                IJ.log(token);
+                if (chosenResult.pickedLabelMap() != null) {
+                    ImagePlus labels = chosenResult.pickedLabelMap().get();
+                    labels.setTitle(COMMAND_NAME + " - picked labels");
+                    labels.show();
+                }
+                if (options != null && hasText(options.autosave())) {
+                    try {
+                        File output = AutoSaveWriter.writeTo(new File(options.autosave()),
+                                inputFileFor(options, image), chosenResult);
+                        IJ.log(COMMAND_NAME + ": saved manual pick to " + output.getAbsolutePath());
+                    } catch (Exception ex) {
+                        IJ.error(COMMAND_NAME, "Could not save manual pick: " + ex.getMessage());
+                    }
+                }
             }
         });
         grid.setVisible(true);
@@ -149,28 +166,42 @@ public class SegSweep_ implements PlugIn {
 
     static String settingsTokenForSelected(SegSweepResult result, ParameterCombo selected) {
         ParameterCombo combo = selected == null ? null : selected;
-        SegmentationMethod method = combo == null
-                ? SegmentationMethod.classical("classical")
-                : SegmentationMethod.classical(
-                intValue(combo.get(ParameterId.THRESHOLD), 0),
-                intValue(combo.get(ParameterId.MIN_SIZE), 0),
-                intValue(combo.get(ParameterId.MAX_SIZE), Integer.MAX_VALUE));
         SettingsTokenWriter.PickSummary summary = SettingsTokenWriter.PickSummary.of(
                 "manual",
                 "",
                 "",
                 "manual grid pick");
-        return SettingsTokenWriter.write(method, result.provenance(), summary, Instant.EPOCH);
+        return SettingsTokenWriter.write(
+                SegSweepAnalysis.methodFor(result.parameters(), combo),
+                result.provenance(), summary, Instant.EPOCH);
     }
 
-    private static int intValue(Object value, int fallback) {
-        if (value instanceof Number) {
-            double parsed = ((Number) value).doubleValue();
-            if (Double.isFinite(parsed)) {
-                return (int) Math.round(parsed);
+    File autoSaveIfRequested(SegSweepResult result,
+                             SegSweepMacroOptions options,
+                             ImagePlus image) throws java.io.IOException {
+        if (result == null || options == null || !hasText(options.autosave())) {
+            return null;
+        }
+        return AutoSaveWriter.writeTo(new File(options.autosave()),
+                inputFileFor(options, image), result);
+    }
+
+    private static File inputFileFor(SegSweepMacroOptions options, ImagePlus image) {
+        if (options != null && hasText(options.image())) {
+            File explicit = new File(options.image());
+            if (explicit.isFile()) return explicit;
+        }
+        if (image != null) {
+            FileInfo info = image.getOriginalFileInfo();
+            if (info != null && hasText(info.fileName)) {
+                File directory = hasText(info.directory) ? new File(info.directory) : new File(".");
+                return new File(directory, info.fileName);
+            }
+            if (hasText(image.getTitle())) {
+                return new File(image.getTitle());
             }
         }
-        return fallback;
+        return new File("image.tif");
     }
 
     private ImagePlus resolveImage(String imageOption) {

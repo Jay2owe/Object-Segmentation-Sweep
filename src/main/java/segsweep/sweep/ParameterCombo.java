@@ -54,6 +54,32 @@ public final class ParameterCombo {
         return values;
     }
 
+    /**
+     * Compares parameter coordinates while treating equal numeric values as the
+     * same coordinate even when their Java number types differ.
+     */
+    public boolean hasSameCoordinates(ParameterCombo other) {
+        if (other == null || values.size() != other.values.size()) {
+            return false;
+        }
+        for (Map.Entry<ParameterKey, Object> entry : values.entrySet()) {
+            if (!other.values.containsKey(entry.getKey())) {
+                return false;
+            }
+            Object left = entry.getValue();
+            Object right = other.values.get(entry.getKey());
+            if (left instanceof Number && right instanceof Number) {
+                if (Double.compare(((Number) left).doubleValue(),
+                        ((Number) right).doubleValue()) != 0) {
+                    return false;
+                }
+            } else if (!left.equals(right)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     public String toCanonicalJson() {
         LinkedHashMap<String, Object> out = new LinkedHashMap<String, Object>();
         List<ParameterKey> ids = new ArrayList<ParameterKey>(values.keySet());

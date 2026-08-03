@@ -15,6 +15,7 @@ import segsweep.tree.ComponentTreeResult;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -29,10 +30,11 @@ import java.util.function.BooleanSupplier;
  *
  * <p>The production path accepts object-membership sources, including component
  * tree query results, so classical stability does not need a retained label
- * stack for every displayed combination. Membership IoU compares selected
- * object identities, not voxel footprint labels; when an engine can provide
- * only labels, use {@link LabelIou} separately and document that fallback. This
- * heuristic has no randomisation null model until v0.2.0.</p>
+ * stack for every displayed combination. Component-tree sources compare the
+ * selected foreground voxel footprints directly. Synthetic sources can still
+ * compare supplied object identities, while engines that provide only labels
+ * can use {@link LabelIou}. This heuristic has no randomisation null model
+ * until v0.2.0.</p>
  */
 public final class IouStability {
 
@@ -173,6 +175,15 @@ public final class IouStability {
         if (left == null || right == null) {
             return 0.0d;
         }
+        if (left.hasTreeMembership() && right.hasTreeMembership()) {
+            BitSet a = left.foregroundVoxels();
+            BitSet b = right.foregroundVoxels();
+            BitSet intersection = (BitSet) a.clone();
+            intersection.and(b);
+            a.or(b);
+            return a.isEmpty() ? 0.0d
+                    : (double) intersection.cardinality() / (double) a.cardinality();
+        }
         List<Integer> a = left.objectIds();
         List<Integer> b = right.objectIds();
         if (a.isEmpty() && b.isEmpty()) {
@@ -214,17 +225,23 @@ public final class IouStability {
     }
 
     /**
-     * Object-identity source for stability scoring.
+     * Lightweight source for stability scoring.
      *
-     * <p>For component-tree results these identities are selected node IDs. The
-     * comparison is intentionally cheap and deterministic, but it is not a
-     * voxel-wise label-map IoU and it has no v0.2.0 randomisation null model.</p>
+     * <p>Component-tree results retain selected nodes and reconstruct their
+     * foreground voxel footprint on demand without materialising label maps.
+     * Explicit object-ID sources retain the deterministic identity-set
+     * comparison used by synthetic callers. Neither path has a v0.2.0
+     * randomisation null model.</p>
      */
     public static final class IouSource {
         private final List<Integer> objectIds;
+        private final List<ComponentNode> treeNodes;
         private final int objectCount;
+        private final boolean treeBacked;
 
-        private IouSource(Collection<Integer> objectIds, int objectCount) {
+        private IouSource(Collection<Integer> objectIds,
+                          Collection<ComponentNode> treeNodes,
+                          int objectCount) {
             TreeSet<Integer> sorted = new TreeSet<Integer>();
             if (objectIds != null) {
                 for (Integer id : objectIds) {
@@ -234,24 +251,23 @@ public final class IouStability {
                 }
             }
             this.objectIds = Collections.unmodifiableList(new ArrayList<Integer>(sorted));
+            this.treeNodes = Collections.unmodifiableList(new ArrayList<ComponentNode>(
+                    treeNodes == null ? Collections.<ComponentNode>emptyList() : treeNodes));
             this.objectCount = Math.max(0, objectCount);
+            this.treeBacked = treeNodes != null;
         }
 
         public static IouSource fromObjectIds(Collection<Integer> objectIds) {
             int count = objectIds == null ? 0 : objectIds.size();
-            return new IouSource(objectIds, count);
+            return new IouSource(objectIds, null, count);
         }
 
         public static IouSource fromTreeResult(ComponentTreeResult result) {
             if (result == null) {
-                return new IouSource(Collections.<Integer>emptyList(), 0);
+                return new IouSource(Collections.<Integer>emptyList(), null, 0);
             }
-            List<Integer> ids = new ArrayList<Integer>();
             List<ComponentNode> nodes = result.selectedNodes();
-            for (int i = 0; i < nodes.size(); i++) {
-                ids.add(Integer.valueOf(nodes.get(i).id()));
-            }
-            return new IouSource(ids, result.objectCount());
+            return new IouSource(Collections.<Integer>emptyList(), nodes, result.objectCount());
         }
 
         public List<Integer> objectIds() {
@@ -260,6 +276,39 @@ public final class IouStability {
 
         public int objectCount() {
             return objectCount;
+        }
+
+        private boolean hasTreeMembership() {
+            return treeBacked;
+        }
+
+        private BitSet foregroundVoxels() {
+            BitSet foreground = new BitSet();
+            for (int i = 0; i < treeNodes.size(); i++) {
+                int[] voxels = treeNodes.get(i).voxelIndices();
+                for (int j = 0; j < voxels.length; j++) {
+                    if (voxels[j] >= 0) {
+                        foreground.set(voxels[j]);
+                    }
+                }
+            }
+            return foreground;
+        }
+
+        /** Returns the tree-backed foreground voxel indexes without creating an ImageJ label map. */
+        public int[] foregroundVoxelIndices() {
+            if (!treeBacked) {
+                return new int[0];
+            }
+            BitSet foreground = foregroundVoxels();
+            int[] indexes = new int[foreground.cardinality()];
+            int at = 0;
+            for (int voxel = foreground.nextSetBit(0); voxel >= 0;
+                 voxel = foreground.nextSetBit(voxel + 1)) {
+                indexes[at++] = voxel;
+                if (voxel == Integer.MAX_VALUE) break;
+            }
+            return indexes;
         }
     }
 

@@ -9,6 +9,11 @@
 package segsweep.sweep.analysis;
 
 import org.junit.Test;
+import segsweep.sweep.ParameterCombo;
+import segsweep.sweep.ParameterId;
+import segsweep.sweep.ParameterKey;
+
+import java.util.LinkedHashMap;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertSame;
@@ -42,5 +47,27 @@ public class PickResultTest {
                 "stable");
 
         assertTrue(new PickResult(knee, stability, TestCombos.provenance()).criteriaAgree());
+    }
+
+    @Test
+    public void matchingCombosAgreeWhenFullAxisAndDisplayIndexesDiffer() {
+        KneeOutcome knee = KneeOutcome.kneeAt(32, 32.0d, 10.0d, 60.0d, 5.0d, "knee");
+        StabilityOutcome stability = StabilityOutcome.stableAt(
+                4, 0.8d, 1, new boolean[11], new double[11], "stable");
+        ParameterCombo kneeCombo = combo(Double.valueOf(32.0d));
+        ParameterCombo stabilityCombo = combo(Integer.valueOf(32));
+
+        PickResult result = new PickResult(knee, stability, TestCombos.provenance(),
+                kneeCombo, stabilityCombo);
+
+        assertTrue(result.criteriaAgree());
+        assertSame(kneeCombo, result.kneeCombo());
+        assertSame(stabilityCombo, result.stabilityCombo());
+    }
+
+    private static ParameterCombo combo(Number threshold) {
+        LinkedHashMap<ParameterKey, Object> values = new LinkedHashMap<ParameterKey, Object>();
+        values.put(ParameterId.THRESHOLD, threshold);
+        return new ParameterCombo(values);
     }
 }

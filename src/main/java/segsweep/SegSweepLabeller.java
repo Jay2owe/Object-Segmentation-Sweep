@@ -37,6 +37,15 @@ public final class SegSweepLabeller {
                                     int minSize,
                                     int maxSize,
                                     Connectivity connectivity) {
+        return label(source, (double) threshold, minSize, maxSize, connectivity);
+    }
+
+    /** Double-threshold overload used for calibrated and 32-bit image data. */
+    public static LabelResult label(ImagePlus source,
+                                    double threshold,
+                                    int minSize,
+                                    int maxSize,
+                                    Connectivity connectivity) {
         Connectivity safeConnectivity = connectivity == null ? DEFAULT_CONNECTIVITY : connectivity;
         ImagePlus empty = emptyLabelMapLike(source);
         if (source == null || source.getStack() == null || source.getStackSize() == 0) {

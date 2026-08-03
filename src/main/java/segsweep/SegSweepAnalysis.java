@@ -45,6 +45,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.TreeSet;
 
 /**
  * Headless orchestration for one Object Segmentation Sweep run.
@@ -74,11 +75,11 @@ public final class SegSweepAnalysis {
             }
 
             ComponentTree tree = ComponentTree.build(cropped, params.connectivity());
-            int maxThresholdValue = maxFinitePixelValue(cropped);
+            List<Double> fullThresholdValues = fullThresholdAxis(cropped);
             List<VariationResult> displayedResults =
                     queryDisplayedResults(tree, displayWindow, provenance);
             PickAssembly pickAssembly = scoreAndPick(tree, displayWindow,
-                    displayedResults, provenance, params, warnings, maxThresholdValue);
+                    displayedResults, provenance, params, warnings, fullThresholdValues);
 
             ResultsTable sweepTable = buildSweepTable(displayWindow,
                     pickAssembly.scoredResults, pickAssembly.stability);
@@ -238,9 +239,9 @@ public final class SegSweepAnalysis {
                                              ParameterSweep displayWindow,
                                              List<VariationResult> displayedResults,
                                              SweepProvenance provenance,
-                                             SegSweepParameters params,
-                                             List<String> warnings,
-                                             int maxThresholdValue) {
+                                              SegSweepParameters params,
+                                              List<String> warnings,
+                                              List<Double> fullThresholdValues) {
         if (params.pickCriterion() == SegSweepParameters.PickCriterion.NONE) {
             return new PickAssembly(null, null, null, displayedResults,
                     null, 0);
@@ -253,13 +254,17 @@ public final class SegSweepAnalysis {
         }
 
         KneeAssembly kneeAssembly = scoreKnee(tree, displayWindow, provenance,
-                params, displayedResults, maxThresholdValue);
+                params, displayedResults, fullThresholdValues);
         KneeOutcome knee = kneeAssembly.outcome;
         if (knee.kind() != KneeOutcome.Kind.KNEE_AT) {
             warnings.add("Knee pick: " + knee.explanation());
         }
 
-        PickResult pick = new PickResult(knee, stability, provenance);
+        ParameterCombo stabilityCombo = stability.kind() == StabilityOutcome.Kind.STABLE_AT
+                && stability.index() >= 0 && stability.index() < scoredResults.size()
+                ? scoredResults.get(stability.index()).combo() : null;
+        PickResult pick = new PickResult(knee, stability, provenance,
+                kneeAssembly.combo, stabilityCombo);
         ChosenPick chosen = choosePicked(params.pickCriterion(), pick, displayWindow,
                 scoredResults, kneeAssembly);
         return new PickAssembly(pick, stability, chosen.combo, scoredResults,
@@ -292,13 +297,14 @@ public final class SegSweepAnalysis {
                                           SweepProvenance provenance,
                                           SegSweepParameters params,
                                           List<VariationResult> displayedResults,
-                                          int maxThresholdValue) {
+                                          List<Double> fullThresholdValues) {
         ParameterId axis = params.axes().containsKey(ParameterId.THRESHOLD)
                 ? ParameterId.THRESHOLD : firstAxis(params);
         ParameterValueList displayedValues = params.axes().get(axis);
         double[] displayStats = rangeStats(displayedValues);
         if (axis == ParameterId.THRESHOLD) {
-            List<Double> thresholdValues = fullThresholdAxis(maxThresholdValue);
+            List<Double> thresholdValues = fullThresholdValues == null
+                    ? Collections.<Double>emptyList() : fullThresholdValues;
             if (!thresholdValues.isEmpty()) {
                 double[] xs = new double[thresholdValues.size()];
                 double[] counts = new double[thresholdValues.size()];
@@ -362,11 +368,10 @@ public final class SegSweepAnalysis {
             }
             return ChosenPick.none();
         }
-        if (pick.criteriaAgree() && pick.knee().index() >= 0
-                && pick.knee().index() < results.size()) {
-            VariationResult result = results.get(pick.knee().index());
-            return new ChosenPick(result.combo(), result.labelMap(),
-                    displayIndex(displayWindow, result.combo()));
+        if (pick.criteriaAgree() && kneeAssembly.combo != null
+                && kneeAssembly.labelMap != null) {
+            return new ChosenPick(kneeAssembly.combo, kneeAssembly.labelMap,
+                    displayIndex(displayWindow, kneeAssembly.combo));
         }
         return ChosenPick.none();
     }
@@ -474,12 +479,7 @@ public final class SegSweepAnalysis {
                                              SweepProvenance provenance,
                                              PickResult pick,
                                              ParameterCombo pickedCombo) {
-        SegmentationMethod method = pickedCombo == null
-                ? SegmentationMethod.classical("classical")
-                : SegmentationMethod.classical(
-                intParameter(pickedCombo, ParameterId.THRESHOLD, 0),
-                intParameter(pickedCombo, ParameterId.MIN_SIZE, 0),
-                intParameter(pickedCombo, ParameterId.MAX_SIZE, Integer.MAX_VALUE));
+        SegmentationMethod method = methodFor(params, pickedCombo);
         SettingsTokenWriter.PickSummary summary = pick == null
                 ? SettingsTokenWriter.PickSummary.empty()
                 : SettingsTokenWriter.PickSummary.of(
@@ -490,9 +490,42 @@ public final class SegSweepAnalysis {
         return SettingsTokenWriter.write(method, provenance, summary, java.time.Instant.now());
     }
 
+    static SegmentationMethod methodFor(SegSweepParameters params, ParameterCombo combo) {
+        LinkedHashMap<String, String> values = new LinkedHashMap<String, String>();
+        values.put("thresh", CanonicalScale.formatNumber(Double.valueOf(
+                doubleParameter(combo, ParameterId.THRESHOLD, 0.0d))));
+        values.put("minSize", Integer.toString(intParameter(combo, ParameterId.MIN_SIZE, 0)));
+        values.put("maxSize", Integer.toString(
+                intParameter(combo, ParameterId.MAX_SIZE, Integer.MAX_VALUE)));
+        if (params != null) {
+            values.put("channel", Integer.toString(params.channel()));
+            values.put("connectivity", params.connectivity().name().toLowerCase(Locale.ROOT));
+        }
+        List<String> morphology = new ArrayList<String>();
+        if (combo != null) {
+            for (Map.Entry<ParameterKey, Object> entry : combo.values().entrySet()) {
+                MorphologyAttribute attribute = morphologyAttribute(entry.getKey());
+                if (attribute != null) {
+                    morphology.add(attribute.token() + ">=" + CanonicalScale.formatNumber(
+                            Double.valueOf(numericValue(entry.getValue(), entry.getKey()))));
+                }
+            }
+        }
+        if (!morphology.isEmpty()) {
+            Collections.sort(morphology);
+            StringBuilder encoded = new StringBuilder();
+            for (int i = 0; i < morphology.size(); i++) {
+                if (i > 0) encoded.append(',');
+                encoded.append(morphology.get(i));
+            }
+            values.put("morph", encoded.toString());
+        }
+        return new SegmentationMethod(SegmentationMethod.Engine.CLASSICAL, values, "");
+    }
+
     private static ComponentTreeQuery toTreeQuery(ParameterCombo combo) {
         ComponentTreeQuery.Builder builder = ComponentTreeQuery.builder()
-                .threshold(intParameter(combo, ParameterId.THRESHOLD, 0))
+                .threshold(doubleParameter(combo, ParameterId.THRESHOLD, 0.0d))
                 .minSize(intParameter(combo, ParameterId.MIN_SIZE, 0))
                 .maxSize(intParameter(combo, ParameterId.MAX_SIZE, Integer.MAX_VALUE));
         for (Map.Entry<ParameterKey, Object> entry : combo.values().entrySet()) {
@@ -554,7 +587,7 @@ public final class SegSweepAnalysis {
         if (picked == null) return 0;
         List<ParameterCombo> combos = displayWindow.combos();
         for (int i = 0; i < combos.size(); i++) {
-            if (combos.get(i).equals(picked)) {
+            if (combos.get(i).hasSameCoordinates(picked)) {
                 return i + 1;
             }
         }
@@ -579,16 +612,24 @@ public final class SegSweepAnalysis {
         return new double[] { min, max, step };
     }
 
-    private static List<Double> fullThresholdAxis(int maxValue) {
-        if (maxValue < 0) return Collections.emptyList();
-        List<Double> values = new ArrayList<Double>(maxValue + 1);
-        for (int i = 0; i <= maxValue; i++) {
-            values.add(Double.valueOf(i));
+    private static List<Double> fullThresholdAxis(ImagePlus image) {
+        if (image == null || image.getStack() == null) {
+            return Collections.emptyList();
         }
-        return values;
-    }
-
-    private static int maxFinitePixelValue(ImagePlus image) {
+        if (image.getBitDepth() == 32) {
+            TreeSet<Double> unique = new TreeSet<Double>();
+            ImageStack stack = image.getStack();
+            for (int slice = 1; slice <= stack.getSize(); slice++) {
+                ImageProcessor processor = stack.getProcessor(slice);
+                for (int i = 0; i < processor.getPixelCount(); i++) {
+                    float value = processor.getf(i);
+                    if (Float.isFinite(value)) {
+                        unique.add(Double.valueOf(value));
+                    }
+                }
+            }
+            return new ArrayList<Double>(unique);
+        }
         int max = 0;
         ImageStack stack = image.getStack();
         for (int slice = 1; slice <= stack.getSize(); slice++) {
@@ -600,7 +641,11 @@ public final class SegSweepAnalysis {
                 }
             }
         }
-        return max;
+        List<Double> values = new ArrayList<Double>(max + 1);
+        for (int i = 0; i <= max; i++) {
+            values.add(Double.valueOf(i));
+        }
+        return values;
     }
 
     private static int intParameter(ParameterCombo combo, ParameterId id, int fallback) {
@@ -615,6 +660,21 @@ public final class SegSweepAnalysis {
         }
         try {
             return Math.max(0, (int) Math.round(Double.parseDouble(String.valueOf(value))));
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
+    }
+
+    private static double doubleParameter(ParameterCombo combo, ParameterId id, double fallback) {
+        Object value = combo == null ? null : combo.get(id);
+        if (value == null) return fallback;
+        if (value instanceof Number) {
+            double parsed = ((Number) value).doubleValue();
+            return Double.isFinite(parsed) ? parsed : fallback;
+        }
+        try {
+            double parsed = Double.parseDouble(String.valueOf(value));
+            return Double.isFinite(parsed) ? parsed : fallback;
         } catch (NumberFormatException e) {
             return fallback;
         }

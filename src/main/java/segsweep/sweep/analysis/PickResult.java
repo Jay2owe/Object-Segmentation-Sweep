@@ -8,6 +8,7 @@
  */
 package segsweep.sweep.analysis;
 
+import segsweep.sweep.ParameterCombo;
 import segsweep.sweep.SweepProvenance;
 
 /**
@@ -24,10 +25,20 @@ public final class PickResult {
     private final KneeOutcome knee;
     private final StabilityOutcome stability;
     private final SweepProvenance provenance;
+    private final ParameterCombo kneeCombo;
+    private final ParameterCombo stabilityCombo;
 
     public PickResult(KneeOutcome knee,
                       StabilityOutcome stability,
                       SweepProvenance provenance) {
+        this(knee, stability, provenance, null, null);
+    }
+
+    public PickResult(KneeOutcome knee,
+                      StabilityOutcome stability,
+                      SweepProvenance provenance,
+                      ParameterCombo kneeCombo,
+                      ParameterCombo stabilityCombo) {
         if (knee == null) {
             throw new IllegalArgumentException("knee must not be null");
         }
@@ -40,6 +51,8 @@ public final class PickResult {
         this.knee = knee;
         this.stability = stability;
         this.provenance = provenance;
+        this.kneeCombo = kneeCombo;
+        this.stabilityCombo = stabilityCombo;
     }
 
     public KneeOutcome knee() {
@@ -51,6 +64,12 @@ public final class PickResult {
     }
 
     public boolean criteriaAgree() {
+        if (kneeCombo != null || stabilityCombo != null) {
+            return knee.kind() == KneeOutcome.Kind.KNEE_AT
+                    && stability.kind() == StabilityOutcome.Kind.STABLE_AT
+                    && kneeCombo != null
+                    && kneeCombo.hasSameCoordinates(stabilityCombo);
+        }
         return knee.kind() == KneeOutcome.Kind.KNEE_AT
                 && stability.kind() == StabilityOutcome.Kind.STABLE_AT
                 && knee.index() == stability.index();
@@ -58,5 +77,13 @@ public final class PickResult {
 
     public SweepProvenance provenance() {
         return provenance;
+    }
+
+    public ParameterCombo kneeCombo() {
+        return kneeCombo;
+    }
+
+    public ParameterCombo stabilityCombo() {
+        return stabilityCombo;
     }
 }

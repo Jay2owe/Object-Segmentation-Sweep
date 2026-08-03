@@ -9,6 +9,7 @@
 package segsweep;
 
 import ij.ImagePlus;
+import ij.io.FileSaver;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -19,11 +20,15 @@ import segsweep.token.SegmentationTokenParser;
 import segsweep.tree.LazyLabelMap;
 
 import java.io.File;
+import java.awt.image.BufferedImage;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import javax.imageio.ImageIO;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 public class AutoSaveWriterTest {
@@ -46,6 +51,10 @@ public class AutoSaveWriterTest {
         assertTrue(new File(output, "labels/Exp1-A01_LH_CTX_picked.tif").isFile());
         assertTrue(new File(output, "README.txt").isFile());
         assertEquals(1, picked.materializationCount());
+        BufferedImage montage = ImageIO.read(new File(output, "grid.png"));
+        assertNotNull(montage);
+        assertTrue("Expected rendered teal foreground pixels inside the montage cells",
+                containsRenderedForeground(montage));
 
         String readme = text(new File(output, "README.txt"));
         assertTrue(readme.contains("displayed range"));
@@ -90,6 +99,44 @@ public class AutoSaveWriterTest {
         assertTrue(new File(output, "picked_settings.txt").isFile());
     }
 
+    @Test
+    public void noPickLeavesLabelsDirectoryEmptyAndGridDoesNotMaterialiseLabels() throws Exception {
+        File input = tmp.newFile("none.tif");
+        SegSweepResult result = SegSweep.run(SegSweepParameters.builder()
+                .image(SegSweepAnalysisTest.designedKneeStack(true))
+                .axis(ParameterId.THRESHOLD, 10, 30, 10)
+                .pickCriterion(SegSweepParameters.PickCriterion.NONE)
+                .build());
+
+        File output = AutoSaveWriter.write(input, result);
+
+        File[] labels = new File(output, "labels").listFiles();
+        assertNotNull(labels);
+        assertEquals(0, labels.length);
+        for (int i = 0; i < result.results().size(); i++) {
+            assertEquals(0, result.results().get(i).labelMap().materializationCount());
+        }
+        assertFalse(new File(output, "labels/none_picked.tif").exists());
+    }
+
+    @Test
+    public void macroAutosaveWritesRequestedDirectory() throws Exception {
+        File input = new File(tmp.getRoot(), "macro-source.tif");
+        ImagePlus image = SegSweepAnalysisTest.designedKneeStack(true);
+        assertTrue(new FileSaver(image).saveAsTiff(input.getAbsolutePath()));
+        image.close();
+        File output = new File(tmp.getRoot(), "requested-output");
+        String options = "image=[" + slash(input) + "] sweep=threshold from=10 to=60 step=10 "
+                + "pick=knee autosave=[" + slash(output) + "] hide_display";
+
+        SegSweepResult result = new SegSweep_().runFromMacro(options);
+
+        assertNotNull(result);
+        assertTrue(new File(output, "sweep_results.csv").isFile());
+        assertTrue(new File(output, "picked_settings.txt").isFile());
+        assertTrue(new File(output, "grid.png").isFile());
+    }
+
     private static SegSweepResult runPickedResult(ImagePlus image) {
         return SegSweep.run(SegSweepParameters.builder()
                 .image(image)
@@ -110,5 +157,24 @@ public class AutoSaveWriterTest {
             }
         }
         throw new AssertionError("Missing " + key + " line in:\n" + text);
+    }
+
+    private static String slash(File file) {
+        return file.getAbsolutePath().replace('\\', '/');
+    }
+
+    private static boolean containsRenderedForeground(BufferedImage image) {
+        int maxX = Math.min(image.getWidth() - 1, 205);
+        int maxY = Math.min(image.getHeight() - 1, 150);
+        for (int y = 15; y <= maxY; y++) {
+            for (int x = 15; x <= maxX; x++) {
+                int rgb = image.getRGB(x, y);
+                int r = (rgb >> 16) & 0xff;
+                int g = (rgb >> 8) & 0xff;
+                int b = rgb & 0xff;
+                if (g > r + 15 && b > r + 15) return true;
+            }
+        }
+        return false;
     }
 }

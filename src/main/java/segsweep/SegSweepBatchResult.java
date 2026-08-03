@@ -107,9 +107,7 @@ public final class SegSweepBatchResult {
         List<String> reasons = new ArrayList<String>();
         ImageResult first = firstPicked();
         if (first == null) {
-            if (imageResults.isEmpty()) {
-                reasons.add("No successful image picks are available.");
-            }
+            reasons.add("No successful image picks are available.");
             return reasons;
         }
         for (int i = 0; i < imageResults.size(); i++) {

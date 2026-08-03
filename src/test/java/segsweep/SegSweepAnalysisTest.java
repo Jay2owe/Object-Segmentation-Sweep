@@ -13,16 +13,23 @@ import ij.ImageStack;
 import ij.measure.Calibration;
 import ij.measure.ResultsTable;
 import ij.process.ImageProcessor;
+import ij.process.FloatProcessor;
 import ij.process.ShortProcessor;
 import org.junit.Test;
 import segsweep.sweep.CropSpec;
 import segsweep.sweep.ParameterCombo;
 import segsweep.sweep.ParameterId;
+import segsweep.sweep.ParameterKey;
+import segsweep.sweep.ParameterValueList;
+import segsweep.sweep.VariationResult;
+import segsweep.token.MorphPredicate;
 import segsweep.token.SegmentationMethod;
+import segsweep.token.SegmentationTokenParser;
 import segsweep.tree.LazyLabelMap;
 
 import java.awt.Rectangle;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -186,6 +193,72 @@ public class SegSweepAnalysisTest {
         ImagePlus materialized = labels.get();
         assertEquals(1, labels.materializationCount());
         materialized.close();
+    }
+
+    @Test
+    public void fractionalThresholdsRemainDistinctOnFloatImages() {
+        ImagePlus image = new ImagePlus("fractional",
+                new FloatProcessor(3, 1, new float[] { 0.2f, 0.0f, 0.8f }));
+        SegSweepResult result = SegSweep.run(SegSweepParameters.builder()
+                .image(image)
+                .axis(ParameterId.THRESHOLD, ParameterValueList.ofDoubles(0.4d, 0.6d))
+                .pickCriterion(SegSweepParameters.PickCriterion.NONE)
+                .build());
+
+        assertEquals(2, result.sweepTable().size());
+        assertEquals(1.0d, result.sweepTable().getValue(SegSweepResult.COL_OBJECTS, 0), 0.0d);
+        assertEquals(1.0d, result.sweepTable().getValue(SegSweepResult.COL_OBJECTS, 1), 0.0d);
+    }
+
+    @Test
+    public void pickedMethodRecordsChannelFractionalThresholdAndMorphology() {
+        SegSweepParameters params = SegSweepParameters.builder()
+                .image(designedKneeStack(true))
+                .channel(2)
+                .axis(ParameterId.THRESHOLD, ParameterValueList.ofDoubles(0.4d))
+                .build();
+        LinkedHashMap<ParameterKey, Object> values = new LinkedHashMap<ParameterKey, Object>();
+        values.put(ParameterId.THRESHOLD, Double.valueOf(0.4d));
+        values.put(ParameterId.SPHERICITY, Double.valueOf(0.7d));
+        ParameterCombo combo = new ParameterCombo(values);
+
+        SegmentationMethod parsed = SegmentationTokenParser.parse(
+                SegmentationTokenParser.format(SegSweepAnalysis.methodFor(params, combo)));
+
+        assertEquals(0.4d, SegmentationMethod.threshold(parsed), 0.0d);
+        assertEquals("2", parsed.params.get("channel"));
+        assertEquals("twenty_six", parsed.params.get("connectivity"));
+        java.util.List<MorphPredicate> predicates = SegmentationMethod.morphPredicates(parsed);
+        assertEquals(1, predicates.size());
+        assertEquals("sphericity", predicates.get(0).featureName());
+        assertEquals(0.7d, predicates.get(0).value(), 0.0d);
+    }
+
+    @Test
+    public void manualSelectionReturnsItsLazyLabelsAndSettings() {
+        SegSweepResult result = SegSweep.run(SegSweepParameters.builder()
+                .image(designedKneeStack(true))
+                .axis(ParameterId.THRESHOLD, 10, 30, 10)
+                .pickCriterion(SegSweepParameters.PickCriterion.NONE)
+                .build());
+        ParameterCombo selected = null;
+        for (VariationResult variation : result.results()) {
+            Number threshold = (Number) variation.combo().get(ParameterId.THRESHOLD);
+            if (threshold != null && threshold.doubleValue() == 20.0d) {
+                selected = variation.combo();
+                break;
+            }
+        }
+        assertNotNull(selected);
+        String token = SegSweep_.settingsTokenForSelected(result, selected);
+
+        SegSweepResult manual = result.withPickedSelection(selected, token);
+
+        assertEquals(selected, manual.pickedCombo());
+        assertNotNull(manual.pickedLabelMap());
+        assertEquals(0, manual.pickedLabelMap().materializationCount());
+        assertTrue(manual.pickedSettingsToken().contains("thresh=20"));
+        assertTrue(manual.pickedSettingsToken().contains("channel=1"));
     }
 
     private static void assertSweepColumns(ResultsTable table) {

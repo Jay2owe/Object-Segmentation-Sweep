@@ -13,7 +13,7 @@ import java.util.Collections;
 import java.util.List;
 
 public final class ComponentTreeQuery {
-    private final int threshold;
+    private final double threshold;
     private final int minSize;
     private final int maxSize;
     private final List<MorphologyPredicate> predicates;
@@ -26,7 +26,7 @@ public final class ComponentTreeQuery {
                 new ArrayList<MorphologyPredicate>(builder.predicates));
     }
 
-    public int threshold() {
+    public double threshold() {
         return threshold;
     }
 
@@ -47,7 +47,7 @@ public final class ComponentTreeQuery {
     }
 
     public static final class Builder {
-        private int threshold;
+        private double threshold;
         private int minSize;
         private int maxSize = Integer.MAX_VALUE;
         private final List<MorphologyPredicate> predicates = new ArrayList<MorphologyPredicate>();
@@ -55,6 +55,13 @@ public final class ComponentTreeQuery {
         private Builder() {}
 
         public Builder threshold(int threshold) {
+            return threshold((double) threshold);
+        }
+
+        public Builder threshold(double threshold) {
+            if (!Double.isFinite(threshold)) {
+                throw new IllegalArgumentException("threshold must be finite");
+            }
             this.threshold = threshold;
             return this;
         }

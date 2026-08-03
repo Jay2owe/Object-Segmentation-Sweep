@@ -13,6 +13,7 @@ import ij.measure.Calibration;
 import segsweep.SegSweepLabeller;
 
 import java.util.ArrayList;
+import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -37,8 +38,6 @@ public final class ComponentTree {
     private final Calibration calibration;
     private final SegSweepLabeller.Connectivity connectivity;
     private final List<NodeData> nodes;
-    private final List<Float> levelsDescending;
-    private final List<int[]> nodeIdsByLevel;
     private int feretComputationCount;
 
     ComponentTree(int width,
@@ -46,9 +45,7 @@ public final class ComponentTree {
                   int depth,
                   Calibration calibration,
                   SegSweepLabeller.Connectivity connectivity,
-                  List<NodeData> nodes,
-                  List<Float> levelsDescending,
-                  List<int[]> nodeIdsByLevel) {
+                  List<NodeData> nodes) {
         this.width = width;
         this.height = height;
         this.depth = depth;
@@ -56,8 +53,6 @@ public final class ComponentTree {
         this.connectivity = connectivity == null
                 ? SegSweepLabeller.DEFAULT_CONNECTIVITY : connectivity;
         this.nodes = Collections.unmodifiableList(new ArrayList<NodeData>(nodes));
-        this.levelsDescending = Collections.unmodifiableList(new ArrayList<Float>(levelsDescending));
-        this.nodeIdsByLevel = Collections.unmodifiableList(new ArrayList<int[]>(nodeIdsByLevel));
     }
 
     public static ComponentTree build(ImagePlus source, SegSweepLabeller.Connectivity connectivity) {
@@ -143,22 +138,13 @@ public final class ComponentTree {
                 new LazyLabelMap(width, height, depth, calibration, selected));
     }
 
-    private List<ComponentNode> nodesAtThreshold(int threshold) {
-        int levelIndex = -1;
-        for (int i = 0; i < levelsDescending.size(); i++) {
-            if (levelsDescending.get(i).floatValue() > threshold) {
-                levelIndex = i;
-            } else {
-                break;
-            }
-        }
-        if (levelIndex < 0) {
-            return Collections.emptyList();
-        }
-        int[] ids = nodeIdsByLevel.get(levelIndex);
-        List<ComponentNode> views = new ArrayList<ComponentNode>(ids.length);
-        for (int i = 0; i < ids.length; i++) {
-            views.add(new ComponentNode(this, nodes.get(ids[i])));
+    private List<ComponentNode> nodesAtThreshold(double threshold) {
+        List<ComponentNode> views = new ArrayList<ComponentNode>();
+        for (int i = 0; i < nodes.size(); i++) {
+            NodeData node = nodes.get(i);
+            if (node.level <= threshold) continue;
+            if (node.parentId >= 0 && nodes.get(node.parentId).level > threshold) continue;
+            views.add(new ComponentNode(this, node));
         }
         return views;
     }
@@ -175,10 +161,45 @@ public final class ComponentTree {
 
     double feretDiameterMax(NodeData data) {
         if (Double.isNaN(data.feretDiameterMax)) {
-            data.feretDiameterMax = exactFeret(data.voxels);
+            data.feretDiameterMax = exactFeret(voxels(data));
             feretComputationCount++;
         }
         return data.feretDiameterMax;
+    }
+
+    int[] voxels(NodeData data) {
+        if (data == null || data.voxelCount <= 0) {
+            return new int[0];
+        }
+        int[] out = new int[data.voxelCount];
+        int at = 0;
+        ArrayDeque<Integer> pending = new ArrayDeque<Integer>();
+        pending.push(Integer.valueOf(data.id));
+        while (!pending.isEmpty()) {
+            NodeData current = nodes.get(pending.pop().intValue());
+            if (at + current.voxels.length > out.length) {
+                throw new IllegalStateException("Component-tree voxel accounting is inconsistent.");
+            }
+            System.arraycopy(current.voxels, 0, out, at, current.voxels.length);
+            at += current.voxels.length;
+            for (int i = 0; i < current.childIds.size(); i++) {
+                pending.push(current.childIds.get(i));
+            }
+        }
+        if (at != out.length) {
+            throw new IllegalStateException("Component-tree voxel accounting expected "
+                    + out.length + " voxels but found " + at + ".");
+        }
+        return out;
+    }
+
+    /** Number of voxel indexes retained by the tree; each source voxel is stored at most once. */
+    public long storedVoxelMembershipCount() {
+        long count = 0L;
+        for (int i = 0; i < nodes.size(); i++) {
+            count += nodes.get(i).voxels.length;
+        }
+        return count;
     }
 
     private double exactFeret(int[] voxels) {

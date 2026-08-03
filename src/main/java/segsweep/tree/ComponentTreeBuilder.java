@@ -37,9 +37,7 @@ public final class ComponentTreeBuilder {
                 source.getStackSize(),
                 calibration == null ? null : calibration.copy(),
                 safeConnectivity,
-                state.nodes,
-                state.levels,
-                state.nodeIdsByLevel);
+                state.nodes);
     }
 
     private static final class BuilderState {
@@ -57,9 +55,9 @@ public final class ComponentTreeBuilder {
         private final byte[] rank;
         private final RootAttributes attrs;
         private final List<ComponentTree.NodeData> nodes = new ArrayList<ComponentTree.NodeData>();
-        private final List<Float> levels = new ArrayList<Float>();
-        private final List<int[]> nodeIdsByLevel = new ArrayList<int[]>();
-        private Map<Integer, Integer> previousRootNode = new HashMap<Integer, Integer>();
+        private final int[] currentNode;
+        private final boolean[] touchedAtLevel;
+        private final IntList[] pendingChildren;
 
         BuilderState(ImagePlus source, SegSweepLabeller.Connectivity connectivity) {
             this.source = source;
@@ -80,6 +78,10 @@ public final class ComponentTreeBuilder {
             this.parent = new int[voxelCount];
             this.rank = new byte[voxelCount];
             this.attrs = new RootAttributes(voxelCount);
+            this.currentNode = new int[voxelCount];
+            Arrays.fill(currentNode, -1);
+            this.touchedAtLevel = new boolean[voxelCount];
+            this.pendingChildren = new IntList[voxelCount];
             readIntensities();
         }
 
@@ -105,7 +107,7 @@ public final class ComponentTreeBuilder {
                 for (int i = at; i < end; i++) {
                     activate(order[i].intValue());
                 }
-                snapshotLevel(level);
+                snapshotLevel(level, at, end);
                 at = end;
             }
         }
@@ -128,6 +130,9 @@ public final class ComponentTreeBuilder {
         private void activate(int index) {
             active[index] = true;
             parent[index] = index;
+            currentNode[index] = -1;
+            touchedAtLevel[index] = true;
+            pendingChildren[index] = new IntList();
             int z = index / plane;
             int rem = index - z * plane;
             int y = rem / width;
@@ -200,35 +205,59 @@ public final class ComponentTreeBuilder {
             int rootA = find(a);
             int rootB = find(b);
             if (rootA == rootB) return;
+            IntList childrenA = lineageAtCurrentLevel(rootA);
+            IntList childrenB = lineageAtCurrentLevel(rootB);
+            IntList mergedChildren = IntList.merge(childrenA, childrenB);
             if (rank[rootA] < rank[rootB]) {
                 parent[rootA] = rootB;
                 attrs.merge(rootB, rootA);
+                adoptUnionState(rootB, rootA, mergedChildren);
             } else if (rank[rootA] > rank[rootB]) {
                 parent[rootB] = rootA;
                 attrs.merge(rootA, rootB);
+                adoptUnionState(rootA, rootB, mergedChildren);
             } else {
                 parent[rootB] = rootA;
                 rank[rootA]++;
                 attrs.merge(rootA, rootB);
+                adoptUnionState(rootA, rootB, mergedChildren);
             }
         }
 
-        private void snapshotLevel(float level) {
+        private IntList lineageAtCurrentLevel(int root) {
+            if (touchedAtLevel[root]) {
+                IntList children = pendingChildren[root];
+                return children == null ? new IntList() : children;
+            }
+            IntList children = new IntList();
+            if (currentNode[root] >= 0) {
+                children.add(currentNode[root]);
+            }
+            return children;
+        }
+
+        private void adoptUnionState(int into, int from, IntList children) {
+            touchedAtLevel[into] = true;
+            pendingChildren[into] = children;
+            currentNode[into] = -1;
+            touchedAtLevel[from] = false;
+            pendingChildren[from] = null;
+            currentNode[from] = -1;
+        }
+
+        private void snapshotLevel(float level, int start, int end) {
             Map<Integer, IntList> voxelsByRoot = new HashMap<Integer, IntList>();
-            for (int i = 0; i < active.length; i++) {
-                if (!active[i]) continue;
-                int root = find(i);
+            for (int at = start; at < end; at++) {
+                int voxel = order[at].intValue();
+                int root = find(voxel);
                 IntList voxels = voxelsByRoot.get(Integer.valueOf(root));
                 if (voxels == null) {
                     voxels = new IntList();
                     voxelsByRoot.put(Integer.valueOf(root), voxels);
                 }
-                voxels.add(i);
+                voxels.add(voxel);
             }
 
-            Map<Integer, Integer> rootNode = new HashMap<Integer, Integer>();
-            int[] ids = new int[voxelsByRoot.size()];
-            int at = 0;
             for (Map.Entry<Integer, IntList> entry : voxelsByRoot.entrySet()) {
                 int root = entry.getKey().intValue();
                 int[] voxels = entry.getValue().toArray();
@@ -255,24 +284,22 @@ public final class ComponentTreeBuilder {
                         attrs.yzSum[root],
                         voxels);
                 nodes.add(node);
-                rootNode.put(Integer.valueOf(root), Integer.valueOf(node.id));
-                ids[at++] = node.id;
-            }
-
-            for (Map.Entry<Integer, Integer> entry : previousRootNode.entrySet()) {
-                int previousNodeId = entry.getValue().intValue();
-                ComponentTree.NodeData previousNode = nodes.get(previousNodeId);
-                int currentRoot = find(previousNode.voxels[0]);
-                Integer parentNodeId = rootNode.get(Integer.valueOf(currentRoot));
-                if (parentNodeId != null && parentNodeId.intValue() != previousNodeId) {
-                    previousNode.parentId = parentNodeId.intValue();
-                    nodes.get(parentNodeId.intValue()).childIds.add(Integer.valueOf(previousNodeId));
+                IntList children = pendingChildren[root];
+                if (children != null) {
+                    int[] childIds = children.toArray();
+                    Arrays.sort(childIds);
+                    for (int i = 0; i < childIds.length; i++) {
+                        int childId = childIds[i];
+                        if (childId < 0 || childId >= node.id) continue;
+                        ComponentTree.NodeData child = nodes.get(childId);
+                        child.parentId = node.id;
+                        node.childIds.add(Integer.valueOf(childId));
+                    }
                 }
+                currentNode[root] = node.id;
+                touchedAtLevel[root] = false;
+                pendingChildren[root] = null;
             }
-
-            levels.add(Float.valueOf(level));
-            nodeIdsByLevel.add(ids);
-            previousRootNode = rootNode;
         }
     }
 
@@ -377,6 +404,20 @@ public final class ComponentTreeBuilder {
 
         int[] toArray() {
             return Arrays.copyOf(values, size);
+        }
+
+        static IntList merge(IntList a, IntList b) {
+            IntList left = a == null ? new IntList() : a;
+            IntList right = b == null ? new IntList() : b;
+            if (left.size < right.size) {
+                IntList swap = left;
+                left = right;
+                right = swap;
+            }
+            for (int i = 0; i < right.size; i++) {
+                left.add(right.values[i]);
+            }
+            return left;
         }
     }
 }

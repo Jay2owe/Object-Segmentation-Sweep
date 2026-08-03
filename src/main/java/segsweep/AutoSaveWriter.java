@@ -11,6 +11,7 @@ package segsweep;
 import ij.ImagePlus;
 import ij.io.FileSaver;
 import ij.measure.ResultsTable;
+import ij.process.ImageProcessor;
 import segsweep.sweep.ParameterId;
 import segsweep.sweep.VariationResult;
 import segsweep.tree.LazyLabelMap;
@@ -19,6 +20,7 @@ import javax.imageio.ImageIO;
 import java.awt.Color;
 import java.awt.Font;
 import java.awt.Graphics2D;
+import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.File;
@@ -44,6 +46,17 @@ public final class AutoSaveWriter {
             parent = new File(".").getAbsoluteFile();
         }
         File outputDir = uniqueDirectory(new File(parent, OUTPUT_FOLDER));
+        writeToDirectory(outputDir, inputFile, result);
+        return outputDir;
+    }
+
+    /** Writes to an explicitly requested directory, versioning it rather than overwriting. */
+    public static File writeTo(File desiredOutputDir, File inputFile,
+                               SegSweepResult result) throws IOException {
+        if (desiredOutputDir == null) {
+            throw new IllegalArgumentException("desiredOutputDir must not be null.");
+        }
+        File outputDir = uniqueDirectory(desiredOutputDir);
         writeToDirectory(outputDir, inputFile, result);
         return outputDir;
     }
@@ -134,7 +147,6 @@ public final class AutoSaveWriter {
     private static void writePickedLabels(File file, SegSweepResult result) throws IOException {
         LazyLabelMap labelMap = result.pickedLabelMap();
         if (labelMap == null) {
-            writeText(file, "");
             return;
         }
         ImagePlus labels = labelMap.get();
@@ -159,8 +171,8 @@ public final class AutoSaveWriter {
         List<VariationResult> rows = result.results();
         int count = Math.max(1, rows.size());
         int cols = (int) Math.ceil(Math.sqrt(count));
-        int cellW = 180;
-        int cellH = 96;
+        int cellW = 220;
+        int cellH = 210;
         int rowsCount = (int) Math.ceil(count / (double) cols);
         BufferedImage image = new BufferedImage(cols * cellW, rowsCount * cellH,
                 BufferedImage.TYPE_INT_RGB);
@@ -180,12 +192,25 @@ public final class AutoSaveWriter {
                 g.drawRect(x + 5, y + 5, cellW - 12, cellH - 12);
                 if (i < rows.size()) {
                     VariationResult row = rows.get(i);
+                    BufferedImage preview = renderPreview(result, row);
+                    if (preview != null) {
+                        int availableW = cellW - 16;
+                        int availableH = cellH - 58;
+                        double scale = Math.min(availableW / (double) preview.getWidth(),
+                                availableH / (double) preview.getHeight());
+                        int drawW = Math.max(1, (int) Math.round(preview.getWidth() * scale));
+                        int drawH = Math.max(1, (int) Math.round(preview.getHeight() * scale));
+                        int drawX = x + (cellW - drawW) / 2;
+                        int drawY = y + 8 + (availableH - drawH) / 2;
+                        g.drawImage(preview, drawX, drawY, drawW, drawH, null);
+                    }
                     g.setColor(Color.WHITE);
-                    g.drawString("Combination " + (i + 1), x + 14, y + 26);
-                    g.drawString("Objects: " + row.objectCount(), x + 14, y + 46);
+                    g.drawString("Combination " + (i + 1), x + 14, y + cellH - 38);
+                    g.drawString("Objects: " + row.objectCount(), x + 14, y + cellH - 20);
                     Object threshold = row.combo().get(ParameterId.THRESHOLD);
-                    g.drawString("Threshold: " + (threshold == null ? "" : threshold),
-                            x + 14, y + 66);
+                    if (threshold != null) {
+                        g.drawString("Threshold: " + threshold, x + 108, y + cellH - 20);
+                    }
                 }
             }
         } finally {
@@ -194,6 +219,75 @@ public final class AutoSaveWriter {
         if (!ImageIO.write(image, "png", file)) {
             throw new IOException("No PNG writer was available for " + file.getAbsolutePath());
         }
+    }
+
+    private static BufferedImage renderPreview(SegSweepResult result, VariationResult row) {
+        if (result == null || result.parameters() == null || row == null) return null;
+        ImagePlus source = result.parameters().image();
+        if (source == null || source.getStack() == null || source.getStackSize() < 1) return null;
+        Rectangle crop = result.parameters().crop().boundsFor(source);
+        int width = crop.width;
+        int height = crop.height;
+        if (width <= 0 || height <= 0) return null;
+        int slices = Math.max(1, source.getNSlices());
+        int z = Math.max(1, (slices + 1) / 2);
+        int channel = Math.max(1, Math.min(result.parameters().channel(),
+                Math.max(1, source.getNChannels())));
+        int stackIndex;
+        try {
+            stackIndex = source.getStackIndex(channel, z, 1);
+        } catch (RuntimeException e) {
+            stackIndex = Math.min(source.getStackSize(), z);
+        }
+        ImageProcessor processor = source.getStack().getProcessor(stackIndex);
+        if (processor == null) return null;
+
+        double min = Double.POSITIVE_INFINITY;
+        double max = Double.NEGATIVE_INFINITY;
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                float value = processor.getf(crop.x + x, crop.y + y);
+                if (Float.isFinite(value)) {
+                    min = Math.min(min, value);
+                    max = Math.max(max, value);
+                }
+            }
+        }
+        if (!Double.isFinite(min) || !Double.isFinite(max)) {
+            min = 0.0d;
+            max = 1.0d;
+        } else if (max <= min) {
+            max = min + 1.0d;
+        }
+
+        java.util.BitSet foreground = new java.util.BitSet(width * height);
+        int plane = width * height;
+        int[] voxels = row.iouSource().foregroundVoxelIndices();
+        for (int i = 0; i < voxels.length; i++) {
+            int voxelZ = voxels[i] / plane;
+            if (voxelZ == z - 1) {
+                foreground.set(voxels[i] - voxelZ * plane);
+            }
+        }
+
+        BufferedImage preview = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                float value = processor.getf(crop.x + x, crop.y + y);
+                double scaled = Float.isFinite(value) ? (value - min) / (max - min) : 0.0d;
+                int gray = (int) Math.round(Math.max(0.0d, Math.min(1.0d, scaled)) * 255.0d);
+                int red = gray;
+                int green = gray;
+                int blue = gray;
+                if (foreground.get(y * width + x)) {
+                    red = (int) Math.round(gray * 0.35d + 0x4D * 0.65d);
+                    green = (int) Math.round(gray * 0.35d + 0xC3 * 0.65d);
+                    blue = (int) Math.round(gray * 0.35d + 0xB2 * 0.65d);
+                }
+                preview.setRGB(x, y, (red << 16) | (green << 8) | blue);
+            }
+        }
+        return preview;
     }
 
     private static void writeText(File file, String text) throws IOException {
