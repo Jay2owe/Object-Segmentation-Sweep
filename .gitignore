@@ -1,0 +1,25 @@
+# Build output
+target/
+tools-build/
+.mvn/wrapper/maven-dist/
+
+# IDE
+.idea/
+*.iml
+.project
+.classpath
+.settings/
+
+# Temp files
+*.tmp.*
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local audit and non-public development material
+PUBLISHING_AUDIT.md
+docs/
+tools/
+src/test/
