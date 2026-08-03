@@ -9,12 +9,221 @@
 package segsweep;
 
 import ij.IJ;
+import ij.ImagePlus;
+import ij.Macro;
+import ij.WindowManager;
 import ij.plugin.PlugIn;
+import ij.plugin.frame.Recorder;
+import segsweep.sweep.ParameterCombo;
+import segsweep.sweep.ParameterId;
+import segsweep.sweep.ParameterValueList;
+import segsweep.sweep.ParameterSweep;
+import segsweep.sweep.VariationResult;
+import segsweep.token.SegmentationMethod;
+import segsweep.token.SettingsTokenWriter;
+import segsweep.ui.SegSweepDialog;
+import segsweep.ui.grid.VariationGridWindow;
+
+import java.awt.GraphicsEnvironment;
+import java.io.File;
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
 public class SegSweep_ implements PlugIn {
+    public static final String COMMAND_NAME = "Object Segmentation Sweep";
+
     @Override
     public void run(String arg) {
-        IJ.showMessage("Object Segmentation Sweep",
-                "Under construction. See docs/segsweep-build/.");
+        String macroOptions = Macro.getOptions();
+        if (!hasText(macroOptions) && hasText(arg)) {
+            macroOptions = arg;
+        }
+        if (hasText(macroOptions) || GraphicsEnvironment.isHeadless()) {
+            runFromMacro(macroOptions);
+            return;
+        }
+        runInteractive();
+    }
+
+    SegSweepResult runFromMacro(String optionsText) {
+        if (!hasText(optionsText)) {
+            reportError("Object Segmentation Sweep macro/headless execution requires explicit macro options.");
+            return null;
+        }
+        try {
+            SegSweepMacroOptions options = SegSweepMacroOptionsParser.parse(optionsText);
+            ImagePlus image = resolveImage(options.image());
+            if (image == null) {
+                throw new IllegalArgumentException("No source image was found. Provide image=[path or title] or open an image.");
+            }
+            SegSweepResult result = SegSweep.run(options.toParameters(image));
+            showMacroResult(result, options, image);
+            return result;
+        } catch (Exception ex) {
+            reportError(ex.getMessage());
+            return null;
+        }
+    }
+
+    private void runInteractive() {
+        ImagePlus active = WindowManager.getCurrentImage();
+        SegSweepDialog dialog = new SegSweepDialog(active);
+        SegSweepMacroOptions options = dialog.showDialog();
+        if (options == null) {
+            return;
+        }
+        ImagePlus image = resolveImage(options.image());
+        if (image == null) {
+            IJ.error(COMMAND_NAME, "No source image was found.");
+            return;
+        }
+        recordMacroCall(options);
+        final SegSweepMacroOptions runOptions = options;
+        final ImagePlus runImage = image;
+        new Thread(new Runnable() {
+            @Override public void run() {
+                try {
+                    IJ.showStatus(COMMAND_NAME + ": running sweep...");
+                    SegSweepResult result = SegSweep.run(runOptions.toParameters(runImage));
+                    showMacroResult(result, runOptions, runImage);
+                    IJ.showStatus(COMMAND_NAME + ": done.");
+                } catch (Exception ex) {
+                    reportError(ex.getMessage());
+                }
+            }
+        }, "SegSweep-Analysis").start();
+    }
+
+    private void showMacroResult(final SegSweepResult result,
+                                 SegSweepMacroOptions options,
+                                 ImagePlus image) {
+        boolean display = !GraphicsEnvironment.isHeadless()
+                && options != null && !options.hideDisplay();
+        if (!display) {
+            logWarnings(result);
+            return;
+        }
+        if (result.sweepTable() != null) {
+            result.sweepTable().show("Sweep Results");
+        }
+        if (result.pickTable() != null && result.pickTable().size() > 0) {
+            result.pickTable().show("Sweep Pick");
+        }
+        final VariationGridWindow grid = new VariationGridWindow(null, COMMAND_NAME,
+                displayWindow(result), image);
+        List<VariationResult> results = result.results();
+        for (int i = 0; i < results.size(); i++) {
+            grid.setResult(results.get(i));
+        }
+        grid.setCompletedCount(results.size(), results.size(), 0);
+        grid.setPickResult(result.pick());
+        String warnings = SegSweepDialog.warningsStatusText(result);
+        if (warnings.length() > 0) {
+            grid.setActionStatus(warnings);
+        }
+        grid.attachPickSelectedActionListener(new java.awt.event.ActionListener() {
+            @Override public void actionPerformed(java.awt.event.ActionEvent e) {
+                ParameterCombo selected = grid.selectedCombo();
+                IJ.log(COMMAND_NAME + ": picked "
+                        + (selected == null ? result.pickedCombo() : selected));
+                IJ.log(settingsTokenForSelected(result,
+                        selected == null ? result.pickedCombo() : selected));
+            }
+        });
+        grid.setVisible(true);
+    }
+
+    private static ParameterSweep displayWindow(SegSweepResult result) {
+        Map<ParameterId, ParameterValueList> values =
+                new LinkedHashMap<ParameterId, ParameterValueList>(result.parameters().axes());
+        return new ParameterSweep(ParameterSweep.Method.CLASSICAL, values,
+                result.parameters().crop(), "C" + result.parameters().channel());
+    }
+
+    static String settingsTokenForSelected(SegSweepResult result, ParameterCombo selected) {
+        ParameterCombo combo = selected == null ? null : selected;
+        SegmentationMethod method = combo == null
+                ? SegmentationMethod.classical("classical")
+                : SegmentationMethod.classical(
+                intValue(combo.get(ParameterId.THRESHOLD), 0),
+                intValue(combo.get(ParameterId.MIN_SIZE), 0),
+                intValue(combo.get(ParameterId.MAX_SIZE), Integer.MAX_VALUE));
+        SettingsTokenWriter.PickSummary summary = SettingsTokenWriter.PickSummary.of(
+                "manual",
+                "",
+                "",
+                "manual grid pick");
+        return SettingsTokenWriter.write(method, result.provenance(), summary, Instant.EPOCH);
+    }
+
+    private static int intValue(Object value, int fallback) {
+        if (value instanceof Number) {
+            double parsed = ((Number) value).doubleValue();
+            if (Double.isFinite(parsed)) {
+                return (int) Math.round(parsed);
+            }
+        }
+        return fallback;
+    }
+
+    private ImagePlus resolveImage(String imageOption) {
+        if (hasText(imageOption)) {
+            String value = imageOption.trim();
+            File file = new File(value);
+            if (file.exists()) {
+                ImagePlus image = IJ.openImage(file.getAbsolutePath());
+                if (image == null) {
+                    throw new IllegalArgumentException("Could not open image: " + value);
+                }
+                return image;
+            }
+            ImagePlus byTitle = WindowManager.getImage(value);
+            if (byTitle != null) {
+                return byTitle;
+            }
+            ImagePlus opened = IJ.openImage(value);
+            if (opened != null) {
+                return opened;
+            }
+            throw new IllegalArgumentException("Open image or file not found: " + value);
+        }
+        return WindowManager.getCurrentImage();
+    }
+
+    private void recordMacroCall(SegSweepMacroOptions options) {
+        if (!Recorder.record || options == null) {
+            return;
+        }
+        try {
+            Recorder.recordString("run(\"" + COMMAND_NAME + "\", \""
+                    + options.toMacroOptions() + "\");\n");
+        } catch (IllegalArgumentException ex) {
+            IJ.log(COMMAND_NAME + ": Could not record macro options: " + ex.getMessage());
+        }
+    }
+
+    private static void logWarnings(SegSweepResult result) {
+        if (result == null || result.warnings().isEmpty()) {
+            return;
+        }
+        for (int i = 0; i < result.warnings().size(); i++) {
+            IJ.log(COMMAND_NAME + " warning: " + result.warnings().get(i));
+        }
+    }
+
+    private void reportError(String message) {
+        String text = hasText(message) ? message : "Unknown Object Segmentation Sweep error.";
+        if (GraphicsEnvironment.isHeadless()) {
+            IJ.log(COMMAND_NAME.toUpperCase(Locale.ROOT) + " ERROR: " + text);
+        } else {
+            IJ.error(COMMAND_NAME, text);
+        }
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && value.trim().length() > 0;
     }
 }
