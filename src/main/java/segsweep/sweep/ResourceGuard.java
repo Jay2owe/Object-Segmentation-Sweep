@@ -1,0 +1,282 @@
+/*
+ * Copyright (c) 2026 Jamie Malcolm
+ *
+ * Developed at the Brancaccio Lab, UK Dementia Research Institute,
+ * Imperial College London.
+ *
+ * Released under the BSD 3-Clause License. See LICENSE for terms.
+ */
+package segsweep.sweep;
+
+import ij.ImagePlus;
+
+import java.awt.Rectangle;
+
+public final class ResourceGuard {
+
+    private static final double DEFAULT_AVAILABLE_FRACTION = 0.5d;
+    private static final long UNION_FIND_BYTES_PER_VOXEL = 13L;
+    private static final long TREE_NODE_BYTES_PER_VOXEL = 64L;
+    private static final long TREE_CHILD_BYTES_PER_VOXEL = 8L;
+    private static final long ATTRIBUTE_BYTES_PER_NODE = 160L;
+    private static final long LABEL_MAP_BYTES_PER_VOXEL = 2L;
+
+    private ResourceGuard() {
+    }
+
+    public static Feasibility assessFeasibility(ParameterSweep sweep, ImagePlus source) {
+        if (sweep == null) {
+            return Feasibility.refused(null, availableBytes(),
+                    "No parameter sweep was provided.");
+        }
+        if (source == null) {
+            return Feasibility.refused(null, availableBytes(),
+                    "No source image was provided.");
+        }
+        Rectangle crop = sweep.cropSpec().boundsFor(source);
+        Estimate estimate = estimateTreeMemory(source, crop);
+        long available = availableBytes();
+        return decide(estimate, available, (long) Math.floor(available * DEFAULT_AVAILABLE_FRACTION));
+    }
+
+    public static Decision checkTreeMemory(ImagePlus source, CropSpec cropSpec, long maxBytes) {
+        if (source == null) {
+            return Decision.refused(null, "No source image was provided.");
+        }
+        CropSpec safeCrop = cropSpec == null ? CropSpec.full() : cropSpec;
+        Estimate estimate = estimateTreeMemory(source, safeCrop.boundsFor(source));
+        if (estimate.totalBytes() > maxBytes) {
+            return Decision.refused(estimate, refusalMessage(estimate, maxBytes));
+        }
+        return Decision.permitted(estimate);
+    }
+
+    public static Estimate estimateTreeMemory(ImagePlus source, Rectangle cropBounds) {
+        if (source == null) {
+            throw new IllegalArgumentException("source must not be null");
+        }
+        if (cropBounds == null) {
+            throw new IllegalArgumentException("cropBounds must not be null");
+        }
+        int depth = stackDepth(source);
+        return estimateTreeMemory(cropBounds.width, cropBounds.height, depth, source.getBitDepth());
+    }
+
+    public static Estimate estimateTreeMemory(int width, int height, int depth, int bitDepth) {
+        long cropVoxels = multiply(multiply(Math.max(0, width), Math.max(0, height)), Math.max(0, depth));
+        long sourceBytes = multiply(cropVoxels, bytesPerSourceVoxel(bitDepth));
+        long unionFindBytes = multiply(cropVoxels, UNION_FIND_BYTES_PER_VOXEL);
+        long nodeArrayBytes = multiply(cropVoxels, TREE_NODE_BYTES_PER_VOXEL);
+        long childArrayBytes = multiply(cropVoxels, TREE_CHILD_BYTES_PER_VOXEL);
+        long attributeBytes = multiply(cropVoxels, ATTRIBUTE_BYTES_PER_NODE);
+        long oneLazyLabelMapBytes = multiply(cropVoxels, LABEL_MAP_BYTES_PER_VOXEL);
+        long treeBytes = saturatingAdd(saturatingAdd(unionFindBytes, nodeArrayBytes), childArrayBytes);
+        long totalBytes = saturatingAdd(sourceBytes,
+                saturatingAdd(treeBytes, saturatingAdd(attributeBytes, oneLazyLabelMapBytes)));
+        return new Estimate(cropVoxels, sourceBytes, unionFindBytes, nodeArrayBytes,
+                childArrayBytes, attributeBytes, oneLazyLabelMapBytes, totalBytes);
+    }
+
+    private static Feasibility decide(Estimate estimate, long available, long budget) {
+        if (estimate.totalBytes() > budget) {
+            return new Feasibility(false, estimate, available, refusalMessage(estimate, budget));
+        }
+        return new Feasibility(true, estimate, available,
+                "This component-tree sweep fits the current memory budget.");
+    }
+
+    private static String refusalMessage(Estimate estimate, long limit) {
+        long estimatedBytes = estimate == null ? 0L : estimate.totalBytes();
+        return "Estimated component-tree memory is ~" + formatGb(estimatedBytes)
+                + " GB (" + estimatedBytes + " bytes), above the limit of ~"
+                + formatGb(limit) + " GB (" + limit
+                + " bytes). Crop tighter before building the tree.";
+    }
+
+    private static long availableBytes() {
+        long maxMem = Runtime.getRuntime().maxMemory();
+        long usedMem = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+        return Math.max(0L, maxMem - usedMem);
+    }
+
+    private static int stackDepth(ImagePlus source) {
+        int slices = Math.max(1, source.getNSlices());
+        int frames = Math.max(1, source.getNFrames());
+        int channels = Math.max(1, source.getNChannels());
+        int stackSize = Math.max(1, source.getStackSize());
+        int channelAware = Math.max(1, slices * frames);
+        if (channels > 1 && channelAware <= stackSize) {
+            return channelAware;
+        }
+        return stackSize;
+    }
+
+    private static long bytesPerSourceVoxel(int bitDepth) {
+        if (bitDepth <= 8) return 1L;
+        if (bitDepth <= 16) return 2L;
+        return 4L;
+    }
+
+    private static long multiply(long a, long b) {
+        if (a == 0L || b == 0L) return 0L;
+        if (a > Long.MAX_VALUE / b) return Long.MAX_VALUE;
+        return a * b;
+    }
+
+    private static long saturatingAdd(long a, long b) {
+        if (Long.MAX_VALUE - a < b) return Long.MAX_VALUE;
+        return a + b;
+    }
+
+    private static String formatGb(long bytes) {
+        double gb = bytes / (1024.0d * 1024.0d * 1024.0d);
+        return String.format(java.util.Locale.ROOT, "%.1f", Double.valueOf(gb));
+    }
+
+    public static final class Estimate {
+        private final long cropVoxels;
+        private final long sourceBytes;
+        private final long unionFindBytes;
+        private final long nodeArrayBytes;
+        private final long childArrayBytes;
+        private final long attributeBytes;
+        private final long oneLazyLabelMapBytes;
+        private final long totalBytes;
+
+        private Estimate(long cropVoxels,
+                         long sourceBytes,
+                         long unionFindBytes,
+                         long nodeArrayBytes,
+                         long childArrayBytes,
+                         long attributeBytes,
+                         long oneLazyLabelMapBytes,
+                         long totalBytes) {
+            this.cropVoxels = cropVoxels;
+            this.sourceBytes = sourceBytes;
+            this.unionFindBytes = unionFindBytes;
+            this.nodeArrayBytes = nodeArrayBytes;
+            this.childArrayBytes = childArrayBytes;
+            this.attributeBytes = attributeBytes;
+            this.oneLazyLabelMapBytes = oneLazyLabelMapBytes;
+            this.totalBytes = totalBytes;
+        }
+
+        public long cropVoxels() {
+            return cropVoxels;
+        }
+
+        public long sourceBytes() {
+            return sourceBytes;
+        }
+
+        public long unionFindBytes() {
+            return unionFindBytes;
+        }
+
+        public long nodeArrayBytes() {
+            return nodeArrayBytes;
+        }
+
+        public long childArrayBytes() {
+            return childArrayBytes;
+        }
+
+        public long treeBytes() {
+            return saturatingAdd(saturatingAdd(unionFindBytes, nodeArrayBytes), childArrayBytes);
+        }
+
+        public long attributeBytes() {
+            return attributeBytes;
+        }
+
+        public long oneLazyLabelMapBytes() {
+            return oneLazyLabelMapBytes;
+        }
+
+        public long totalBytes() {
+            return totalBytes;
+        }
+    }
+
+    public static final class Feasibility {
+        public final boolean ok;
+        public final long estimatedBytes;
+        public final long availableBytes;
+        public final String message;
+        private final Estimate estimate;
+
+        private Feasibility(boolean ok, Estimate estimate, long availableBytes, String message) {
+            this.ok = ok;
+            this.estimate = estimate;
+            this.estimatedBytes = estimate == null ? 0L : estimate.totalBytes();
+            this.availableBytes = availableBytes;
+            this.message = message == null ? "" : message;
+        }
+
+        private static Feasibility refused(Estimate estimate, long availableBytes, String message) {
+            return new Feasibility(false, estimate, availableBytes, message);
+        }
+
+        public boolean isOk() {
+            return ok;
+        }
+
+        public long getEstimatedBytes() {
+            return estimatedBytes;
+        }
+
+        public long getAvailableBytes() {
+            return availableBytes;
+        }
+
+        public String getMessage() {
+            return message;
+        }
+
+        public Estimate estimate() {
+            return estimate;
+        }
+    }
+
+    public static final class Decision {
+        public enum Status { PERMITTED, REFUSED }
+
+        private final Status status;
+        private final String reason;
+        private final Estimate estimate;
+
+        private Decision(Status status, String reason, Estimate estimate) {
+            this.status = status;
+            this.reason = reason == null ? "" : reason;
+            this.estimate = estimate;
+        }
+
+        static Decision permitted(Estimate estimate) {
+            return new Decision(Status.PERMITTED, "", estimate);
+        }
+
+        static Decision refused(Estimate estimate, String reason) {
+            return new Decision(Status.REFUSED, reason, estimate);
+        }
+
+        public Status status() {
+            return status;
+        }
+
+        public boolean permitted() {
+            return status == Status.PERMITTED;
+        }
+
+        public boolean refused() {
+            return status == Status.REFUSED;
+        }
+
+        public String reason() {
+            return reason;
+        }
+
+        public Estimate estimate() {
+            return estimate;
+        }
+    }
+}

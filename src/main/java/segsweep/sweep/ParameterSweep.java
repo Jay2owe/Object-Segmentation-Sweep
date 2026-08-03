@@ -67,15 +67,23 @@ public final class ParameterSweep {
 
     private final Method method;
     private final Map<ParameterKey, ParameterValueList> valueLists;
+    private final CropSpec cropSpec;
     private final String channelName;
 
     public ParameterSweep(Method method,
                           Map<? extends ParameterKey, ParameterValueList> valueLists) {
-        this(method, valueLists, "");
+        this(method, valueLists, CropSpec.full(), "");
     }
 
     public ParameterSweep(Method method,
                           Map<? extends ParameterKey, ParameterValueList> valueLists,
+                          String channelName) {
+        this(method, valueLists, CropSpec.full(), channelName);
+    }
+
+    public ParameterSweep(Method method,
+                          Map<? extends ParameterKey, ParameterValueList> valueLists,
+                          CropSpec cropSpec,
                           String channelName) {
         if (method == null) {
             throw new IllegalArgumentException("method must not be null");
@@ -85,6 +93,7 @@ public final class ParameterSweep {
         }
         this.method = method;
         this.valueLists = Collections.unmodifiableMap(copyInKeyOrder(valueLists));
+        this.cropSpec = cropSpec == null ? CropSpec.full() : cropSpec;
         this.channelName = channelName == null ? "" : channelName;
     }
 
@@ -102,6 +111,14 @@ public final class ParameterSweep {
 
     public Map<ParameterKey, ParameterValueList> getValueLists() {
         return valueLists;
+    }
+
+    public CropSpec cropSpec() {
+        return cropSpec;
+    }
+
+    public CropSpec getCropSpec() {
+        return cropSpec;
     }
 
     public String channelName() {
@@ -167,6 +184,7 @@ public final class ParameterSweep {
     public String toCanonicalJson() {
         LinkedHashMap<String, Object> root = new LinkedHashMap<String, Object>();
         root.put("channelName", channelName);
+        root.put("crop", cropSpec.toCanonicalObject());
         root.put("method", method.stableKey());
         root.put("valueRole", valueRole().stableKey());
         LinkedHashMap<String, Object> values = new LinkedHashMap<String, Object>();
