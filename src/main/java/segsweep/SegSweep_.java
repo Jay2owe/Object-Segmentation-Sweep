@@ -37,6 +37,10 @@ public class SegSweep_ implements PlugIn {
 
     @Override
     public void run(String arg) {
+        if (hasText(arg) && "batch".equalsIgnoreCase(arg.trim())) {
+            SegSweepBatch.showBatchDialog();
+            return;
+        }
         String macroOptions = Macro.getOptions();
         if (!hasText(macroOptions) && hasText(arg)) {
             macroOptions = arg;

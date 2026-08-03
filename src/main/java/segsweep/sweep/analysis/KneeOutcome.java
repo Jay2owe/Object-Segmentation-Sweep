@@ -109,4 +109,21 @@ public final class KneeOutcome {
     public boolean hasKnee() {
         return kind == Kind.KNEE_AT;
     }
+
+    public boolean comparable(KneeOutcome other) {
+        if (other == null) {
+            return false;
+        }
+        return kind == other.kind
+                && same(rangeMin, other.rangeMin)
+                && same(rangeMax, other.rangeMax)
+                && same(step, other.step);
+    }
+
+    private static boolean same(double a, double b) {
+        if (Double.isNaN(a) && Double.isNaN(b)) {
+            return true;
+        }
+        return Double.compare(a, b) == 0;
+    }
 }
