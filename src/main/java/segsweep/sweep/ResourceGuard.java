@@ -21,6 +21,9 @@ public final class ResourceGuard {
     private static final long ATTRIBUTE_BYTES_PER_NODE = 160L;
     private static final long LABEL_MAP_BYTES_PER_VOXEL = 2L;
     private static final long RGB_PREVIEW_BYTES_PER_PIXEL = 4L;
+    private static final long MONTAGE_CELL_BYTES = 220L * 210L * RGB_PREVIEW_BYTES_PER_PIXEL;
+    private static final long SWING_BYTES_PER_CELL = 16L * 1024L;
+    static final long MAX_DISPLAY_CELLS = 100L;
 
     private ResourceGuard() {
     }
@@ -36,10 +39,20 @@ public final class ResourceGuard {
         }
         Rectangle crop = sweep.cropSpec().boundsFor(source);
         Estimate estimate = estimateTreeMemory(source, crop);
-        long previewBytes = multiply(multiply(crop.width, crop.height),
-                multiply(sweep.cellCount(), RGB_PREVIEW_BYTES_PER_PIXEL));
+        long cropPreviewBytes = multiply(multiply(crop.width, crop.height),
+                RGB_PREVIEW_BYTES_PER_PIXEL);
+        long retainedBytesPerCell = saturatingAdd(
+                Math.max(cropPreviewBytes, MONTAGE_CELL_BYTES), SWING_BYTES_PER_CELL);
+        long previewBytes = multiply(sweep.cellCount(), retainedBytesPerCell);
         estimate = estimate.withPreviewBytes(previewBytes);
         long available = availableBytes();
+        if (sweep.cellCount() > MAX_DISPLAY_CELLS) {
+            return Feasibility.refused(estimate, available,
+                    "The display grid contains " + sweep.cellCount()
+                            + " cells, above the practical limit of "
+                            + MAX_DISPLAY_CELLS
+                            + ". Narrow the ranges or step sizes before opening the grid.");
+        }
         return decide(estimate, available, (long) Math.floor(available * DEFAULT_AVAILABLE_FRACTION));
     }
 

@@ -51,6 +51,19 @@ final class TestCombos {
         return combos;
     }
 
+    static List<ParameterCombo> twoAxis(int a, int b) {
+        List<ParameterCombo> combos = new ArrayList<ParameterCombo>();
+        for (int i = 0; i < a; i++) {
+            for (int j = 0; j < b; j++) {
+                combos.add(ParameterCombo.builder()
+                        .put(ParameterId.THRESHOLD, Integer.valueOf(i))
+                        .put(ParameterId.MIN_SIZE, Integer.valueOf(j))
+                        .build());
+            }
+        }
+        return combos;
+    }
+
     static List<Integer> ids(int... ids) {
         List<Integer> out = new ArrayList<Integer>();
         for (int i = 0; i < ids.length; i++) {

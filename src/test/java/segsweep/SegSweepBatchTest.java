@@ -85,6 +85,24 @@ public class SegSweepBatchTest {
     }
 
     @Test
+    public void recursiveScanSkipsCurrentAndVersionedGeneratedOutputFolders() throws Exception {
+        File normal = tmp.newFolder("raw");
+        File generated = tmp.newFolder("Object Segmentation Sweep");
+        File generatedTwo = tmp.newFolder("Object Segmentation Sweep 2");
+        saveImage(new File(normal, "Exp1-A01_LH_CTX.tif"));
+        saveImage(new File(generated, "Exp1-A02_LH_CTX.tif"));
+        saveImage(new File(generatedTwo, "Exp1-A03_LH_CTX.tif"));
+        Pattern pattern = Pattern.compile("Exp1-(A\\d+)_(.+)_CTX\\.tif");
+
+        Map<String, Map<String, List<File>>> groups =
+                SegSweepBatch.findGroupsRecursive(tmp.getRoot(), pattern, 1, true);
+
+        assertTrue(groups.containsKey("raw"));
+        assertFalse(groups.containsKey("Object Segmentation Sweep"));
+        assertFalse(groups.containsKey("Object Segmentation Sweep 2"));
+    }
+
+    @Test
     public void corruptImageDoesNotAbortFolderAndFailureCsvNamesIt() throws Exception {
         for (int i = 1; i <= 5; i++) {
             File file = new File(tmp.getRoot(), "Exp1-A0" + i + "_LH_CTX.tif");

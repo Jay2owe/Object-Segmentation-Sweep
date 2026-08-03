@@ -38,7 +38,7 @@ cut it to a single axis before release.**
   the grid from stage 11 and wire pick-selected back to the result.
 - `SegSweepMacroOptions` and `SegSweepMacroOptionsParser` — the full option table from
   `02_CONTRACT.md`, with `hide_display`.
-- Macro recorder integration: a recorded run replays identically.
+- Macro recorder integration: a recorded run replays with identical deterministic analysis fields.
 - Surface `SegSweepResult.warnings()` in the dialog and in the grid's status line.
 - The **"suggest range"** button, calling stage 09's `RangeSuggester`; label it as a display-range
   suggestion.
@@ -130,8 +130,10 @@ UI). Assert this; warnings that die in a return value are the same defect class 
 ## Exit gate
 
 1. `mvn test` passes.
-2. Macro round-trip: a recorded interactive run replays to a byte-identical `sweep_results.csv`.
-   Assert for a one-axis sweep, a two-axis sweep, an explicit `values` list, and a cropped sweep.
+2. Macro round-trip: a recorded interactive run replays to identical deterministic
+   `sweep_results.csv` fields. Exclude `Duration_ms` from this comparison because the contract
+   requires it to record real wall-clock time. Assert for a one-axis sweep, a two-axis sweep,
+   an explicit `values` list, and a cropped sweep.
 3. Every option in the `02_CONTRACT.md` table parses, and an unknown option produces a readable
    error rather than being ignored.
 4. `values` together with `from`/`to`/`step` is rejected with a message naming both.

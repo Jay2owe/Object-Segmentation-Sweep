@@ -190,6 +190,9 @@ public final class SegSweepClassicalStrategy implements VariationStrategy {
         EnumSet<VariationResult.Flag> flags = EnumSet.noneOf(VariationResult.Flag.class);
         if (treeResult.status() == ComponentTreeResult.Status.TOO_MANY_LABELS) {
             flags.add(VariationResult.Flag.TOO_MANY_LABELS);
+            return VariationResult.failure(combo,
+                    new IllegalStateException(treeResult.reason()), provenance,
+                    flags, treeResult.objectCount());
         }
         return VariationResult.success(combo, treeResult.labelMap(),
                 treeResult.objectCount(), durationMs, null, provenance, flags,

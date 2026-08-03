@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeSet;
 import java.util.function.BooleanSupplier;
+import java.util.function.LongSupplier;
 
 /**
  * Scores parameter combinations by mean agreement with their lattice neighbours.
@@ -52,6 +53,25 @@ public final class IouStability {
     public static StabilityOutcome score(List<ParameterCombo> combos,
                                          List<IouSource> sources,
                                          BooleanSupplier cancelCheck) {
+        return score(combos, sources, cancelCheck, 0L);
+    }
+
+    public static StabilityOutcome score(List<ParameterCombo> combos,
+                                         List<IouSource> sources,
+                                         BooleanSupplier cancelCheck,
+                                         long budgetMs) {
+        return score(combos, sources, cancelCheck, budgetMs, new LongSupplier() {
+            @Override public long getAsLong() {
+                return System.nanoTime();
+            }
+        });
+    }
+
+    static StabilityOutcome score(List<ParameterCombo> combos,
+                                  List<IouSource> sources,
+                                  BooleanSupplier cancelCheck,
+                                  long budgetMs,
+                                  LongSupplier clock) {
         if (combos == null || sources == null || combos.size() != sources.size()
                 || combos.size() < 3) {
             return StabilityOutcome.of(StabilityOutcome.Kind.NO_ELIGIBLE_COMBINATIONS,
@@ -77,11 +97,25 @@ public final class IouStability {
         int eligibleCount = 0;
         int bestIndex = -1;
         double bestMean = Double.NEGATIVE_INFINITY;
+        LongSupplier safeClock = clock == null ? new LongSupplier() {
+            @Override public long getAsLong() {
+                return System.nanoTime();
+            }
+        } : clock;
+        long started = safeClock.getAsLong();
+        long budgetNanos = budgetMs <= 0L ? 0L
+                : budgetMs > Long.MAX_VALUE / 1000000L
+                ? Long.MAX_VALUE : budgetMs * 1000000L;
         for (int i = 0; i < combos.size(); i++) {
             if (cancelCheck != null && cancelCheck.getAsBoolean()) {
                 return StabilityOutcome.of(StabilityOutcome.Kind.ABORTED,
                         eligibleCount, eligible, means,
                         "Stability scoring was cancelled.");
+            }
+            if (budgetExceeded(started, budgetNanos, safeClock)) {
+                return StabilityOutcome.of(StabilityOutcome.Kind.ABORTED,
+                        eligibleCount, eligible, means,
+                        "Stability scoring exceeded its " + budgetMs + " ms budget.");
             }
             List<Integer> neighbours = topology.fullNeighboursOf(i);
             if (neighbours.isEmpty()) {
@@ -97,6 +131,11 @@ public final class IouStability {
             int compared = 0;
             boolean countGateFailed = false;
             for (int n = 0; n < neighbours.size(); n++) {
+                if (budgetExceeded(started, budgetNanos, safeClock)) {
+                    return StabilityOutcome.of(StabilityOutcome.Kind.ABORTED,
+                            eligibleCount, eligible, means,
+                            "Stability scoring exceeded its " + budgetMs + " ms budget.");
+                }
                 int neighbourIndex = neighbours.get(n).intValue();
                 IouSource neighbour = sources.get(neighbourIndex);
                 if (neighbour == null || neighbour.objectCount() <= 0) {
@@ -138,6 +177,12 @@ public final class IouStability {
         return StabilityOutcome.stableAt(bestIndex, bestMean, eligibleCount,
                 eligible, means,
                 "Highest mean object-membership IoU among eligible combinations.");
+    }
+
+    private static boolean budgetExceeded(long started,
+                                          long budgetNanos,
+                                          LongSupplier clock) {
+        return budgetNanos > 0L && clock.getAsLong() - started >= budgetNanos;
     }
 
     public static double meanNeighbourCountRatio(List<ParameterCombo> combos,
@@ -418,50 +463,23 @@ public final class IouStability {
             if (index < 0 || index >= coordinates.length) {
                 return Collections.emptyList();
             }
-            int expected = expectedNeighbourCount();
+            int expected = 2 * axes.size();
             List<Integer> out = new ArrayList<Integer>(expected);
-            collectNeighbours(coordinates[index], new int[coordinates[index].length], 0, out);
-            return out.size() == expected ? out : Collections.<Integer>emptyList();
-        }
-
-        private int expectedNeighbourCount() {
-            int count = 1;
-            for (int i = 0; i < axes.size(); i++) {
-                count *= 3;
-            }
-            return count - 1;
-        }
-
-        private void collectNeighbours(int[] origin,
-                                       int[] offsets,
-                                       int dimension,
-                                       List<Integer> out) {
-            if (dimension >= offsets.length) {
-                boolean allZero = true;
-                int[] coordinate = new int[origin.length];
-                for (int i = 0; i < offsets.length; i++) {
-                    if (offsets[i] != 0) {
-                        allZero = false;
+            int[] origin = coordinates[index];
+            for (int axis = 0; axis < axes.size(); axis++) {
+                for (int offset = -1; offset <= 1; offset += 2) {
+                    int[] coordinate = origin.clone();
+                    coordinate[axis] += offset;
+                    if (coordinate[axis] < 0
+                            || coordinate[axis] >= axes.get(axis).values.size()) {
+                        return Collections.emptyList();
                     }
-                    int value = origin[i] + offsets[i];
-                    if (value < 0 || value >= axes.get(i).values.size()) {
-                        return;
-                    }
-                    coordinate[i] = value;
-                }
-                if (allZero) {
-                    return;
-                }
-                Integer neighbour = indexesByCoordinate.get(new Coordinate(coordinate));
-                if (neighbour != null) {
+                    Integer neighbour = indexesByCoordinate.get(new Coordinate(coordinate));
+                    if (neighbour == null) return Collections.emptyList();
                     out.add(neighbour);
                 }
-                return;
             }
-            for (int offset = -1; offset <= 1; offset++) {
-                offsets[dimension] = offset;
-                collectNeighbours(origin, offsets, dimension + 1, out);
-            }
+            return out.size() == expected ? out : Collections.<Integer>emptyList();
         }
     }
 

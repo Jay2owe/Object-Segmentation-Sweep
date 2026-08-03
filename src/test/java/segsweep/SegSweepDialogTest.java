@@ -64,6 +64,20 @@ public class SegSweepDialogTest {
     }
 
     @Test
+    public void unsupportedMorphologyAxisDoesNotReceiveSizeSuggestions() {
+        try {
+            SegSweepDialog.applySuggestedRange(
+                    SegSweepAnalysisTest.designedKneeStack(true),
+                    SegSweepMacroOptions.defaults(), ParameterId.ELONGATION);
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("not available"));
+            assertTrue(expected.getMessage().contains("Enter From, To, and Step"));
+            return;
+        }
+        throw new AssertionError("Expected an unsupported range-suggestion failure.");
+    }
+
+    @Test
     public void suggestedRangeUsesSelectedChannel() {
         ImageStack stack = new ImageStack(8, 8);
         ShortProcessor channelOne = new ShortProcessor(8, 8);

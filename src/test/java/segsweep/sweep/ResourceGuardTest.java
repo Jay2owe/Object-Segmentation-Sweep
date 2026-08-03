@@ -74,8 +74,25 @@ public class ResourceGuardTest {
                 sweep, stack("small", 64, 64, 1));
 
         assertTrue(feasibility.isOk());
-        assertEquals(16L * 16L * 5L * 4L, feasibility.estimate().previewBytes());
+        assertEquals((220L * 210L * 4L + 16L * 1024L) * 5L,
+                feasibility.estimate().previewBytes());
         assertFalse(feasibility.getMessage().contains("cell count"));
+    }
+
+    @Test
+    public void refusesMoreThanOneHundredDisplayCellsEvenForTinyCrop() {
+        Map<ParameterId, ParameterValueList> values =
+                new LinkedHashMap<ParameterId, ParameterValueList>();
+        values.put(ParameterId.THRESHOLD, ParameterValueList.fromRange(0, 100, 1));
+        ParameterSweep sweep = new ParameterSweep(ParameterSweep.Method.CLASSICAL,
+                values, CropSpec.custom(new Rectangle(0, 0, 1, 1)), "DAPI");
+
+        ResourceGuard.Feasibility feasibility = ResourceGuard.assessFeasibility(
+                sweep, stack("tiny", 2, 2, 1));
+
+        assertFalse(feasibility.isOk());
+        assertTrue(feasibility.getMessage().contains("101 cells"));
+        assertTrue(feasibility.getMessage().contains("practical limit of 100"));
     }
 
     private static ImagePlus stack(String title, int width, int height, int slices) {

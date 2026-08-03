@@ -173,8 +173,13 @@ public final class SegSweepDialog {
             throw new IllegalArgumentException("An image is required to suggest a display range.");
         }
         ParameterId safeAxis = axis == null ? ParameterId.THRESHOLD : axis;
+        if (!supportsRangeSuggestion(safeAxis)) {
+            throw new IllegalArgumentException("Automatic range suggestion is not available for "
+                    + safeAxis.displayLabel() + ". Enter From, To, and Step explicitly.");
+        }
+        SegSweepMacroOptions safeOptions = options == null ? defaults() : options;
         ImagePlus analysed = SourceImageView.selectedChannelAndCrop(
-                image, options.channel(), options.crop());
+                image, safeOptions.channel(), safeOptions.crop());
         ParameterValueList suggested;
         try {
             suggested = safeAxis == ParameterId.THRESHOLD
@@ -185,9 +190,23 @@ public final class SegSweepDialog {
             analysed.close();
             analysed.flush();
         }
-        SegSweepMacroOptions out = copyOf(options);
+        SegSweepMacroOptions out = copyOf(safeOptions);
         out.setPrimaryAxis(SegSweepMacroOptions.AxisSpec.values(safeAxis, suggested));
         return out;
+    }
+
+    static boolean supportsRangeSuggestion(ParameterId axis) {
+        return axis == ParameterId.THRESHOLD
+                || axis == ParameterId.MIN_SIZE
+                || axis == ParameterId.MAX_SIZE;
+    }
+
+    private static void updateSuggestButton(JButton button, ParameterId axis) {
+        boolean supported = supportsRangeSuggestion(axis);
+        button.setEnabled(supported);
+        button.setToolTipText(supported
+                ? "Suggest a range from the selected image and crop."
+                : "Automatic suggestion is available only for threshold, min size, and max size.");
     }
 
     public static String warningsStatusText(SegSweepResult result) {
@@ -293,12 +312,16 @@ public final class SegSweepDialog {
         });
         ActionListener refresh = new ActionListener() {
             @Override public void actionPerformed(ActionEvent e) {
+                ParameterId axis = ParameterId.fromStableKey(
+                        (String) state.axisChoice.getSelectedItem());
+                updateSuggestButton(suggest, axis);
                 state.refreshCostLine();
             }
         };
         state.axisChoice.addActionListener(refresh);
         state.axis2Choice.addActionListener(refresh);
         state.pickChoice.addActionListener(refresh);
+        updateSuggestButton(suggest, ParameterId.THRESHOLD);
         installTextRefresh(state.fromField, state);
         installTextRefresh(state.toField, state);
         installTextRefresh(state.stepField, state);
@@ -311,7 +334,8 @@ public final class SegSweepDialog {
         addHeader(content, "OUTPUT");
         state.showGrid = addToggle(content, "Show grid", true);
         state.showTables = addToggle(content, "Show results tables", true);
-        state.autosaveField = addField(content, "Save to:", "", 22);
+        state.autosaveField = addField(content, "Save to:",
+                SegSweepMacroOptions.AUTOSAVE_ALONGSIDE_INPUT, 22);
     }
 
     private static void addHeader(JPanel content, String text) {
@@ -509,8 +533,10 @@ public final class SegSweepDialog {
                 }
                 options.setCrop(CropSpec.custom(chosenImage.getRoi().getBounds()));
             }
-            if (autosaveField != null && autosaveField.getText().trim().length() > 0) {
-                options.setAutosave(autosaveField.getText());
+            if (autosaveField != null && autosaveField.getText().trim().length() > 0
+                    && !SegSweepMacroOptions.AUTOSAVE_ALONGSIDE_INPUT.equalsIgnoreCase(
+                    autosaveField.getText().trim())) {
+                options.setAutosave(autosaveField.getText().trim());
             }
             if (showGrid != null) options.setShowGrid(showGrid.isSelected());
             if (showTables != null) options.setShowTables(showTables.isSelected());

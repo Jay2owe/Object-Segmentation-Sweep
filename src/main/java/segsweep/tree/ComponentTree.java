@@ -114,7 +114,7 @@ public final class ComponentTree {
             return result(ComponentTreeResult.Status.TOO_MANY_LABELS,
                     "Selected node count " + selected.size()
                             + " exceeds the 16-bit label limit of 65535.",
-                    Collections.<ComponentNode>emptyList());
+                    Collections.<ComponentNode>emptyList(), selected.size());
         }
         if (selected.isEmpty()) {
             return result(ComponentTreeResult.Status.EMPTY,
@@ -234,8 +234,16 @@ public final class ComponentTree {
     private ComponentTreeResult result(ComponentTreeResult.Status status,
                                        String reason,
                                        List<ComponentNode> selected) {
+        return result(status, reason, selected, selected == null ? 0 : selected.size());
+    }
+
+    private ComponentTreeResult result(ComponentTreeResult.Status status,
+                                       String reason,
+                                       List<ComponentNode> selected,
+                                       int reportedObjectCount) {
         return new ComponentTreeResult(status, reason, selected,
-                new LazyLabelMap(width, height, depth, calibration, selected));
+                new LazyLabelMap(width, height, depth, calibration, selected),
+                reportedObjectCount);
     }
 
     private List<ComponentNode> nodesAtThreshold(double threshold) {

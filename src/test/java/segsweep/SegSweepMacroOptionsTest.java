@@ -27,32 +27,32 @@ import static org.junit.Assert.assertFalse;
 public class SegSweepMacroOptionsTest {
 
     @Test
-    public void oneAxisRecordedMacroReplaysToSameSweepCsv() {
+    public void oneAxisRecordedMacroReplaysToSameDeterministicSweepFields() {
         SegSweepMacroOptions options = SegSweepMacroOptions.defaults();
-        assertRoundTripsToSameSweepCsv(options);
+        assertRoundTripsToSameDeterministicSweepFields(options);
     }
 
     @Test
-    public void twoAxisRecordedMacroReplaysToSameSweepCsv() {
+    public void twoAxisRecordedMacroReplaysToSameDeterministicSweepFields() {
         SegSweepMacroOptions options = SegSweepMacroOptions.defaults();
         options.setSecondaryAxis(SegSweepMacroOptions.AxisSpec.range(
                 ParameterId.MIN_SIZE, 0, 2, 1));
-        assertRoundTripsToSameSweepCsv(options);
+        assertRoundTripsToSameDeterministicSweepFields(options);
     }
 
     @Test
-    public void explicitValuesRecordedMacroReplaysToSameSweepCsv() {
+    public void explicitValuesRecordedMacroReplaysToSameDeterministicSweepFields() {
         SegSweepMacroOptions options = new SegSweepMacroOptions();
         options.setPrimaryAxis(SegSweepMacroOptions.AxisSpec.values(
                 ParameterId.THRESHOLD, ParameterValueList.ofDoubles(10, 32, 60)));
-        assertRoundTripsToSameSweepCsv(options);
+        assertRoundTripsToSameDeterministicSweepFields(options);
     }
 
     @Test
-    public void croppedRecordedMacroReplaysToSameSweepCsv() {
+    public void croppedRecordedMacroReplaysToSameDeterministicSweepFields() {
         SegSweepMacroOptions options = SegSweepMacroOptions.defaults();
         options.setCrop(CropSpec.custom(new Rectangle(0, 0, 20, 8)));
-        assertRoundTripsToSameSweepCsv(options);
+        assertRoundTripsToSameDeterministicSweepFields(options);
     }
 
     @Test
@@ -77,6 +77,17 @@ public class SegSweepMacroOptionsTest {
         assertEquals("C:/tmp/segsweep", options.autosave());
         assertTrue(options.hideDisplay());
         assertEquals(new Rectangle(1, 2, 30, 40), options.crop().bounds());
+    }
+
+    @Test
+    public void stabilityBudgetPropagatesIntoAnalysisParameters() {
+        SegSweepMacroOptions options = SegSweepMacroOptionsParser.parse(
+                "sweep=threshold from=10 to=30 step=10 stability_budget_ms=250");
+
+        SegSweepParameters parameters = options.toParameters(
+                SegSweepAnalysisTest.designedKneeStack(true));
+
+        assertEquals(250L, parameters.stabilityBudgetMs());
     }
 
     @Test
@@ -164,13 +175,19 @@ public class SegSweepMacroOptionsTest {
         SegSweepMacroOptions options = SegSweepMacroOptions.defaults();
         options.setAutosave("output");
         assertFalse(SegSweep_.shouldAutoSaveImmediately(options, false));
+        assertFalse(SegSweep_.shouldAutoSaveRenderedGrid(options));
         options.setShowGrid(false);
         assertTrue(SegSweep_.shouldAutoSaveImmediately(options, false));
         options.setShowGrid(true);
         assertTrue(SegSweep_.shouldAutoSaveImmediately(options, true));
+
+        options.setAutosave(null);
+        assertFalse(SegSweep_.shouldAutoSaveImmediately(options, false));
+        assertTrue(SegSweep_.shouldAutoSaveRenderedGrid(options));
     }
 
-    private static void assertRoundTripsToSameSweepCsv(SegSweepMacroOptions options) {
+    private static void assertRoundTripsToSameDeterministicSweepFields(
+            SegSweepMacroOptions options) {
         String recorded = options.toMacroOptions();
         SegSweepMacroOptions replayed = SegSweepMacroOptionsParser.parse(recorded);
         assertEquals(recorded, replayed.toMacroOptions());
@@ -179,10 +196,12 @@ public class SegSweepMacroOptionsTest {
         ImagePlus b = SegSweepAnalysisTest.designedKneeStack(true);
         SegSweepResult original = SegSweep.run(options.toParameters(a));
         SegSweepResult replay = SegSweep.run(replayed.toParameters(b));
-        assertEquals(sweepCsv(original.sweepTable()), sweepCsv(replay.sweepTable()));
+        assertEquals(deterministicSweepCsv(original.sweepTable()),
+                deterministicSweepCsv(replay.sweepTable()));
     }
 
-    private static String sweepCsv(ResultsTable table) {
+    private static String deterministicSweepCsv(ResultsTable table) {
+        // Duration_ms is deliberately excluded: the contract records actual wall-clock time.
         String[] columns = {
                 SegSweepResult.COL_COMBINATION,
                 ParameterId.THRESHOLD.displayLabel(),
@@ -192,7 +211,6 @@ public class SegSweepMacroOptionsTest {
                 SegSweepResult.COL_OBJECTS_PER_MM2,
                 SegSweepResult.COL_MEAN_NEIGHBOUR_IOU,
                 SegSweepResult.COL_STABILITY_ELIGIBLE,
-                SegSweepResult.COL_DURATION_MS,
                 SegSweepResult.COL_CROP_FRACTION,
                 SegSweepResult.COL_FLAGS
         };
@@ -213,9 +231,6 @@ public class SegSweepMacroOptionsTest {
             return "";
         }
         String text = table.getStringValue(column, row);
-        if (SegSweepResult.COL_DURATION_MS.equals(column)) {
-            return "0";
-        }
         return text == null ? "" : text;
     }
 }

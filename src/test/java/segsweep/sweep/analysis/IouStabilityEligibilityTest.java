@@ -11,6 +11,7 @@ package segsweep.sweep.analysis;
 import org.junit.Test;
 
 import java.util.Arrays;
+import java.util.function.LongSupplier;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -51,5 +52,37 @@ public class IouStabilityEligibilityTest {
                         Integer.valueOf(0), Integer.valueOf(1), Integer.valueOf(2))),
                 Arrays.asList(Integer.valueOf(7), Integer.valueOf(7), Integer.valueOf(7)),
                 1), 0.000001d);
+    }
+
+    @Test
+    public void twoAxisStabilityUsesOnlyTheTwoNeighboursAlongEachAxis() {
+        StabilityOutcome outcome = IouStability.score(
+                TestCombos.twoAxis(3, 3),
+                TestCombos.sources(
+                        TestCombos.ids(2), TestCombos.ids(1), TestCombos.ids(2),
+                        TestCombos.ids(1), TestCombos.ids(1), TestCombos.ids(1),
+                        TestCombos.ids(2), TestCombos.ids(1), TestCombos.ids(2)));
+
+        assertEquals(StabilityOutcome.Kind.STABLE_AT, outcome.kind());
+        assertTrue(outcome.isEligible(4));
+        assertEquals(1.0d, outcome.meanNeighbourIou(4), 0.000001d);
+    }
+
+    @Test
+    public void elapsedBudgetReturnsTypedAbortedOutcome() {
+        final long[] now = { -2000000L };
+        StabilityOutcome outcome = IouStability.score(
+                TestCombos.oneAxis(Arrays.asList(
+                        Integer.valueOf(0), Integer.valueOf(1), Integer.valueOf(2))),
+                TestCombos.sources(TestCombos.ids(1), TestCombos.ids(1), TestCombos.ids(1)),
+                null, 1L, new LongSupplier() {
+                    @Override public long getAsLong() {
+                        now[0] += 2000000L;
+                        return now[0];
+                    }
+                });
+
+        assertEquals(StabilityOutcome.Kind.ABORTED, outcome.kind());
+        assertTrue(outcome.explanation().contains("1 ms budget"));
     }
 }

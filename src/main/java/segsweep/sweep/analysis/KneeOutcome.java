@@ -24,7 +24,8 @@ public final class KneeOutcome {
         TOO_FEW_POINTS,
         NO_BEND,
         DEGENERATE_RANGE,
-        TOO_MANY_OBJECTS
+        TOO_MANY_OBJECTS,
+        MULTI_AXIS_UNSUPPORTED
     }
 
     private final Kind kind;

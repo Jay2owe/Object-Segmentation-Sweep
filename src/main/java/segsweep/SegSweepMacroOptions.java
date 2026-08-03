@@ -25,6 +25,7 @@ import java.util.Locale;
  * Macro-facing Object Segmentation Sweep options.
  */
 public final class SegSweepMacroOptions {
+    public static final String AUTOSAVE_ALONGSIDE_INPUT = "alongside input";
 
     private String image;
     private int channel = 1;
@@ -128,7 +129,9 @@ public final class SegSweepMacroOptions {
     }
 
     public void setAutosave(String autosave) {
-        this.autosave = clean(autosave);
+        String value = clean(autosave);
+        this.autosave = AUTOSAVE_ALONGSIDE_INPUT.equalsIgnoreCase(value == null ? "" : value)
+                ? null : value;
     }
 
     public boolean hideDisplay() {
@@ -163,7 +166,8 @@ public final class SegSweepMacroOptions {
                 .engine(engine)
                 .crop(crop)
                 .pickCriterion(pickCriterion)
-                .minimumCropFraction(minimumCropFraction);
+                .minimumCropFraction(minimumCropFraction)
+                .stabilityBudgetMs(stabilityBudgetMs);
         addAxis(builder, primaryAxis);
         if (secondaryAxis != null) {
             addAxis(builder, secondaryAxis);

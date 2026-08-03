@@ -196,11 +196,20 @@ public final class SegSweepBatch {
         if (subdirs == null) return;
         Arrays.sort(subdirs);
         for (int i = 0; i < subdirs.length; i++) {
+            if (isGeneratedOutputDirectory(subdirs[i])) {
+                continue;
+            }
             String childPath = relativePath.length() == 0
                     ? subdirs[i].getName()
                     : relativePath + "/" + subdirs[i].getName();
             walkDirectories(root, subdirs[i], childPath, pattern, varyingGroup, result);
         }
+    }
+
+    static boolean isGeneratedOutputDirectory(File directory) {
+        if (directory == null || !directory.isDirectory()) return false;
+        return directory.getName().matches(
+                "(?i)Object Segmentation Sweep(?: [0-9]+)?");
     }
 
     static String previewNestedGroups(Map<String, Map<String, List<File>>> nestedGroups) {

@@ -137,6 +137,41 @@ public class AutoSaveWriterTest {
         assertTrue(new File(output, "grid.png").isFile());
     }
 
+    @Test
+    public void macroWithoutAutosaveWritesAlongsideInputByDefault() throws Exception {
+        File inputFolder = tmp.newFolder("default-save");
+        File input = new File(inputFolder, "macro-source.tif");
+        ImagePlus image = SegSweepAnalysisTest.designedKneeStack(true);
+        assertTrue(new FileSaver(image).saveAsTiff(input.getAbsolutePath()));
+        image.close();
+        String options = "image=[" + slash(input) + "] sweep=threshold from=10 to=60 step=10 "
+                + "pick=knee hide_display";
+
+        SegSweepResult result = new SegSweep_().runFromMacro(options);
+
+        File output = new File(inputFolder, AutoSaveWriter.OUTPUT_FOLDER);
+        assertNotNull(result);
+        assertTrue(new File(output, "sweep_results.csv").isFile());
+        assertTrue(new File(output, "pick_summary.csv").isFile());
+        assertTrue(new File(output, "grid.png").isFile());
+    }
+
+    @Test
+    public void suppliedReviewedGridIsWrittenWithoutSynthesisingAnotherView() throws Exception {
+        File input = tmp.newFile("reviewed.tif");
+        File requested = new File(tmp.getRoot(), "reviewed-output");
+        BufferedImage reviewed = new BufferedImage(7, 5, BufferedImage.TYPE_INT_RGB);
+        reviewed.setRGB(3, 2, 0x00ff00ff);
+
+        File output = AutoSaveWriter.writeTo(requested, input,
+                runPickedResult(SegSweepAnalysisTest.designedKneeStack(true)), reviewed);
+
+        BufferedImage written = ImageIO.read(new File(output, "grid.png"));
+        assertEquals(7, written.getWidth());
+        assertEquals(5, written.getHeight());
+        assertEquals(0x00ff00ff, written.getRGB(3, 2) & 0x00ffffff);
+    }
+
     private static SegSweepResult runPickedResult(ImagePlus image) {
         return SegSweep.run(SegSweepParameters.builder()
                 .image(image)

@@ -34,6 +34,7 @@ public final class SegSweepParameters {
     private final SegSweepLabeller.Connectivity connectivity;
     private final PickCriterion pickCriterion;
     private final double minimumCropFraction;
+    private final long stabilityBudgetMs;
     private final int parallelism;
 
     private SegSweepParameters(Builder builder) {
@@ -45,6 +46,7 @@ public final class SegSweepParameters {
         this.connectivity = builder.connectivity;
         this.pickCriterion = builder.pickCriterion;
         this.minimumCropFraction = builder.minimumCropFraction;
+        this.stabilityBudgetMs = builder.stabilityBudgetMs;
         this.parallelism = builder.parallelism > 0
                 ? builder.parallelism
                 : Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
@@ -122,6 +124,14 @@ public final class SegSweepParameters {
         return minimumCropFraction;
     }
 
+    public long stabilityBudgetMs() {
+        return stabilityBudgetMs;
+    }
+
+    public long getStabilityBudgetMs() {
+        return stabilityBudgetMs;
+    }
+
     public int parallelism() {
         return parallelism;
     }
@@ -140,6 +150,7 @@ public final class SegSweepParameters {
         builder.connectivity = connectivity;
         builder.pickCriterion = pickCriterion;
         builder.minimumCropFraction = minimumCropFraction;
+        builder.stabilityBudgetMs = stabilityBudgetMs;
         builder.parallelism = parallelism;
         return new SegSweepParameters(builder);
     }
@@ -154,6 +165,7 @@ public final class SegSweepParameters {
         private SegSweepLabeller.Connectivity connectivity = SegSweepLabeller.DEFAULT_CONNECTIVITY;
         private PickCriterion pickCriterion = PickCriterion.BOTH;
         private double minimumCropFraction = 0.05d;
+        private long stabilityBudgetMs;
         private int parallelism = Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
 
         private Builder() {
@@ -244,6 +256,15 @@ public final class SegSweepParameters {
             return this;
         }
 
+        public Builder stabilityBudgetMs(long stabilityBudgetMs) {
+            if (stabilityBudgetMs < 0L) {
+                throw new ValidationException(ValidationFailure.INVALID_STABILITY_BUDGET,
+                        "Stability budget must be >= 0 ms (0 means unlimited).");
+            }
+            this.stabilityBudgetMs = stabilityBudgetMs;
+            return this;
+        }
+
         public Builder parallelism(int parallelism) {
             this.parallelism = parallelism;
             return this;
@@ -263,7 +284,8 @@ public final class SegSweepParameters {
         UNSUPPORTED_ENGINE,
         UNSUPPORTED_AXIS_COMBINATION,
         INVALID_CHANNEL,
-        INVALID_CROP_FRACTION
+        INVALID_CROP_FRACTION,
+        INVALID_STABILITY_BUDGET
     }
 
     public static final class ValidationException extends IllegalArgumentException {

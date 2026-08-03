@@ -36,6 +36,7 @@ import javax.swing.JViewport;
 import javax.swing.ScrollPaneConstants;
 import javax.swing.Scrollable;
 import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
 import javax.swing.WindowConstants;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
@@ -43,6 +44,7 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dialog;
 import java.awt.Dimension;
+import java.awt.Graphics2D;
 import java.awt.GraphicsEnvironment;
 import java.awt.GridLayout;
 import java.awt.Point;
@@ -51,6 +53,7 @@ import java.awt.Window;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseWheelEvent;
 import java.awt.event.MouseWheelListener;
+import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -352,6 +355,46 @@ public final class VariationGridWindow extends JDialog {
 
     public ParameterCombo selectedCombo() {
         return selectedCombo;
+    }
+
+    /** Captures the complete grid at its current zoom, slice, overlays, and display settings. */
+    public BufferedImage renderGridSnapshot() {
+        if (SwingUtilities.isEventDispatchThread()) {
+            return renderGridSnapshotOnEdt();
+        }
+        final BufferedImage[] captured = new BufferedImage[1];
+        final RuntimeException[] failure = new RuntimeException[1];
+        try {
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override public void run() {
+                    try {
+                        captured[0] = renderGridSnapshotOnEdt();
+                    } catch (RuntimeException ex) {
+                        failure[0] = ex;
+                    }
+                }
+            });
+        } catch (Exception ex) {
+            throw new IllegalStateException("Could not capture the reviewed grid.", ex);
+        }
+        if (failure[0] != null) throw failure[0];
+        return captured[0];
+    }
+
+    private BufferedImage renderGridSnapshotOnEdt() {
+        Dimension preferred = gridPanel.getPreferredSize();
+        int width = Math.max(1, preferred == null ? gridPanel.getWidth() : preferred.width);
+        int height = Math.max(1, preferred == null ? gridPanel.getHeight() : preferred.height);
+        gridPanel.setSize(width, height);
+        gridPanel.doLayout();
+        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D graphics = image.createGraphics();
+        try {
+            gridPanel.printAll(graphics);
+        } finally {
+            graphics.dispose();
+        }
+        return image;
     }
 
     @Override public void dispose() {

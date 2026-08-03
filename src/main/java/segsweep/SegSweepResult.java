@@ -176,7 +176,9 @@ public final class SegSweepResult {
                 }
             }
         }
-        return new SegSweepResult(parameters, sweepTable, pickTable, pick, combo,
+        ResultsTable selectedPickTable = combo == null
+                ? pickTable : SegSweepAnalysis.buildManualPickTable(this, combo);
+        return new SegSweepResult(parameters, sweepTable, selectedPickTable, pick, combo,
                 selectedLabels, results, provenance, settingsToken, warnings);
     }
 

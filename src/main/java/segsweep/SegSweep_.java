@@ -31,6 +31,7 @@ import segsweep.ui.render.PreviewDisplaySettings;
 import java.awt.GraphicsEnvironment;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.awt.image.BufferedImage;
 import java.io.File;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -313,18 +314,27 @@ public class SegSweep_ implements PlugIn {
                     labels.setTitle(COMMAND_NAME + " - picked labels");
                     labels.show();
                 }
-                if (options != null && hasText(options.autosave())) {
-                    try {
-                        File output = AutoSaveWriter.writeTo(new File(options.autosave()),
-                                inputFileFor(options, image), chosenResult);
-                        IJ.log(COMMAND_NAME + ": saved manual pick to " + output.getAbsolutePath());
-                    } catch (Exception ex) {
-                        IJ.error(COMMAND_NAME, "Could not save manual pick: " + ex.getMessage());
-                    }
+                try {
+                    BufferedImage reviewedGrid = grid.renderGridSnapshot();
+                    File output = autoSaveIfRequested(
+                            chosenResult, options, image, reviewedGrid);
+                    IJ.log(COMMAND_NAME + ": saved manual pick to " + output.getAbsolutePath());
+                } catch (Exception ex) {
+                    IJ.error(COMMAND_NAME, "Could not save manual pick: " + ex.getMessage());
                 }
             }
         });
         grid.setVisible(true);
+        if (shouldAutoSaveRenderedGrid(options)) {
+            try {
+                File output = autoSaveIfRequested(
+                        result, options, image, grid.renderGridSnapshot());
+                IJ.log(COMMAND_NAME + ": saved initial reviewed grid to "
+                        + output.getAbsolutePath());
+            } catch (Exception ex) {
+                IJ.error(COMMAND_NAME, "Could not save sweep: " + ex.getMessage());
+            }
+        }
     }
 
     private static ParameterSweep displayWindow(SegSweepResult result) {
@@ -371,6 +381,10 @@ public class SegSweep_ implements PlugIn {
         return options != null && (headless || options.hideDisplay() || !options.showGrid());
     }
 
+    static boolean shouldAutoSaveRenderedGrid(SegSweepMacroOptions options) {
+        return options != null && options.showGrid() && !hasText(options.autosave());
+    }
+
     private static void applyDisplaySettings(VariationGridWindow grid,
                                              PreviewDisplaySettings settings) {
         grid.setObjectDisplaySettingsForAll(settings);
@@ -386,11 +400,32 @@ public class SegSweep_ implements PlugIn {
     File autoSaveIfRequested(SegSweepResult result,
                              SegSweepMacroOptions options,
                              ImagePlus image) throws java.io.IOException {
-        if (result == null || options == null || !hasText(options.autosave())) {
+        return autoSaveIfRequested(result, options, image, null);
+    }
+
+    File autoSaveIfRequested(SegSweepResult result,
+                             SegSweepMacroOptions options,
+                             ImagePlus image,
+                             BufferedImage reviewedGrid) throws java.io.IOException {
+        if (result == null || options == null) {
             return null;
         }
-        return AutoSaveWriter.writeTo(new File(options.autosave()),
-                inputFileFor(options, image), result);
+        File inputFile = inputFileFor(options, image);
+        if (hasText(options.autosave())) {
+            return AutoSaveWriter.writeTo(
+                    new File(options.autosave()), inputFile, result, reviewedGrid);
+        }
+        File existingInput = existingInputFileFor(options, image);
+        if (existingInput == null) {
+            throw new java.io.IOException(
+                    "The source image has no file location. Choose an explicit Save to folder.");
+        }
+        return AutoSaveWriter.write(existingInput, result, reviewedGrid);
+    }
+
+    private static File existingInputFileFor(SegSweepMacroOptions options, ImagePlus image) {
+        File input = inputFileFor(options, image);
+        return input.isFile() ? input : null;
     }
 
     private static File inputFileFor(SegSweepMacroOptions options, ImagePlus image) {

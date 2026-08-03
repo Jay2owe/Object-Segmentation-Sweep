@@ -19,8 +19,14 @@ public final class ComponentTreeResult {
     private final String reason;
     private final List<ComponentNode> nodes;
     private final LazyLabelMap labelMap;
+    private final int reportedObjectCount;
 
     ComponentTreeResult(Status status, String reason, List<ComponentNode> nodes, LazyLabelMap labelMap) {
+        this(status, reason, nodes, labelMap, nodes == null ? 0 : nodes.size());
+    }
+
+    ComponentTreeResult(Status status, String reason, List<ComponentNode> nodes,
+                        LazyLabelMap labelMap, int reportedObjectCount) {
         if (status == null) {
             throw new IllegalArgumentException("status must not be null");
         }
@@ -32,6 +38,7 @@ public final class ComponentTreeResult {
         this.nodes = Collections.unmodifiableList(new ArrayList<ComponentNode>(
                 nodes == null ? Collections.<ComponentNode>emptyList() : nodes));
         this.labelMap = labelMap;
+        this.reportedObjectCount = Math.max(0, reportedObjectCount);
     }
 
     public Status status() {
@@ -43,7 +50,7 @@ public final class ComponentTreeResult {
     }
 
     public int objectCount() {
-        return nodes.size();
+        return reportedObjectCount;
     }
 
     public List<ComponentNode> selectedNodes() {

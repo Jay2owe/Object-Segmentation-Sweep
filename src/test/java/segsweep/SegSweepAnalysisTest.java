@@ -23,6 +23,7 @@ import segsweep.sweep.ParameterKey;
 import segsweep.sweep.ParameterValueList;
 import segsweep.sweep.SweepProgress;
 import segsweep.sweep.VariationResult;
+import segsweep.sweep.analysis.KneeOutcome;
 import segsweep.token.MorphPredicate;
 import segsweep.token.SegmentationMethod;
 import segsweep.token.SegmentationTokenParser;
@@ -320,6 +321,70 @@ public class SegSweepAnalysisTest {
         assertEquals(0, manual.pickedLabelMap().materializationCount());
         assertTrue(manual.pickedSettingsToken().contains("thresh=20"));
         assertTrue(manual.pickedSettingsToken().contains("channel=1"));
+        assertEquals(1, manual.pickTable().size());
+        assertEquals("manual", manual.pickTable().getStringValue(
+                SegSweepResult.PICK_CRITERION, 0));
+        assertEquals(2.0d, manual.pickTable().getValue(
+                SegSweepResult.PICK_CHOSEN_COMBINATION, 0), 0.0d);
+        assertEquals(20.0d, manual.pickTable().getValue(
+                ParameterId.THRESHOLD.displayLabel(), 0), 0.0d);
+    }
+
+    @Test
+    public void twoAxisRowsAndCombinationNumbersUseCanonicalGridOrder() {
+        SegSweepResult result = SegSweep.run(SegSweepParameters.builder()
+                .image(designedKneeStack(true))
+                .axis(ParameterId.THRESHOLD, 10, 30, 10)
+                .axis(ParameterId.MIN_SIZE, 0, 2, 1)
+                .pickCriterion(SegSweepParameters.PickCriterion.NONE)
+                .build());
+
+        ResultsTable table = result.sweepTable();
+        assertEquals(9, table.size());
+        for (int row = 0; row < table.size(); row++) {
+            assertEquals(row + 1.0d,
+                    table.getValue(SegSweepResult.COL_COMBINATION, row), 0.0d);
+            assertEquals(10.0d + 10.0d * (row / 3),
+                    table.getValue(ParameterId.THRESHOLD.displayLabel(), row), 0.0d);
+            assertEquals((double) (row % 3),
+                    table.getValue(ParameterId.MIN_SIZE.displayLabel(), row), 0.0d);
+        }
+    }
+
+    @Test
+    public void twoVaryingAxesReturnTypedKneeRefusal() {
+        SegSweepResult result = SegSweep.run(SegSweepParameters.builder()
+                .image(designedKneeStack(true))
+                .axis(ParameterId.THRESHOLD, 10, 30, 10)
+                .axis(ParameterId.MIN_SIZE, 0, 2, 1)
+                .pickCriterion(SegSweepParameters.PickCriterion.KNEE)
+                .build());
+
+        assertNotNull(result.pick());
+        assertEquals(KneeOutcome.Kind.MULTI_AXIS_UNSUPPORTED,
+                result.pick().knee().kind());
+        assertNull(result.pickedCombo());
+        assertContains(result.warnings(), "one-dimensional");
+    }
+
+    @Test
+    public void excessLabelCellIsFailedAndRetainsTrueObjectCount() {
+        SegSweepResult result = SegSweep.run(SegSweepParameters.builder()
+                .image(SegSweepLabellerFixtures.overLimitCheckerboard())
+                .axis(ParameterId.THRESHOLD,
+                        ParameterValueList.ofDoubles(SegSweepLabellerFixtures.THRESHOLD))
+                .connectivity(SegSweepLabeller.Connectivity.SIX)
+                .pickCriterion(SegSweepParameters.PickCriterion.NONE)
+                .build());
+
+        VariationResult cell = result.results().get(0);
+        assertTrue(cell.objectCount() > 65535);
+        assertTrue(cell.hasError());
+        assertTrue(cell.hasFlag(VariationResult.Flag.TOO_MANY_LABELS));
+        assertTrue(cell.hasFlag(VariationResult.Flag.FAILED));
+        assertTrue(!cell.hasLabelMap());
+        assertEquals(cell.objectCount(), (int) result.sweepTable().getValue(
+                SegSweepResult.COL_OBJECTS, 0));
     }
 
     @Test

@@ -111,7 +111,7 @@ public final class SegSweepAnalysis {
                     ? new ResultsTable()
                     : buildPickTable(displayWindow, pickAssembly.pick,
                     pickAssembly.pickedCombo, pickAssembly.chosenCombinationIndex,
-                    params.pickCriterion());
+                    params.pickCriterion().name().toLowerCase(Locale.ROOT), provenance);
             String token = buildSettingsToken(params, provenance, pickAssembly.pick,
                     pickAssembly.pickedCombo);
 
@@ -260,14 +260,18 @@ public final class SegSweepAnalysis {
             EnumSet<VariationResult.Flag> flags = EnumSet.noneOf(VariationResult.Flag.class);
             if (treeResult.status() == ComponentTreeResult.Status.TOO_MANY_LABELS) {
                 flags.add(VariationResult.Flag.TOO_MANY_LABELS);
+                results.add(VariationResult.failure(combo,
+                        new IllegalStateException(treeResult.reason()), provenance,
+                        flags, treeResult.objectCount()));
+            } else {
+                results.add(VariationResult.success(combo, treeResult.labelMap(),
+                        treeResult.objectCount(), durationMs, null, provenance, flags,
+                        IouStability.IouSource.fromTreeResult(treeResult)));
             }
-            results.add(VariationResult.success(combo, treeResult.labelMap(),
-                    treeResult.objectCount(), durationMs, null, provenance, flags,
-                    IouStability.IouSource.fromTreeResult(treeResult)));
             emit(progress, i + 1, ordered.size(), "querying",
                     "Querying component tree.");
         }
-        return results;
+        return canonicalResultOrder(displayWindow, results);
     }
 
     private static PickAssembly scoreAndPick(ComponentTree tree,
@@ -285,7 +289,8 @@ public final class SegSweepAnalysis {
         }
 
         emit(progress, 0, 2, "scoring", "Scoring stability.");
-        StabilityOutcome stability = scoreStability(displayedResults, cancelCheck);
+        StabilityOutcome stability = scoreStability(displayedResults, cancelCheck,
+                params.stabilityBudgetMs());
         checkCancelled(cancelCheck);
         emit(progress, 1, 2, "scoring", "Scoring knee.");
         List<VariationResult> scoredResults = withStability(displayedResults, stability);
@@ -313,7 +318,8 @@ public final class SegSweepAnalysis {
     }
 
     private static StabilityOutcome scoreStability(List<VariationResult> results,
-                                                    BooleanSupplier cancelCheck) {
+                                                    BooleanSupplier cancelCheck,
+                                                    long budgetMs) {
         List<ParameterCombo> combos = new ArrayList<ParameterCombo>(results.size());
         List<IouStability.IouSource> sources =
                 new ArrayList<IouStability.IouSource>(results.size());
@@ -322,7 +328,7 @@ public final class SegSweepAnalysis {
             combos.add(result.combo());
             sources.add(result.iouSource());
         }
-        return IouStability.score(combos, sources, cancelCheck);
+        return IouStability.score(combos, sources, cancelCheck, budgetMs);
     }
 
     private static List<VariationResult> withStability(List<VariationResult> results,
@@ -345,6 +351,13 @@ public final class SegSweepAnalysis {
                 ? ParameterId.THRESHOLD : firstAxis(params);
         ParameterValueList displayedValues = params.axes().get(axis);
         double[] displayStats = rangeStats(displayedValues);
+        if (varyingAxisCount(params) > 1) {
+            return new KneeAssembly(KneeOutcome.of(
+                    KneeOutcome.Kind.MULTI_AXIS_UNSUPPORTED,
+                    displayStats[0], displayStats[1], displayStats[2],
+                    "Knee scoring is one-dimensional; it is not defined for two varying sweep axes."),
+                    null, null);
+        }
         if (axis == ParameterId.THRESHOLD) {
             double[] thresholdValues = fullThresholdValues == null
                     ? new double[0] : fullThresholdValues;
@@ -478,15 +491,13 @@ public final class SegSweepAnalysis {
                                                PickResult pick,
                                                ParameterCombo pickedCombo,
                                                int displayCombinationIndex,
-                                               SegSweepParameters.PickCriterion criterion) {
+                                               String criterion,
+                                               SweepProvenance provenance) {
         ResultsTable table = new ResultsTable();
-        if (pick == null) {
-            return table;
-        }
         int row = table.getCounter();
         table.incrementCounter();
         table.setValue(SegSweepResult.PICK_CRITERION, row,
-                criterion.name().toLowerCase(Locale.ROOT));
+                criterion == null ? "" : criterion);
         table.setValue(SegSweepResult.PICK_CHOSEN_COMBINATION, row,
                 displayCombinationIndex > 0 ? displayCombinationIndex : 0);
         List<ParameterId> axes = displayWindow.parameterIds();
@@ -499,40 +510,62 @@ public final class SegSweepAnalysis {
                 table.setValue(axis.displayLabel(), row, value == null ? "" : String.valueOf(value));
             }
         }
-        KneeOutcome knee = pick.knee();
-        StabilityOutcome stability = pick.stability();
-        table.setValue(SegSweepResult.PICK_KNEE_OUTCOME, row, knee.kind().name());
-        if (Double.isFinite(knee.parameterValue())) {
-            table.setValue(SegSweepResult.PICK_KNEE_VALUE, row, knee.parameterValue());
+        KneeOutcome knee = pick == null ? null : pick.knee();
+        StabilityOutcome stability = pick == null ? null : pick.stability();
+        table.setValue(SegSweepResult.PICK_KNEE_OUTCOME, row,
+                knee == null ? "" : knee.kind().name());
+        if (knee != null && Double.isFinite(knee.parameterValue())) {
+            table.setValue(SegSweepResult.PICK_KNEE_VALUE, row,
+                    knee.parameterValue());
         } else {
             table.setValue(SegSweepResult.PICK_KNEE_VALUE, row, "");
         }
-        table.setValue(SegSweepResult.PICK_DISPLAY_RANGE_MIN, row, knee.rangeMin());
-        table.setValue(SegSweepResult.PICK_DISPLAY_RANGE_MAX, row, knee.rangeMax());
-        table.setValue(SegSweepResult.PICK_DISPLAY_RANGE_STEP, row, knee.step());
-        if (Double.isFinite(stability.meanNeighbourIou())) {
+        if (knee != null) {
+            table.setValue(SegSweepResult.PICK_DISPLAY_RANGE_MIN, row, knee.rangeMin());
+            table.setValue(SegSweepResult.PICK_DISPLAY_RANGE_MAX, row, knee.rangeMax());
+            table.setValue(SegSweepResult.PICK_DISPLAY_RANGE_STEP, row, knee.step());
+        } else {
+            table.setValue(SegSweepResult.PICK_DISPLAY_RANGE_MIN, row, "");
+            table.setValue(SegSweepResult.PICK_DISPLAY_RANGE_MAX, row, "");
+            table.setValue(SegSweepResult.PICK_DISPLAY_RANGE_STEP, row, "");
+        }
+        if (stability != null && Double.isFinite(stability.meanNeighbourIou())) {
             table.setValue(SegSweepResult.PICK_STABILITY_SCORE, row,
                     stability.meanNeighbourIou());
         } else {
             table.setValue(SegSweepResult.PICK_STABILITY_SCORE, row, "");
         }
         table.setValue(SegSweepResult.PICK_KNEE_RECOMMENDATION, row,
-                pick.kneeCombo() == null ? "" : pick.kneeCombo().toCanonicalJson());
+                pick == null || pick.kneeCombo() == null
+                        ? "" : pick.kneeCombo().toCanonicalJson());
         table.setValue(SegSweepResult.PICK_STABILITY_RECOMMENDATION, row,
-                pick.stabilityCombo() == null ? "" : pick.stabilityCombo().toCanonicalJson());
+                pick == null || pick.stabilityCombo() == null
+                        ? "" : pick.stabilityCombo().toCanonicalJson());
         table.setValue(SegSweepResult.PICK_ELIGIBLE_COUNT, row,
-                stability.eligibleCount());
-        Rectangle crop = pick.provenance().crop().boundsFor(
-                pick.provenance().fullWidth(), pick.provenance().fullHeight());
+                stability == null ? 0 : stability.eligibleCount());
+        SweepProvenance reportProvenance = provenance != null
+                ? provenance : pick == null ? null : pick.provenance();
+        Rectangle crop = reportProvenance.crop().boundsFor(
+                reportProvenance.fullWidth(), reportProvenance.fullHeight());
         table.setValue(SegSweepResult.PICK_CROP_X, row, crop.x);
         table.setValue(SegSweepResult.PICK_CROP_Y, row, crop.y);
         table.setValue(SegSweepResult.PICK_CROP_WIDTH, row, crop.width);
         table.setValue(SegSweepResult.PICK_CROP_HEIGHT, row, crop.height);
         table.setValue(SegSweepResult.PICK_CROP_FRACTION, row,
-                pick.provenance().cropFraction());
+                reportProvenance.cropFraction());
         table.setValue(SegSweepResult.PICK_CRITERIA_AGREE, row,
-                String.valueOf(pick.criteriaAgree()));
+                pick == null ? "" : String.valueOf(pick.criteriaAgree()));
         return table;
+    }
+
+    static ResultsTable buildManualPickTable(SegSweepResult result,
+                                             ParameterCombo selected) {
+        if (result == null || result.parameters() == null || selected == null) {
+            return new ResultsTable();
+        }
+        ParameterSweep displayWindow = buildDisplayWindow(result.parameters());
+        return buildPickTable(displayWindow, result.pick(), selected,
+                displayIndex(displayWindow, selected), "manual", result.provenance());
     }
 
     private static String buildSettingsToken(SegSweepParameters params,
@@ -668,6 +701,35 @@ public final class SegSweepAnalysis {
             }
         }
         return 0;
+    }
+
+    private static int varyingAxisCount(SegSweepParameters params) {
+        int count = 0;
+        for (ParameterValueList values : params.axes().values()) {
+            if (values != null && values.size() > 1) count++;
+        }
+        return count;
+    }
+
+    private static List<VariationResult> canonicalResultOrder(
+            ParameterSweep displayWindow,
+            List<VariationResult> dispatched) {
+        List<VariationResult> canonical = new ArrayList<VariationResult>(dispatched.size());
+        List<ParameterCombo> expected = displayWindow.combos();
+        for (int i = 0; i < expected.size(); i++) {
+            VariationResult match = null;
+            for (int j = 0; j < dispatched.size(); j++) {
+                if (expected.get(i).hasSameCoordinates(dispatched.get(j).combo())) {
+                    match = dispatched.get(j);
+                    break;
+                }
+            }
+            if (match == null) {
+                throw new IllegalStateException("A dispatched result is missing from the display grid.");
+            }
+            canonical.add(match);
+        }
+        return canonical;
     }
 
     private static double[] rangeStats(ParameterValueList values) {

@@ -39,6 +39,11 @@ public final class AutoSaveWriter {
     }
 
     public static File write(File inputFile, SegSweepResult result) throws IOException {
+        return write(inputFile, result, null);
+    }
+
+    public static File write(File inputFile, SegSweepResult result,
+                             BufferedImage reviewedGrid) throws IOException {
         if (inputFile == null) {
             throw new IllegalArgumentException("inputFile must not be null.");
         }
@@ -47,23 +52,35 @@ public final class AutoSaveWriter {
             parent = new File(".").getAbsoluteFile();
         }
         File outputDir = uniqueDirectory(new File(parent, OUTPUT_FOLDER));
-        writeToDirectory(outputDir, inputFile, result);
+        writeToDirectory(outputDir, inputFile, result, reviewedGrid);
         return outputDir;
     }
 
     /** Writes to an explicitly requested directory, versioning it rather than overwriting. */
     public static File writeTo(File desiredOutputDir, File inputFile,
                                SegSweepResult result) throws IOException {
+        return writeTo(desiredOutputDir, inputFile, result, null);
+    }
+
+    public static File writeTo(File desiredOutputDir, File inputFile,
+                               SegSweepResult result,
+                               BufferedImage reviewedGrid) throws IOException {
         if (desiredOutputDir == null) {
             throw new IllegalArgumentException("desiredOutputDir must not be null.");
         }
         File outputDir = uniqueDirectory(desiredOutputDir);
-        writeToDirectory(outputDir, inputFile, result);
+        writeToDirectory(outputDir, inputFile, result, reviewedGrid);
         return outputDir;
     }
 
     static void writeToDirectory(File outputDir, File inputFile,
                                  SegSweepResult result) throws IOException {
+        writeToDirectory(outputDir, inputFile, result, null);
+    }
+
+    static void writeToDirectory(File outputDir, File inputFile,
+                                 SegSweepResult result,
+                                 BufferedImage reviewedGrid) throws IOException {
         validate(outputDir, inputFile, result);
         mkdirs(outputDir);
         File labelsDir = new File(outputDir, "labels");
@@ -72,7 +89,13 @@ public final class AutoSaveWriter {
         saveTable(result.sweepTable(), new File(outputDir, "sweep_results.csv"));
         saveTable(result.pickTable(), new File(outputDir, "pick_summary.csv"));
         writeText(new File(outputDir, "picked_settings.txt"), result.pickedSettingsToken());
-        writeGridPng(new File(outputDir, "grid.png"), result);
+        File gridFile = new File(outputDir, "grid.png");
+        if (reviewedGrid == null) {
+            writeGridPng(gridFile, result);
+        } else if (!ImageIO.write(reviewedGrid, "png", gridFile)) {
+            throw new IOException("No PNG writer was available for "
+                    + gridFile.getAbsolutePath());
+        }
         writePickedLabels(new File(labelsDir, baseName(inputFile) + "_picked.tif"), result);
         writeText(new File(outputDir, "README.txt"), readmeText());
     }
@@ -313,7 +336,7 @@ public final class AutoSaveWriter {
                 + "sweep_results.csv: one row per displayed parameter combination.\n"
                 + "pick_summary.csv: the selected value and independent knee/stability reports.\n"
                 + "picked_settings.txt: reproducible settings token plus crop bounds, crop fraction, calibration and displayed range.\n"
-                + "grid.png: a static record of the reviewed display window.\n"
+                + "grid.png: interactive saves capture the current reviewed grid; headless, hidden, and batch saves use a deterministic middle-slice montage.\n"
                 + "labels/: contains only the picked label map materialised from the lazy result.\n\n"
                 + "All values are conditional on the image region and displayed range recorded in picked_settings.txt.\n";
     }
