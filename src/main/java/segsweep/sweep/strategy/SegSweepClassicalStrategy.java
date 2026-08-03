@@ -24,6 +24,7 @@ import segsweep.sweep.SweepProvenance;
 import segsweep.sweep.SweepRefusedException;
 import segsweep.sweep.VariationResult;
 import segsweep.sweep.VariationStrategy;
+import segsweep.sweep.analysis.IouStability;
 import segsweep.token.MorphPredicate;
 import segsweep.tree.ComponentTree;
 import segsweep.tree.ComponentTreeQuery;
@@ -191,7 +192,8 @@ public final class SegSweepClassicalStrategy implements VariationStrategy {
             flags.add(VariationResult.Flag.TOO_MANY_LABELS);
         }
         return VariationResult.success(combo, treeResult.labelMap(),
-                treeResult.objectCount(), durationMs, null, provenance, flags);
+                treeResult.objectCount(), durationMs, null, provenance, flags,
+                IouStability.IouSource.fromTreeResult(treeResult));
     }
 
     private SweepProvenance provenanceFor(ParameterSweep displayWindow) {

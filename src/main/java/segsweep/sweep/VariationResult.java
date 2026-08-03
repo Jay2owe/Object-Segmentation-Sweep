@@ -9,6 +9,7 @@
 package segsweep.sweep;
 
 import ij.measure.ResultsTable;
+import segsweep.sweep.analysis.IouStability;
 import segsweep.tree.LazyLabelMap;
 
 import java.awt.Rectangle;
@@ -33,6 +34,7 @@ public final class VariationResult {
     private final SweepProvenance provenance;
     private final EnumSet<Flag> flags;
     private final double meanNeighbourIou;
+    private final IouStability.IouSource iouSource;
     private boolean transferred;
     private boolean disposed;
 
@@ -44,7 +46,8 @@ public final class VariationResult {
                             Throwable error,
                             SweepProvenance provenance,
                             EnumSet<Flag> flags,
-                            double meanNeighbourIou) {
+                            double meanNeighbourIou,
+                            IouStability.IouSource iouSource) {
         if (combo == null) {
             throw new IllegalArgumentException("combo must not be null");
         }
@@ -63,6 +66,9 @@ public final class VariationResult {
         this.provenance = provenance;
         this.flags = normaliseFlags(objectCount, error, provenance, flags);
         this.meanNeighbourIou = meanNeighbourIou;
+        this.iouSource = iouSource == null
+                ? IouStability.IouSource.fromObjectIds(java.util.Collections.<Integer>emptyList())
+                : iouSource;
     }
 
     public static VariationResult success(ParameterCombo combo,
@@ -75,7 +81,7 @@ public final class VariationResult {
             throw new IllegalArgumentException("labelMap must not be null");
         }
         return new VariationResult(combo, labelMap, objectCount, durationMs, stats,
-                null, provenance, EnumSet.noneOf(Flag.class), Double.NaN);
+                null, provenance, EnumSet.noneOf(Flag.class), Double.NaN, null);
     }
 
     public static VariationResult success(ParameterCombo combo,
@@ -89,7 +95,22 @@ public final class VariationResult {
             throw new IllegalArgumentException("labelMap must not be null");
         }
         return new VariationResult(combo, labelMap, objectCount, durationMs, stats,
-                null, provenance, flags, Double.NaN);
+                null, provenance, flags, Double.NaN, null);
+    }
+
+    public static VariationResult success(ParameterCombo combo,
+                                          LazyLabelMap labelMap,
+                                          int objectCount,
+                                          long durationMs,
+                                          ResultsTable stats,
+                                          SweepProvenance provenance,
+                                          EnumSet<Flag> flags,
+                                          IouStability.IouSource iouSource) {
+        if (labelMap == null) {
+            throw new IllegalArgumentException("labelMap must not be null");
+        }
+        return new VariationResult(combo, labelMap, objectCount, durationMs, stats,
+                null, provenance, flags, Double.NaN, iouSource);
     }
 
     public static VariationResult failure(ParameterCombo combo,
@@ -103,7 +124,7 @@ public final class VariationResult {
                                           SweepProvenance provenance,
                                           EnumSet<Flag> flags) {
         return new VariationResult(combo, null, 0, 0L, null, error, provenance,
-                flags, Double.NaN);
+                flags, Double.NaN, null);
     }
 
     public ParameterCombo combo() {
@@ -228,7 +249,15 @@ public final class VariationResult {
 
     public VariationResult withMeanNeighbourIou(double value) {
         return new VariationResult(combo, labelMap, objectCount, durationMs, stats,
-                error, provenance, flags, value);
+                error, provenance, flags, value, iouSource);
+    }
+
+    public IouStability.IouSource iouSource() {
+        return iouSource;
+    }
+
+    public IouStability.IouSource getIouSource() {
+        return iouSource();
     }
 
     public synchronized void transferOwnership() {

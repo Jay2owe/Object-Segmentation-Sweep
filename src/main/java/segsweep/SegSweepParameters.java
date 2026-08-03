@@ -1,0 +1,264 @@
+/*
+ * Copyright (c) 2026 Jamie Malcolm
+ *
+ * Developed at the Brancaccio Lab, UK Dementia Research Institute,
+ * Imperial College London.
+ *
+ * Released under the BSD 3-Clause License. See LICENSE for terms.
+ */
+package segsweep;
+
+import ij.ImagePlus;
+import segsweep.sweep.CropSpec;
+import segsweep.sweep.ParameterId;
+import segsweep.sweep.ParameterValueList;
+import segsweep.token.SegmentationMethod;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Immutable input bundle for headless Object Segmentation Sweep analysis.
+ */
+public final class SegSweepParameters {
+    public enum PickCriterion { KNEE, STABILITY, BOTH, NONE }
+
+    private final ImagePlus image;
+    private final int channel;
+    private final SegmentationMethod.Engine engine;
+    private final LinkedHashMap<ParameterId, ParameterValueList> axes;
+    private final CropSpec crop;
+    private final SegSweepLabeller.Connectivity connectivity;
+    private final PickCriterion pickCriterion;
+    private final double minimumCropFraction;
+    private final int parallelism;
+
+    private SegSweepParameters(Builder builder) {
+        this.image = builder.image;
+        this.channel = builder.channel;
+        this.engine = builder.engine;
+        this.axes = new LinkedHashMap<ParameterId, ParameterValueList>(builder.axes);
+        this.crop = builder.crop;
+        this.connectivity = builder.connectivity;
+        this.pickCriterion = builder.pickCriterion;
+        this.minimumCropFraction = builder.minimumCropFraction;
+        this.parallelism = builder.parallelism > 0
+                ? builder.parallelism
+                : Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
+    }
+
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    public ImagePlus image() {
+        return image;
+    }
+
+    public ImagePlus getImage() {
+        return image;
+    }
+
+    public int channel() {
+        return channel;
+    }
+
+    public int getChannel() {
+        return channel;
+    }
+
+    public SegmentationMethod.Engine engine() {
+        return engine;
+    }
+
+    public SegmentationMethod.Engine getEngine() {
+        return engine;
+    }
+
+    public Map<ParameterId, ParameterValueList> axes() {
+        return Collections.unmodifiableMap(axes);
+    }
+
+    public Map<ParameterId, ParameterValueList> getAxes() {
+        return axes();
+    }
+
+    public List<ParameterId> axisIds() {
+        return Collections.unmodifiableList(new ArrayList<ParameterId>(axes.keySet()));
+    }
+
+    public CropSpec crop() {
+        return crop;
+    }
+
+    public CropSpec getCrop() {
+        return crop;
+    }
+
+    public SegSweepLabeller.Connectivity connectivity() {
+        return connectivity;
+    }
+
+    public SegSweepLabeller.Connectivity getConnectivity() {
+        return connectivity;
+    }
+
+    public PickCriterion pickCriterion() {
+        return pickCriterion;
+    }
+
+    public PickCriterion getPickCriterion() {
+        return pickCriterion;
+    }
+
+    public double minimumCropFraction() {
+        return minimumCropFraction;
+    }
+
+    public double getMinimumCropFraction() {
+        return minimumCropFraction;
+    }
+
+    public int parallelism() {
+        return parallelism;
+    }
+
+    public int getParallelism() {
+        return parallelism;
+    }
+
+    public static final class Builder {
+        private ImagePlus image;
+        private int channel = 1;
+        private SegmentationMethod.Engine engine = SegmentationMethod.Engine.CLASSICAL;
+        private final LinkedHashMap<ParameterId, ParameterValueList> axes =
+                new LinkedHashMap<ParameterId, ParameterValueList>();
+        private CropSpec crop = CropSpec.full();
+        private SegSweepLabeller.Connectivity connectivity = SegSweepLabeller.DEFAULT_CONNECTIVITY;
+        private PickCriterion pickCriterion = PickCriterion.BOTH;
+        private double minimumCropFraction = 0.05d;
+        private int parallelism = Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
+
+        private Builder() {
+        }
+
+        public Builder image(ImagePlus image) {
+            this.image = image;
+            return this;
+        }
+
+        public Builder channel(int channel) {
+            this.channel = channel;
+            return this;
+        }
+
+        public Builder engine(SegmentationMethod.Engine engine) {
+            this.engine = engine == null ? null : engine;
+            return this;
+        }
+
+        public Builder axis(ParameterId id, double from, double to, double step) {
+            if (id == null) {
+                throw new ValidationException(ValidationFailure.EMPTY_AXIS,
+                        "Sweep axis id must not be null.");
+            }
+            if (!Double.isFinite(from) || !Double.isFinite(to) || !Double.isFinite(step)) {
+                throw new ValidationException(ValidationFailure.EMPTY_AXIS,
+                        "Axis " + id.stableKey() + " range values must be finite.");
+            }
+            if (from > to) {
+                throw new ValidationException(ValidationFailure.FROM_GREATER_THAN_TO,
+                        "Axis " + id.stableKey() + " has from > to (" + from + " > " + to + ").");
+            }
+            if (step == 0.0d) {
+                throw new ValidationException(ValidationFailure.ZERO_STEP,
+                        "Axis " + id.stableKey() + " step must not be zero.");
+            }
+            if (step < 0.0d) {
+                throw new ValidationException(ValidationFailure.ZERO_STEP,
+                        "Axis " + id.stableKey() + " step must be positive for an ascending range.");
+            }
+            return axis(id, ParameterValueList.fromRange(from, to, step));
+        }
+
+        public Builder axis(ParameterId id, ParameterValueList values) {
+            if (id == null || values == null || values.size() == 0) {
+                throw new ValidationException(ValidationFailure.EMPTY_AXIS,
+                        "Sweep axes must have a parameter id and at least one value.");
+            }
+            axes.put(id, values);
+            return this;
+        }
+
+        public Builder axis(ParameterId id, List<?> values) {
+            if (values == null || values.isEmpty()) {
+                throw new ValidationException(ValidationFailure.EMPTY_AXIS,
+                        "Axis " + (id == null ? "<null>" : id.stableKey()) + " must not be empty.");
+            }
+            return axis(id, ParameterValueList.of(values));
+        }
+
+        public Builder crop(CropSpec crop) {
+            this.crop = crop == null ? CropSpec.full() : crop;
+            return this;
+        }
+
+        public Builder connectivity(SegSweepLabeller.Connectivity connectivity) {
+            this.connectivity = connectivity == null
+                    ? SegSweepLabeller.DEFAULT_CONNECTIVITY : connectivity;
+            return this;
+        }
+
+        public Builder pickCriterion(PickCriterion pickCriterion) {
+            this.pickCriterion = pickCriterion == null ? PickCriterion.BOTH : pickCriterion;
+            return this;
+        }
+
+        public Builder minimumCropFraction(double minimumCropFraction) {
+            if (!Double.isFinite(minimumCropFraction) || minimumCropFraction < 0.0d) {
+                throw new ValidationException(ValidationFailure.INVALID_CROP_FRACTION,
+                        "Minimum crop fraction must be a non-negative finite number.");
+            }
+            this.minimumCropFraction = minimumCropFraction;
+            return this;
+        }
+
+        public Builder parallelism(int parallelism) {
+            this.parallelism = parallelism;
+            return this;
+        }
+
+        public SegSweepParameters build() {
+            return new SegSweepParameters(this);
+        }
+    }
+
+    public enum ValidationFailure {
+        NO_IMAGE,
+        EMPTY_AXIS,
+        FROM_GREATER_THAN_TO,
+        ZERO_STEP,
+        CROP_OUTSIDE_IMAGE_BOUNDS,
+        UNSUPPORTED_ENGINE,
+        UNSUPPORTED_AXIS_COMBINATION,
+        INVALID_CHANNEL,
+        INVALID_CROP_FRACTION
+    }
+
+    public static final class ValidationException extends IllegalArgumentException {
+        private static final long serialVersionUID = 1L;
+        private final ValidationFailure failure;
+
+        public ValidationException(ValidationFailure failure, String message) {
+            super(message);
+            this.failure = failure;
+        }
+
+        public ValidationFailure failure() {
+            return failure;
+        }
+    }
+}
