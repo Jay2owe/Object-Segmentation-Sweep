@@ -178,6 +178,9 @@ public final class SegSweepMacroOptions {
         primaryAxis.validate("values", "from/to/step");
         if (secondaryAxis != null) {
             secondaryAxis.validate("values2", "from2/to2/step2");
+            if (primaryAxis.id() == secondaryAxis.id()) {
+                throw new IllegalArgumentException("sweep and sweep2 must name different parameters.");
+            }
         }
         if (engine != SegmentationMethod.Engine.CLASSICAL) {
             throw new IllegalArgumentException("engine must be classical in v0.1.0.");

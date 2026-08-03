@@ -59,6 +59,31 @@ public final class LazyLabelMap {
         return image;
     }
 
+    /** Materialises one Z plane without allocating the full label stack. */
+    public ImagePlus getSlice(int oneBasedZ) {
+        int z = Math.max(1, Math.min(depth, oneBasedZ)) - 1;
+        materializationCount++;
+        ShortProcessor processor = new ShortProcessor(width, height);
+        int plane = width * height;
+        for (int label = 1; label <= nodes.size(); label++) {
+            int[] voxels = nodes.get(label - 1).voxels();
+            for (int i = 0; i < voxels.length; i++) {
+                int voxel = voxels[i];
+                int voxelZ = voxel / plane;
+                if (voxelZ == z) {
+                    processor.set(voxel - voxelZ * plane, label);
+                }
+            }
+        }
+        ImagePlus image = new ImagePlus("Object Segmentation Sweep labels z" + (z + 1), processor);
+        if (calibration != null) image.setCalibration(calibration.copy());
+        return image;
+    }
+
+    public int depth() {
+        return depth;
+    }
+
     public int materializationCount() {
         return materializationCount;
     }

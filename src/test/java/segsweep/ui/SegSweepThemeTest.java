@@ -6,6 +6,7 @@ import javax.swing.border.EmptyBorder;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Insets;
+import java.util.Arrays;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -24,5 +25,13 @@ public class SegSweepThemeTest {
         assertEquals(new Dimension(22, 22), SegSweepTheme.helpButtonSize());
         assertTrue(SegSweepTheme.h1().isBold());
         assertEquals(Font.PLAIN, SegSweepTheme.body().getStyle());
+    }
+
+    @Test
+    public void dialogExposesEveryClassicalSweepAxis() {
+        assertEquals(Arrays.asList("threshold", "min_size", "max_size", "volume",
+                        "mean_intensity", "max_intensity", "elongation", "surface_area",
+                        "sphericity", "compactness", "feret_diameter_max"),
+                Arrays.asList(SegSweepDialog.axisNames()));
     }
 }

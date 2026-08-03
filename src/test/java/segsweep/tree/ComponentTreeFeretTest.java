@@ -12,8 +12,10 @@ import ij.ImagePlus;
 import org.junit.Test;
 import segsweep.SegSweepLabeller;
 import segsweep.SegSweepLabellerFixtures;
+import segsweep.SweepRefusedException;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 public class ComponentTreeFeretTest {
     @Test
@@ -50,5 +52,45 @@ public class ComponentTreeFeretTest {
 
         assertEquals(ComponentTreeResult.Status.EMPTY, result.status());
         assertEquals(0, tree.feretComputationCount());
+    }
+
+    @Test
+    public void boundingBoxRejectsImpossibleFeretMinimumWithoutExactWork() {
+        ImagePlus image = SegSweepLabellerFixtures.emptyStack(3, 1, 1);
+        for (int x = 0; x < 3; x++) {
+            SegSweepLabellerFixtures.setVoxel(image, x, 0, 0, 20);
+        }
+        ComponentTree tree = ComponentTree.build(image, SegSweepLabeller.Connectivity.SIX);
+
+        ComponentTreeResult result = tree.query(ComponentTreeQuery.builder()
+                .threshold(10)
+                .predicate(MorphologyAttribute.FERET_DIAMETER_MAX, ">=", 3.0)
+                .build());
+
+        assertEquals(ComponentTreeResult.Status.EMPTY, result.status());
+        assertEquals(0, tree.feretComputationCount());
+    }
+
+    @Test
+    public void exactFeretRefusesObjectsAboveTheBoundedLimit() {
+        ImagePlus image = SegSweepLabellerFixtures.emptyStack(65, 65, 1);
+        for (int y = 0; y < 65; y++) {
+            for (int x = 0; x < 65; x++) {
+                SegSweepLabellerFixtures.setVoxel(image, x, y, 0, 20);
+            }
+        }
+        ComponentTree tree = ComponentTree.build(image, SegSweepLabeller.Connectivity.SIX);
+
+        try {
+            tree.query(ComponentTreeQuery.builder()
+                    .threshold(10)
+                    .predicate(MorphologyAttribute.FERET_DIAMETER_MAX, ">=", 1.0)
+                    .build());
+        } catch (SweepRefusedException e) {
+            assertTrue(e.getMessage().contains("4096"));
+            assertTrue(e.getMessage().contains("crop"));
+            return;
+        }
+        throw new AssertionError("Expected bounded exact-Feret refusal.");
     }
 }

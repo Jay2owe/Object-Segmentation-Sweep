@@ -11,12 +11,16 @@ package segsweep.tree;
 import ij.ImagePlus;
 import ij.measure.Calibration;
 import segsweep.SegSweepLabeller;
+import segsweep.SweepRefusedException;
 
 import java.util.ArrayList;
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.BiConsumer;
+import java.util.function.BooleanSupplier;
+import java.util.concurrent.CancellationException;
 
 /**
  * Component tree over one cropped image.
@@ -31,6 +35,7 @@ import java.util.List;
  */
 public final class ComponentTree {
     private static final int MAX_16_BIT_LABEL = 65535;
+    private static final int MAX_EXACT_FERET_VOXELS = 4096;
 
     private final int width;
     private final int height;
@@ -57,6 +62,13 @@ public final class ComponentTree {
 
     public static ComponentTree build(ImagePlus source, SegSweepLabeller.Connectivity connectivity) {
         return ComponentTreeBuilder.build(source, connectivity);
+    }
+
+    public static ComponentTree build(ImagePlus source,
+                                      SegSweepLabeller.Connectivity connectivity,
+                                      BooleanSupplier cancelCheck,
+                                      BiConsumer<Integer, Integer> progress) {
+        return ComponentTreeBuilder.build(source, connectivity, cancelCheck, progress);
     }
 
     public ComponentTreeResult query(ComponentTreeQuery query) {
@@ -93,7 +105,7 @@ public final class ComponentTree {
 
         List<ComponentNode> selected = new ArrayList<ComponentNode>();
         for (ComponentNode node : cheapSurvivors) {
-            if (matchesAll(node, feretPredicates)) {
+            if (matchesFeretPredicates(node, feretPredicates)) {
                 selected.add(node);
             }
         }
@@ -117,6 +129,12 @@ public final class ComponentTree {
      */
     public int[] objectCountsAtThresholds(double[] thresholds,
                                           ComponentTreeQuery queryTemplate) {
+        return objectCountsAtThresholds(thresholds, queryTemplate, null);
+    }
+
+    public int[] objectCountsAtThresholds(double[] thresholds,
+                                          ComponentTreeQuery queryTemplate,
+                                          BooleanSupplier cancelCheck) {
         if (thresholds == null) {
             throw new IllegalArgumentException("thresholds must not be null");
         }
@@ -134,8 +152,21 @@ public final class ComponentTree {
                 ? ComponentTreeQuery.builder().build() : queryTemplate;
         if (template.maxSize() < template.minSize()) return counts;
 
+        List<MorphologyPredicate> feretPredicates = new ArrayList<MorphologyPredicate>();
+        List<MorphologyPredicate> cheapPredicates = new ArrayList<MorphologyPredicate>();
+        for (MorphologyPredicate predicate : template.predicates()) {
+            if (predicate.attribute() == MorphologyAttribute.FERET_DIAMETER_MAX) {
+                feretPredicates.add(predicate);
+            } else {
+                cheapPredicates.add(predicate);
+            }
+        }
+
         int[] changes = new int[thresholds.length + 1];
         for (int i = 0; i < nodes.size(); i++) {
+            if ((i & 1023) == 0 && cancelCheck != null && cancelCheck.getAsBoolean()) {
+                throw new CancellationException("Full-axis count scoring was cancelled.");
+            }
             NodeData data = nodes.get(i);
             int right = lowerBound(thresholds, data.level);
             if (right <= 0) continue;
@@ -145,16 +176,39 @@ public final class ComponentTree {
             ComponentNode node = new ComponentNode(this, data);
             int volume = node.voxelCount();
             if (volume < template.minSize() || volume > template.maxSize()) continue;
-            if (!matchesAll(node, template.predicates())) continue;
+            if (!matchesAll(node, cheapPredicates)
+                    || !matchesFeretPredicates(node, feretPredicates)) continue;
             changes[left]++;
             changes[right]--;
         }
         int activeCount = 0;
         for (int i = 0; i < thresholds.length; i++) {
             activeCount += changes[i];
-            counts[i] = activeCount > MAX_16_BIT_LABEL ? 0 : activeCount;
+            counts[i] = labelCountForOutput(activeCount);
         }
         return counts;
+    }
+
+    static int labelCountForOutput(int count) {
+        return count > MAX_16_BIT_LABEL ? -1 : count;
+    }
+
+    /** Sorted unique component-tree event levels for continuous threshold axes. */
+    public double[] thresholdLevels() {
+        double[] levels = new double[nodes.size()];
+        int count = 0;
+        for (int i = 0; i < nodes.size(); i++) {
+            double level = nodes.get(i).level;
+            if (Double.isFinite(level)) levels[count++] = level;
+        }
+        Arrays.sort(levels, 0, count);
+        int unique = 0;
+        for (int i = 0; i < count; i++) {
+            if (unique == 0 || Double.compare(levels[i], levels[unique - 1]) != 0) {
+                levels[unique++] = levels[i];
+            }
+        }
+        return Arrays.copyOf(levels, unique);
     }
 
     public List<ComponentNode> nodes() {
@@ -219,8 +273,54 @@ public final class ComponentTree {
         return true;
     }
 
+    private boolean matchesFeretPredicates(ComponentNode node,
+                                            List<MorphologyPredicate> predicates) {
+        if (predicates.isEmpty()) return true;
+        double upper = feretBoundingBoxUpper(node);
+        boolean exactRequired = false;
+        for (int i = 0; i < predicates.size(); i++) {
+            MorphologyPredicate predicate = predicates.get(i);
+            double target = predicate.value();
+            MorphologyPredicate.Operator operator = predicate.operator();
+            if ((operator == MorphologyPredicate.Operator.GE && target <= 0.0)
+                    || (operator == MorphologyPredicate.Operator.GT && target < 0.0)) {
+                continue;
+            }
+            if ((operator == MorphologyPredicate.Operator.LE && target < 0.0)
+                    || (operator == MorphologyPredicate.Operator.LT && target <= 0.0)) {
+                return false;
+            }
+            if ((operator == MorphologyPredicate.Operator.GE && upper < target)
+                    || (operator == MorphologyPredicate.Operator.GT && upper <= target)) {
+                return false;
+            }
+            if ((operator == MorphologyPredicate.Operator.LE && upper <= target)
+                    || (operator == MorphologyPredicate.Operator.LT && upper < target)) {
+                continue;
+            }
+            exactRequired = true;
+        }
+        return !exactRequired || matchesAll(node, predicates);
+    }
+
+    private double feretBoundingBoxUpper(ComponentNode node) {
+        double pixelWidth = calibration == null ? 1.0 : positiveOrOne(calibration.pixelWidth);
+        double pixelHeight = calibration == null ? 1.0 : positiveOrOne(calibration.pixelHeight);
+        double pixelDepth = calibration == null ? 1.0 : positiveOrOne(calibration.pixelDepth);
+        double dx = (node.maxX() - node.minX()) * pixelWidth;
+        double dy = (node.maxY() - node.minY()) * pixelHeight;
+        double dz = (node.maxZ() - node.minZ()) * pixelDepth;
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
     double feretDiameterMax(NodeData data) {
         if (Double.isNaN(data.feretDiameterMax)) {
+            if (data.voxelCount > MAX_EXACT_FERET_VOXELS) {
+                throw new SweepRefusedException("Exact Feret diameter for a "
+                        + data.voxelCount + "-voxel object exceeds the bounded v0.1 limit of "
+                        + MAX_EXACT_FERET_VOXELS
+                        + ". Add a cheaper size/morphology filter or crop more tightly.");
+            }
             data.feretDiameterMax = exactFeret(voxels(data));
             feretComputationCount++;
         }
@@ -299,6 +399,10 @@ public final class ComponentTree {
         return Double.isFinite(value) && value > 0.0 ? value : 1.0;
     }
 
+    double elongation(NodeData data) {
+        return data.elongation(depth <= 1);
+    }
+
     static final class NodeData {
         final int id;
         int parentId = -1;
@@ -372,7 +476,7 @@ public final class ComponentTree {
             this.voxels = Arrays.copyOf(voxels, voxels.length);
         }
 
-        double elongation() {
+        double elongation(boolean twoDimensional) {
             if (voxelCount <= 1) return Double.NaN;
             double inv = 1.0 / (double) voxelCount;
             double cx = xSum * inv;
@@ -384,6 +488,15 @@ public final class ComponentTree {
             double cxy = xySum * inv - cx * cy;
             double cxz = xzSum * inv - cx * cz;
             double cyz = yzSum * inv - cy * cz;
+            if (twoDimensional) {
+                double trace = cxx + cyy;
+                double discriminant = Math.sqrt(Math.max(0.0,
+                        (cxx - cyy) * (cxx - cyy) + 4.0 * cxy * cxy));
+                double smallest2d = zeroIfTiny((trace - discriminant) / 2.0);
+                double largest2d = zeroIfTiny((trace + discriminant) / 2.0);
+                if (largest2d <= 0.0 || smallest2d <= 0.0) return Double.NaN;
+                return Math.sqrt(largest2d / smallest2d);
+            }
             double[] eigenvalues = symmetricEigenvalues3x3(cxx, cxy, cxz, cyy, cyz, czz);
             Arrays.sort(eigenvalues);
             double smallest = zeroIfTiny(eigenvalues[0]);

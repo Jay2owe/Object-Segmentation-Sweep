@@ -107,7 +107,7 @@ public final class ComponentNode {
     }
 
     public double elongation() {
-        return data.elongation();
+        return tree.elongation(data);
     }
 
     public double feretDiameterMax() {

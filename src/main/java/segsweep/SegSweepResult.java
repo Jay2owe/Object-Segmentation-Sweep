@@ -41,6 +41,8 @@ public final class SegSweepResult {
     public static final String PICK_DISPLAY_RANGE_MAX = "displayed range max";
     public static final String PICK_DISPLAY_RANGE_STEP = "displayed range step";
     public static final String PICK_STABILITY_SCORE = "stability score";
+    public static final String PICK_KNEE_RECOMMENDATION = "knee recommended settings";
+    public static final String PICK_STABILITY_RECOMMENDATION = "stability recommended settings";
     public static final String PICK_ELIGIBLE_COUNT = "eligible count";
     public static final String PICK_CROP_X = "crop x";
     public static final String PICK_CROP_Y = "crop y";
@@ -176,6 +178,17 @@ public final class SegSweepResult {
         }
         return new SegSweepResult(parameters, sweepTable, pickTable, pick, combo,
                 selectedLabels, results, provenance, settingsToken, warnings);
+    }
+
+    /**
+     * Drops tree-backed variation and label providers after batch output has been written.
+     * The returned summary retains scalar report tables and folder roll-up metadata.
+     */
+    SegSweepResult compactForBatch() {
+        return new SegSweepResult(parameters == null ? null : parameters.withoutImage(),
+                sweepTable, pickTable, pick, pickedCombo,
+                null, Collections.<VariationResult>emptyList(), provenance,
+                pickedSettingsToken, warnings);
     }
 
     private static List<VariationResult> immutableCopy(List<VariationResult> input) {

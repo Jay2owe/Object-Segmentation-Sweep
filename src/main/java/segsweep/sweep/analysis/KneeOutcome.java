@@ -23,7 +23,8 @@ public final class KneeOutcome {
         ALL_PLATEAU,
         TOO_FEW_POINTS,
         NO_BEND,
-        DEGENERATE_RANGE
+        DEGENERATE_RANGE,
+        TOO_MANY_OBJECTS
     }
 
     private final Kind kind;

@@ -14,6 +14,7 @@ import segsweep.SegSweepLabeller;
 import segsweep.SegSweepLabellerFixtures;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 public class ComponentTreeAttributeTest {
     @Test
@@ -61,6 +62,47 @@ public class ComponentTreeAttributeTest {
 
         assertEquals(3, node.voxelCount());
         assertEquals(14.0, node.surfaceArea(), 0.0);
+    }
+
+    @Test
+    public void twoDimensionalElongationUsesTheInPlaneCovariance() {
+        ImagePlus image = SegSweepLabellerFixtures.emptyStack(4, 2, 1);
+        for (int y = 0; y < 2; y++) {
+            for (int x = 0; x < 4; x++) {
+                SegSweepLabellerFixtures.setVoxel(image, x, y, 0, 20);
+            }
+        }
+        ComponentTree tree = ComponentTree.build(image, SegSweepLabeller.Connectivity.SIX);
+        ComponentNode node = tree.query(ComponentTreeQuery.builder().threshold(10).build())
+                .selectedNodes().get(0);
+
+        assertEquals(Math.sqrt(5.0), node.elongation(), 1.0e-12);
+        assertEquals(1, tree.query(ComponentTreeQuery.builder()
+                .threshold(10)
+                .predicate(MorphologyAttribute.ELONGATION, ">", 2.0)
+                .build()).objectCount());
+    }
+
+    @Test
+    public void floatThresholdLevelsAreSortedAndUnique() {
+        ImagePlus image = new ImagePlus("float-levels",
+                new ij.process.FloatProcessor(4, 1,
+                        new float[] { 0.5f, 0.25f, 0.5f, 0.75f }));
+        double[] levels = ComponentTree.build(image, SegSweepLabeller.Connectivity.SIX)
+                .thresholdLevels();
+
+        assertTrue(levels.length >= 3);
+        for (int i = 1; i < levels.length; i++) {
+            assertTrue(levels[i] > levels[i - 1]);
+        }
+        assertEquals(0.25, levels[0], 0.0);
+        assertEquals(0.75, levels[levels.length - 1], 0.0);
+    }
+
+    @Test
+    public void fullAxisCountMarksValuesBeyondTheLabelLimit() {
+        assertEquals(65535, ComponentTree.labelCountForOutput(65535));
+        assertEquals(-1, ComponentTree.labelCountForOutput(65536));
     }
 
     private static double expectedSphericity(double volume, double surface) {

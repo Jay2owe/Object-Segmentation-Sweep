@@ -20,6 +20,7 @@ public final class ResourceGuard {
     private static final long TREE_CHILD_BYTES_PER_VOXEL = 8L;
     private static final long ATTRIBUTE_BYTES_PER_NODE = 160L;
     private static final long LABEL_MAP_BYTES_PER_VOXEL = 2L;
+    private static final long RGB_PREVIEW_BYTES_PER_PIXEL = 4L;
 
     private ResourceGuard() {
     }
@@ -35,6 +36,9 @@ public final class ResourceGuard {
         }
         Rectangle crop = sweep.cropSpec().boundsFor(source);
         Estimate estimate = estimateTreeMemory(source, crop);
+        long previewBytes = multiply(multiply(crop.width, crop.height),
+                multiply(sweep.cellCount(), RGB_PREVIEW_BYTES_PER_PIXEL));
+        estimate = estimate.withPreviewBytes(previewBytes);
         long available = availableBytes();
         return decide(estimate, available, (long) Math.floor(available * DEFAULT_AVAILABLE_FRACTION));
     }
@@ -74,7 +78,7 @@ public final class ResourceGuard {
         long totalBytes = saturatingAdd(sourceBytes,
                 saturatingAdd(treeBytes, saturatingAdd(attributeBytes, oneLazyLabelMapBytes)));
         return new Estimate(cropVoxels, sourceBytes, unionFindBytes, nodeArrayBytes,
-                childArrayBytes, attributeBytes, oneLazyLabelMapBytes, totalBytes);
+                childArrayBytes, attributeBytes, oneLazyLabelMapBytes, 0L, totalBytes);
     }
 
     private static Feasibility decide(Estimate estimate, long available, long budget) {
@@ -141,6 +145,7 @@ public final class ResourceGuard {
         private final long childArrayBytes;
         private final long attributeBytes;
         private final long oneLazyLabelMapBytes;
+        private final long previewBytes;
         private final long totalBytes;
 
         private Estimate(long cropVoxels,
@@ -150,6 +155,7 @@ public final class ResourceGuard {
                          long childArrayBytes,
                          long attributeBytes,
                          long oneLazyLabelMapBytes,
+                         long previewBytes,
                          long totalBytes) {
             this.cropVoxels = cropVoxels;
             this.sourceBytes = sourceBytes;
@@ -158,7 +164,15 @@ public final class ResourceGuard {
             this.childArrayBytes = childArrayBytes;
             this.attributeBytes = attributeBytes;
             this.oneLazyLabelMapBytes = oneLazyLabelMapBytes;
+            this.previewBytes = previewBytes;
             this.totalBytes = totalBytes;
+        }
+
+        private Estimate withPreviewBytes(long bytes) {
+            long safe = Math.max(0L, bytes);
+            return new Estimate(cropVoxels, sourceBytes, unionFindBytes,
+                    nodeArrayBytes, childArrayBytes, attributeBytes,
+                    oneLazyLabelMapBytes, safe, saturatingAdd(totalBytes, safe));
         }
 
         public long cropVoxels() {
@@ -191,6 +205,10 @@ public final class ResourceGuard {
 
         public long oneLazyLabelMapBytes() {
             return oneLazyLabelMapBytes;
+        }
+
+        public long previewBytes() {
+            return previewBytes;
         }
 
         public long totalBytes() {

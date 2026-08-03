@@ -130,6 +130,20 @@ public final class SegSweepParameters {
         return parallelism;
     }
 
+    SegSweepParameters withoutImage() {
+        Builder builder = new Builder();
+        builder.image = null;
+        builder.channel = channel;
+        builder.engine = engine;
+        builder.axes.putAll(axes);
+        builder.crop = crop;
+        builder.connectivity = connectivity;
+        builder.pickCriterion = pickCriterion;
+        builder.minimumCropFraction = minimumCropFraction;
+        builder.parallelism = parallelism;
+        return new SegSweepParameters(builder);
+    }
+
     public static final class Builder {
         private ImagePlus image;
         private int channel = 1;
@@ -188,6 +202,10 @@ public final class SegSweepParameters {
             if (id == null || values == null || values.size() == 0) {
                 throw new ValidationException(ValidationFailure.EMPTY_AXIS,
                         "Sweep axes must have a parameter id and at least one value.");
+            }
+            if (axes.containsKey(id)) {
+                throw new ValidationException(ValidationFailure.UNSUPPORTED_AXIS_COMBINATION,
+                        "Sweep parameter " + id.stableKey() + " was provided more than once.");
             }
             axes.put(id, values);
             return this;

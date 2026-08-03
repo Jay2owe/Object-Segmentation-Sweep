@@ -53,8 +53,11 @@ public class VariationCellPanelLazyLabelTest {
 
         assertEquals(1, labelMap.materializationCount());
         assertEquals(1, materialised.get());
-        assertSame(cell.cachedLabelForTest(), cell.materialiseForDisplay());
-        assertEquals(1, labelMap.materializationCount());
+        assertNull(cell.cachedLabelForTest());
+        assertEquals(1, cell.currentPreviewImageForTest().getStackSize());
+        ImagePlus fullLabels = cell.materialiseForDisplay();
+        assertSame(fullLabels, cell.cachedLabelForTest());
+        assertEquals(2, labelMap.materializationCount());
     }
 
     @Test
@@ -70,6 +73,28 @@ public class VariationCellPanelLazyLabelTest {
         ImagePlus b = second.materialiseForDisplay();
 
         assertNotSame(a, b);
+    }
+
+    @Test
+    public void sliceNavigationRetainsOnlyOnePlanePreview() throws Exception {
+        final LazyLabelMap labelMap = GridTestFixtures.labelMap(3);
+        final VariationCellPanel cell = new VariationCellPanel(
+                GridTestFixtures.combo(10), GridTestFixtures.stack(3), null, null);
+        cell.setResult(VariationResult.success(GridTestFixtures.combo(10), labelMap,
+                1, 5L, null, GridTestFixtures.provenance()));
+
+        paint(cell);
+        SwingUtilities.invokeAndWait(new Runnable() {
+            @Override public void run() {
+                cell.setZ(3);
+            }
+        });
+
+        assertEquals(2, labelMap.materializationCount());
+        assertEquals(3, cell.currentZForTest());
+        assertNull(cell.cachedLabelForTest());
+        assertEquals(1, cell.currentPreviewImageForTest().getStackSize());
+        assertEquals(3, cell.sliceCountForSync());
     }
 
     private static void paint(VariationCellPanel cell) throws Exception {

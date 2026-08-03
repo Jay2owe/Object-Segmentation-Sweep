@@ -78,6 +78,27 @@ public class SweepProvenanceTest {
         assertTrue(provenance.comparableWith(parsed));
     }
 
+    @Test
+    public void comparabilityIncludesIndividualSpacingsAndConnectivity() {
+        Map<ParameterId, ParameterValueList> ranges = ranges(
+                ParameterId.THRESHOLD, ParameterValueList.ofInts(10, 20));
+        SweepProvenance base = new SweepProvenance(CropSpec.full(), 100, 100, 3,
+                ranges, "micron", 1.0, 2.0, 3.0, "six");
+        SweepProvenance swappedSpacing = new SweepProvenance(CropSpec.full(), 100, 100, 3,
+                ranges, "micron", 2.0, 1.0, 3.0, "six");
+        SweepProvenance otherConnectivity = new SweepProvenance(CropSpec.full(), 100, 100, 3,
+                ranges, "micron", 1.0, 2.0, 3.0, "twenty_six");
+
+        assertFalse(base.comparableWith(swappedSpacing));
+        assertFalse(base.comparableWith(otherConnectivity));
+        SweepProvenance parsed = SweepProvenance.fromCanonicalJson(base.toCanonicalJson());
+        assertEquals(1.0, parsed.pixelWidth(), 0.0);
+        assertEquals(2.0, parsed.pixelHeight(), 0.0);
+        assertEquals(3.0, parsed.pixelDepth(), 0.0);
+        assertEquals("six", parsed.connectivity());
+        assertTrue(base.comparableWith(parsed));
+    }
+
     private static SweepProvenance fullProvenance() {
         return provenance(CropSpec.full(),
                 ranges(ParameterId.THRESHOLD, ParameterValueList.ofInts(10, 20)));

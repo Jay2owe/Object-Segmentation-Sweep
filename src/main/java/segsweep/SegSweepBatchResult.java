@@ -244,9 +244,13 @@ public final class SegSweepBatchResult {
             reasons.add(current.image().getName() + ": displayed range differs.");
         }
         if (!a.calibrationUnit().equals(b.calibrationUnit())
-                || Double.compare(a.pixelArea(), b.pixelArea()) != 0
-                || Double.compare(a.voxelVolume(), b.voxelVolume()) != 0) {
+                || Double.compare(a.pixelWidth(), b.pixelWidth()) != 0
+                || Double.compare(a.pixelHeight(), b.pixelHeight()) != 0
+                || Double.compare(a.pixelDepth(), b.pixelDepth()) != 0) {
             reasons.add(current.image().getName() + ": calibration differs.");
+        }
+        if (!a.connectivity().equals(b.connectivity())) {
+            reasons.add(current.image().getName() + ": connectivity differs.");
         }
     }
 

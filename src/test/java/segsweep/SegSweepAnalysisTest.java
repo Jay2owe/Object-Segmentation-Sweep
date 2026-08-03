@@ -21,6 +21,7 @@ import segsweep.sweep.ParameterCombo;
 import segsweep.sweep.ParameterId;
 import segsweep.sweep.ParameterKey;
 import segsweep.sweep.ParameterValueList;
+import segsweep.sweep.SweepProgress;
 import segsweep.sweep.VariationResult;
 import segsweep.token.MorphPredicate;
 import segsweep.token.SegmentationMethod;
@@ -28,8 +29,13 @@ import segsweep.token.SegmentationTokenParser;
 import segsweep.tree.LazyLabelMap;
 
 import java.awt.Rectangle;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.concurrent.CancellationException;
+import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -61,11 +67,66 @@ public class SegSweepAnalysisTest {
         assertEquals("KNEE_AT", pick.getStringValue(SegSweepResult.PICK_KNEE_OUTCOME, 0));
         assertEquals(32.0d, pick.getValue(SegSweepResult.PICK_KNEE_VALUE, 0), 0.000001d);
         assertEquals(32.0d, pick.getValue(ParameterId.THRESHOLD.displayLabel(), 0), 0.000001d);
+        assertTrue(!pick.getStringValue(
+                SegSweepResult.PICK_KNEE_RECOMMENDATION, 0).isEmpty());
 
         ParameterCombo picked = result.pickedCombo();
         assertNotNull(picked);
         assertEquals(32.0d, ((Number) picked.get(ParameterId.THRESHOLD)).doubleValue(), 0.000001d);
         assertTrue(result.pickedSettingsToken().contains("thresh=32"));
+    }
+
+    @Test
+    public void reportPreservesConcreteStabilityRecommendationWhenCriteriaDisagree() {
+        ShortProcessor processor = new ShortProcessor(8, 8);
+        processor.setValue(100);
+        processor.fill();
+        SegSweepResult result = SegSweep.run(SegSweepParameters.builder()
+                .image(new ImagePlus("stable-disagreement", processor))
+                .axis(ParameterId.THRESHOLD, 10, 30, 10)
+                .pickCriterion(SegSweepParameters.PickCriterion.BOTH)
+                .build());
+
+        ResultsTable pick = result.pickTable();
+        assertTrue(!pick.getStringValue(
+                SegSweepResult.PICK_STABILITY_RECOMMENDATION, 0).isEmpty());
+        assertTrue(result.pickedSettingsToken().contains("knee\t"));
+        assertTrue(result.pickedSettingsToken().contains("stability\t"));
+        assertTrue(result.pickedSettingsToken().contains("; combo={"));
+    }
+
+    @Test
+    public void progressReportsRealStagesAndCancellationStopsTheRun() {
+        final List<String> phases = new ArrayList<String>();
+        SegSweepAnalysis.run(SegSweepParameters.builder()
+                        .image(designedKneeStack(true))
+                        .axis(ParameterId.THRESHOLD, 10, 60, 10)
+                        .pickCriterion(SegSweepParameters.PickCriterion.BOTH)
+                        .build(),
+                new Consumer<SweepProgress>() {
+                    @Override public void accept(SweepProgress progress) {
+                        phases.add(progress.phase());
+                    }
+                }, null);
+
+        assertTrue(phases.contains("building"));
+        assertTrue(phases.contains("querying"));
+        assertTrue(phases.contains("scoring"));
+
+        try {
+            SegSweepAnalysis.run(SegSweepParameters.builder()
+                            .image(designedKneeStack(true))
+                            .axis(ParameterId.THRESHOLD, 10, 60, 10)
+                            .build(),
+                    null, new BooleanSupplier() {
+                        @Override public boolean getAsBoolean() {
+                            return true;
+                        }
+                    });
+        } catch (CancellationException expected) {
+            return;
+        }
+        throw new AssertionError("Expected cancellation to stop the analysis.");
     }
 
     @Test

@@ -23,6 +23,7 @@ import segsweep.sweep.ParameterSweep;
 import segsweep.sweep.ParameterValueList;
 import segsweep.sweep.ResourceGuard;
 import segsweep.sweep.SweepDispatchOrder;
+import segsweep.sweep.SweepProgress;
 import segsweep.sweep.SweepProvenance;
 import segsweep.sweep.VariationResult;
 import segsweep.sweep.analysis.IouStability;
@@ -40,13 +41,17 @@ import segsweep.tree.MorphologyAttribute;
 
 import java.awt.Rectangle;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.TreeSet;
+import java.util.concurrent.CancellationException;
+import java.util.function.BiConsumer;
+import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 
 /**
  * Headless orchestration for one Object Segmentation Sweep run.
@@ -56,7 +61,14 @@ public final class SegSweepAnalysis {
     }
 
     public static SegSweepResult run(SegSweepParameters params) {
+        return run(params, null, null);
+    }
+
+    public static SegSweepResult run(SegSweepParameters params,
+                                     Consumer<SweepProgress> progress,
+                                     BooleanSupplier cancelCheck) {
         validate(params);
+        checkCancelled(cancelCheck);
 
         ParameterSweep displayWindow = buildDisplayWindow(params);
         ImagePlus channelImage = selectChannel(params.image(), params.channel());
@@ -68,6 +80,7 @@ public final class SegSweepAnalysis {
             List<String> warnings = initialWarnings(params, provenance);
             cropped = params.crop().apply(channelImage);
             ownsCrop = cropped != channelImage;
+            checkCancelled(cancelCheck);
 
             ResourceGuard.Feasibility feasibility =
                     ResourceGuard.assessFeasibility(croppedWindow(displayWindow), cropped);
@@ -75,12 +88,22 @@ public final class SegSweepAnalysis {
                 throw new SweepRefusedException(feasibility.getMessage());
             }
 
-            ComponentTree tree = ComponentTree.build(cropped, params.connectivity());
-            List<Double> fullThresholdValues = fullThresholdAxis(cropped);
+            final Consumer<SweepProgress> progressSink = progress;
+            ComponentTree tree = ComponentTree.build(cropped, params.connectivity(), cancelCheck,
+                    new BiConsumer<Integer, Integer>() {
+                        @Override public void accept(Integer done, Integer total) {
+                            emit(progressSink, done.intValue(), total.intValue(),
+                                    "building", "Building component tree.");
+                        }
+                    });
+            checkCancelled(cancelCheck);
+            double[] fullThresholdValues = fullThresholdAxis(cropped, tree);
             List<VariationResult> displayedResults =
-                    queryDisplayedResults(tree, displayWindow, provenance);
+                    queryDisplayedResults(tree, displayWindow, provenance, progress, cancelCheck);
             PickAssembly pickAssembly = scoreAndPick(tree, displayWindow,
-                    displayedResults, provenance, params, warnings, fullThresholdValues);
+                    displayedResults, provenance, params, warnings, fullThresholdValues,
+                    progress, cancelCheck);
+            checkCancelled(cancelCheck);
 
             ResultsTable sweepTable = buildSweepTable(displayWindow,
                     pickAssembly.scoredResults, pickAssembly.stability);
@@ -183,16 +206,16 @@ public final class SegSweepAnalysis {
                                               ParameterSweep displayWindow) {
         Calibration calibration = params.image().getCalibration();
         String unit = calibration == null ? "" : calibration.getUnit();
-        double pixelArea = 1.0d;
-        double voxelVolume = 1.0d;
+        double pixelWidth = 1.0d;
+        double pixelHeight = 1.0d;
+        double pixelDepth = 1.0d;
         if (calibration != null
                 && Double.isFinite(calibration.pixelWidth) && calibration.pixelWidth > 0.0d
                 && Double.isFinite(calibration.pixelHeight) && calibration.pixelHeight > 0.0d) {
-            pixelArea = calibration.pixelWidth * calibration.pixelHeight;
+            pixelWidth = calibration.pixelWidth;
+            pixelHeight = calibration.pixelHeight;
             if (Double.isFinite(calibration.pixelDepth) && calibration.pixelDepth > 0.0d) {
-                voxelVolume = pixelArea * calibration.pixelDepth;
-            } else {
-                voxelVolume = pixelArea;
+                pixelDepth = calibration.pixelDepth;
             }
         }
         LinkedHashMap<ParameterId, ParameterValueList> ranges =
@@ -202,7 +225,8 @@ public final class SegSweepAnalysis {
         }
         return new SweepProvenance(params.crop(), params.image().getWidth(),
                 params.image().getHeight(), Math.max(1, params.image().getNSlices()),
-                ranges, unit, pixelArea, voxelVolume);
+                ranges, unit, pixelWidth, pixelHeight, pixelDepth,
+                params.connectivity().name());
     }
 
     private static List<String> initialWarnings(SegSweepParameters params,
@@ -222,10 +246,13 @@ public final class SegSweepAnalysis {
 
     private static List<VariationResult> queryDisplayedResults(ComponentTree tree,
                                                                ParameterSweep displayWindow,
-                                                               SweepProvenance provenance) {
+                                                               SweepProvenance provenance,
+                                                               Consumer<SweepProgress> progress,
+                                                               BooleanSupplier cancelCheck) {
         List<ParameterCombo> ordered = SweepDispatchOrder.order(displayWindow);
         List<VariationResult> results = new ArrayList<VariationResult>(ordered.size());
         for (int i = 0; i < ordered.size(); i++) {
+            checkCancelled(cancelCheck);
             ParameterCombo combo = ordered.get(i);
             long started = System.currentTimeMillis();
             ComponentTreeResult treeResult = tree.query(toTreeQuery(combo));
@@ -237,6 +264,8 @@ public final class SegSweepAnalysis {
             results.add(VariationResult.success(combo, treeResult.labelMap(),
                     treeResult.objectCount(), durationMs, null, provenance, flags,
                     IouStability.IouSource.fromTreeResult(treeResult)));
+            emit(progress, i + 1, ordered.size(), "querying",
+                    "Querying component tree.");
         }
         return results;
     }
@@ -247,20 +276,26 @@ public final class SegSweepAnalysis {
                                              SweepProvenance provenance,
                                               SegSweepParameters params,
                                               List<String> warnings,
-                                              List<Double> fullThresholdValues) {
+                                              double[] fullThresholdValues,
+                                              Consumer<SweepProgress> progress,
+                                              BooleanSupplier cancelCheck) {
         if (params.pickCriterion() == SegSweepParameters.PickCriterion.NONE) {
             return new PickAssembly(null, null, null, displayedResults,
                     null, 0);
         }
 
-        StabilityOutcome stability = scoreStability(displayedResults);
+        emit(progress, 0, 2, "scoring", "Scoring stability.");
+        StabilityOutcome stability = scoreStability(displayedResults, cancelCheck);
+        checkCancelled(cancelCheck);
+        emit(progress, 1, 2, "scoring", "Scoring knee.");
         List<VariationResult> scoredResults = withStability(displayedResults, stability);
         if (stability.kind() != StabilityOutcome.Kind.STABLE_AT) {
             warnings.add("Stability pick: " + stability.explanation());
         }
 
         KneeAssembly kneeAssembly = scoreKnee(tree, displayWindow, provenance,
-                params, displayedResults, fullThresholdValues);
+                params, displayedResults, fullThresholdValues, cancelCheck);
+        emit(progress, 2, 2, "scoring", "Pick scoring complete.");
         KneeOutcome knee = kneeAssembly.outcome;
         if (knee.kind() != KneeOutcome.Kind.KNEE_AT) {
             warnings.add("Knee pick: " + knee.explanation());
@@ -277,7 +312,8 @@ public final class SegSweepAnalysis {
                 chosen.labelMap, chosen.displayCombinationIndex);
     }
 
-    private static StabilityOutcome scoreStability(List<VariationResult> results) {
+    private static StabilityOutcome scoreStability(List<VariationResult> results,
+                                                    BooleanSupplier cancelCheck) {
         List<ParameterCombo> combos = new ArrayList<ParameterCombo>(results.size());
         List<IouStability.IouSource> sources =
                 new ArrayList<IouStability.IouSource>(results.size());
@@ -286,7 +322,7 @@ public final class SegSweepAnalysis {
             combos.add(result.combo());
             sources.add(result.iouSource());
         }
-        return IouStability.score(combos, sources);
+        return IouStability.score(combos, sources, cancelCheck);
     }
 
     private static List<VariationResult> withStability(List<VariationResult> results,
@@ -303,23 +339,29 @@ public final class SegSweepAnalysis {
                                           SweepProvenance provenance,
                                           SegSweepParameters params,
                                           List<VariationResult> displayedResults,
-                                          List<Double> fullThresholdValues) {
+                                          double[] fullThresholdValues,
+                                          BooleanSupplier cancelCheck) {
         ParameterId axis = params.axes().containsKey(ParameterId.THRESHOLD)
                 ? ParameterId.THRESHOLD : firstAxis(params);
         ParameterValueList displayedValues = params.axes().get(axis);
         double[] displayStats = rangeStats(displayedValues);
         if (axis == ParameterId.THRESHOLD) {
-            List<Double> thresholdValues = fullThresholdValues == null
-                    ? Collections.<Double>emptyList() : fullThresholdValues;
-            if (!thresholdValues.isEmpty()) {
-                double[] xs = new double[thresholdValues.size()];
-                double[] counts = new double[thresholdValues.size()];
+            double[] thresholdValues = fullThresholdValues == null
+                    ? new double[0] : fullThresholdValues;
+            if (thresholdValues.length > 0) {
+                double[] xs = Arrays.copyOf(thresholdValues, thresholdValues.length);
+                double[] counts = new double[thresholdValues.length];
                 ParameterCombo base = firstCombo(displayWindow);
-                for (int i = 0; i < thresholdValues.size(); i++) {
-                    xs[i] = thresholdValues.get(i).doubleValue();
-                }
-                int[] objectCounts = tree.objectCountsAtThresholds(xs, toTreeQuery(base));
+                int[] objectCounts = tree.objectCountsAtThresholds(
+                        xs, toTreeQuery(base), cancelCheck);
                 for (int i = 0; i < objectCounts.length; i++) {
+                    if (objectCounts[i] < 0) {
+                        return new KneeAssembly(KneeOutcome.of(
+                                KneeOutcome.Kind.TOO_MANY_OBJECTS,
+                                displayStats[0], displayStats[1], displayStats[2],
+                                "At least one threshold exceeds the 16-bit object limit; knee scoring was refused."),
+                                null, null);
+                    }
                     counts[i] = objectCounts[i];
                 }
                 KneeOutcome outcome = KneeDetector.detect(xs, counts,
@@ -474,6 +516,10 @@ public final class SegSweepAnalysis {
         } else {
             table.setValue(SegSweepResult.PICK_STABILITY_SCORE, row, "");
         }
+        table.setValue(SegSweepResult.PICK_KNEE_RECOMMENDATION, row,
+                pick.kneeCombo() == null ? "" : pick.kneeCombo().toCanonicalJson());
+        table.setValue(SegSweepResult.PICK_STABILITY_RECOMMENDATION, row,
+                pick.stabilityCombo() == null ? "" : pick.stabilityCombo().toCanonicalJson());
         table.setValue(SegSweepResult.PICK_ELIGIBLE_COUNT, row,
                 stability.eligibleCount());
         Rectangle crop = pick.provenance().crop().boundsFor(
@@ -498,8 +544,10 @@ public final class SegSweepAnalysis {
                 ? SettingsTokenWriter.PickSummary.empty()
                 : SettingsTokenWriter.PickSummary.of(
                 params.pickCriterion().name().toLowerCase(Locale.ROOT),
-                pick.knee().kind().name() + valueSuffix(pick.knee().parameterValue()),
-                pick.stability().kind().name() + valueSuffix(pick.stability().meanNeighbourIou()),
+                pick.knee().kind().name() + valueSuffix(pick.knee().parameterValue())
+                        + comboSuffix(pick.kneeCombo()),
+                pick.stability().kind().name() + valueSuffix(pick.stability().meanNeighbourIou())
+                        + comboSuffix(pick.stabilityCombo()),
                 String.valueOf(pick.criteriaAgree()));
         return SettingsTokenWriter.write(method, provenance, summary, java.time.Instant.now(),
                 imageIdentity(params == null ? null : params.image()),
@@ -640,23 +688,12 @@ public final class SegSweepAnalysis {
         return new double[] { min, max, step };
     }
 
-    private static List<Double> fullThresholdAxis(ImagePlus image) {
+    private static double[] fullThresholdAxis(ImagePlus image, ComponentTree tree) {
         if (image == null || image.getStack() == null) {
-            return Collections.emptyList();
+            return new double[0];
         }
         if (image.getBitDepth() == 32) {
-            TreeSet<Double> unique = new TreeSet<Double>();
-            ImageStack stack = image.getStack();
-            for (int slice = 1; slice <= stack.getSize(); slice++) {
-                ImageProcessor processor = stack.getProcessor(slice);
-                for (int i = 0; i < processor.getPixelCount(); i++) {
-                    float value = processor.getf(i);
-                    if (Float.isFinite(value)) {
-                        unique.add(Double.valueOf(value));
-                    }
-                }
-            }
-            return new ArrayList<Double>(unique);
+            return tree == null ? new double[0] : tree.thresholdLevels();
         }
         int max = 0;
         ImageStack stack = image.getStack();
@@ -669,11 +706,28 @@ public final class SegSweepAnalysis {
                 }
             }
         }
-        List<Double> values = new ArrayList<Double>(max + 1);
+        double[] values = new double[max + 1];
         for (int i = 0; i <= max; i++) {
-            values.add(Double.valueOf(i));
+            values[i] = i;
         }
         return values;
+    }
+
+    private static void emit(Consumer<SweepProgress> progress,
+                             int completed,
+                             int total,
+                             String phase,
+                             String message) {
+        if (progress != null) {
+            progress.accept(new SweepProgress(Math.max(0, completed), Math.max(0, total),
+                    0, null, phase, message));
+        }
+    }
+
+    private static void checkCancelled(BooleanSupplier cancelCheck) {
+        if (cancelCheck != null && cancelCheck.getAsBoolean()) {
+            throw new CancellationException("Object Segmentation Sweep was cancelled.");
+        }
     }
 
     private static int intParameter(ParameterCombo combo, ParameterId id, int fallback) {
@@ -737,6 +791,10 @@ public final class SegSweepAnalysis {
         return Double.isFinite(value)
                 ? "=" + CanonicalScale.formatNumber(Double.valueOf(value))
                 : "";
+    }
+
+    private static String comboSuffix(ParameterCombo combo) {
+        return combo == null ? "" : "; combo=" + combo.toCanonicalJson();
     }
 
     private static ImagePlus selectChannel(ImagePlus source, int channel) {

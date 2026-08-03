@@ -64,7 +64,9 @@ public final class SegSweepBatch {
                 "(.+?)-(.+?)_(.+)\\.tif");
         final JTextField groupField = addField(content, c, 2, "Capture group", "1");
         final JCheckBox recursiveBox = addCheck(content, c, 3, "Include subfolders", true);
-        final JCheckBox hideDisplayBox = addCheck(content, c, 4, "Hide display", true);
+        final JTextField analysisField = addField(content, c, 4, "Analysis options",
+                SegSweepDialog.defaults().toMacroOptions());
+        analysisField.setToolTipText("Macro options: channel, sweep range(s), crop and pick criterion.");
         final JTextField autosaveField = addField(content, c, 5, "Save to", "");
 
         final JTextArea previewArea = new JTextArea(10, 48);
@@ -108,8 +110,9 @@ public final class SegSweepBatch {
                         regexField.getText().trim(),
                         Integer.parseInt(groupField.getText().trim()))
                         .recursive(recursiveBox.isSelected())
-                        .hideDisplay(hideDisplayBox.isSelected())
-                        .analysisOptions(SegSweepDialog.defaults());
+                        .hideDisplay(true)
+                        .analysisOptions(SegSweepMacroOptionsParser.parse(
+                                analysisField.getText().trim()));
                 if (autosaveField.getText().trim().length() > 0) {
                     builder.saveDir(new File(autosaveField.getText().trim()));
                 }

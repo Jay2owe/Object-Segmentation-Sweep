@@ -256,7 +256,7 @@ public final class SegSweepDialog {
         range.add(suggest);
         content.add(range);
         state.axis2Choice = addChoice(content, "Also sweep:",
-                new String[] { NONE, "min_size", "max_size", "sphericity", "volume" }, NONE);
+                secondaryAxisNames(), NONE);
         JPanel range2 = row("From:");
         state.from2Field = new JTextField("", 5);
         state.to2Field = new JTextField("", 5);
@@ -414,8 +414,18 @@ public final class SegSweepDialog {
         return image != null && image.getRoi() != null;
     }
 
-    private static String[] axisNames() {
-        return new String[] { "threshold", "min_size", "max_size", "sphericity", "volume" };
+    static String[] axisNames() {
+        return new String[] { "threshold", "min_size", "max_size", "volume",
+                "mean_intensity", "max_intensity", "elongation", "surface_area",
+                "sphericity", "compactness", "feret_diameter_max" };
+    }
+
+    private static String[] secondaryAxisNames() {
+        String[] axes = axisNames();
+        String[] out = new String[axes.length + 1];
+        out[0] = NONE;
+        System.arraycopy(axes, 0, out, 1, axes.length);
+        return out;
     }
 
     private static double stepBetween(ParameterValueList list) {
@@ -491,10 +501,13 @@ public final class SegSweepDialog {
             }
             options.setPickCriterion(SegSweepParameters.PickCriterion.valueOf(
                     ((String) pickChoice.getSelectedItem()).toUpperCase(Locale.ROOT)));
-            if (cropChoice != null && "Sweep in ROI".equals(cropChoice.getSelectedItem())
-                    && image != null && image.getRoi() != null) {
-                Rectangle bounds = image.getRoi().getBounds();
-                options.setCrop(CropSpec.custom(bounds));
+            ImagePlus chosenImage = selectedImage(this);
+            if (cropChoice != null && "Sweep in ROI".equals(cropChoice.getSelectedItem())) {
+                if (chosenImage == null || chosenImage.getRoi() == null) {
+                    throw new IllegalArgumentException(
+                            "The selected image does not have an ROI to sweep.");
+                }
+                options.setCrop(CropSpec.custom(chosenImage.getRoi().getBounds()));
             }
             if (autosaveField != null && autosaveField.getText().trim().length() > 0) {
                 options.setAutosave(autosaveField.getText());

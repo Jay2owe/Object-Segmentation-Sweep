@@ -70,9 +70,15 @@ public final class SettingsTokenWriter {
         appendDisplayedRanges(out, provenance);
         out.append("region\t").append(regionLine(provenance)).append('\n');
         out.append("calibration\tunit=").append(emptyAsUncalibrated(provenance.calibrationUnit()))
+                .append("; pixel_width=").append(CanonicalScale.formatNumber(Double.valueOf(provenance.pixelWidth())))
+                .append("; pixel_height=").append(CanonicalScale.formatNumber(Double.valueOf(provenance.pixelHeight())))
+                .append("; pixel_depth=").append(CanonicalScale.formatNumber(Double.valueOf(provenance.pixelDepth())))
                 .append("; pixel_area=").append(CanonicalScale.formatNumber(Double.valueOf(provenance.pixelArea())))
                 .append("; voxel_volume=").append(CanonicalScale.formatNumber(Double.valueOf(provenance.voxelVolume())))
                 .append('\n');
+        if (!provenance.connectivity().isEmpty()) {
+            out.append("connectivity\t").append(provenance.connectivity()).append('\n');
+        }
         out.append("provenance\t").append(provenance.toCanonicalJson()).append('\n');
         return out.toString();
     }

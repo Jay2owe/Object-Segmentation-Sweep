@@ -26,8 +26,12 @@ public final class SweepProvenance implements Serializable {
     private final int fullDepth;
     private final Map<ParameterId, ParameterValueList> displayedRanges;
     private final String calibrationUnit;
+    private final double pixelWidth;
+    private final double pixelHeight;
+    private final double pixelDepth;
     private final double pixelArea;
     private final double voxelVolume;
+    private final String connectivity;
 
     public SweepProvenance(CropSpec crop,
                            int fullWidth,
@@ -37,7 +41,8 @@ public final class SweepProvenance implements Serializable {
                            String calibrationUnit,
                            double voxelVolume) {
         this(crop, fullWidth, fullHeight, fullDepth, displayedRanges,
-                calibrationUnit, voxelVolume, voxelVolume);
+                calibrationUnit, Math.sqrt(voxelVolume), Math.sqrt(voxelVolume),
+                1.0d, "");
     }
 
     public SweepProvenance(CropSpec crop,
@@ -48,6 +53,21 @@ public final class SweepProvenance implements Serializable {
                            String calibrationUnit,
                            double pixelArea,
                            double voxelVolume) {
+        this(crop, fullWidth, fullHeight, fullDepth, displayedRanges,
+                calibrationUnit, Math.sqrt(pixelArea), Math.sqrt(pixelArea),
+                voxelVolume / pixelArea, "");
+    }
+
+    public SweepProvenance(CropSpec crop,
+                           int fullWidth,
+                           int fullHeight,
+                           int fullDepth,
+                           Map<ParameterId, ParameterValueList> displayedRanges,
+                           String calibrationUnit,
+                           double pixelWidth,
+                           double pixelHeight,
+                           double pixelDepth,
+                           String connectivity) {
         if (crop == null) {
             throw new IllegalArgumentException("crop must not be null");
         }
@@ -57,11 +77,10 @@ public final class SweepProvenance implements Serializable {
         if (displayedRanges == null) {
             throw new IllegalArgumentException("displayedRanges must not be null");
         }
-        if (!Double.isFinite(pixelArea) || pixelArea <= 0.0d) {
-            throw new IllegalArgumentException("pixelArea must be a positive finite value");
-        }
-        if (!Double.isFinite(voxelVolume) || voxelVolume <= 0.0d) {
-            throw new IllegalArgumentException("voxelVolume must be a positive finite value");
+        if (!Double.isFinite(pixelWidth) || pixelWidth <= 0.0d
+                || !Double.isFinite(pixelHeight) || pixelHeight <= 0.0d
+                || !Double.isFinite(pixelDepth) || pixelDepth <= 0.0d) {
+            throw new IllegalArgumentException("pixel spacings must be positive finite values");
         }
         this.crop = crop;
         this.fullWidth = fullWidth;
@@ -69,8 +88,12 @@ public final class SweepProvenance implements Serializable {
         this.fullDepth = fullDepth;
         this.displayedRanges = Collections.unmodifiableMap(copyDisplayedRanges(displayedRanges));
         this.calibrationUnit = calibrationUnit == null ? "" : calibrationUnit.trim();
-        this.pixelArea = pixelArea;
-        this.voxelVolume = voxelVolume;
+        this.pixelWidth = pixelWidth;
+        this.pixelHeight = pixelHeight;
+        this.pixelDepth = pixelDepth;
+        this.pixelArea = pixelWidth * pixelHeight;
+        this.voxelVolume = this.pixelArea * pixelDepth;
+        this.connectivity = connectivity == null ? "" : connectivity.trim().toLowerCase(Locale.ROOT);
     }
 
     public CropSpec crop() {
@@ -103,6 +126,22 @@ public final class SweepProvenance implements Serializable {
 
     public double pixelArea() {
         return pixelArea;
+    }
+
+    public double pixelWidth() {
+        return pixelWidth;
+    }
+
+    public double pixelHeight() {
+        return pixelHeight;
+    }
+
+    public double pixelDepth() {
+        return pixelDepth;
+    }
+
+    public String connectivity() {
+        return connectivity;
     }
 
     /** Returns the number of millimetres represented by one calibration unit. */
@@ -167,19 +206,25 @@ public final class SweepProvenance implements Serializable {
         }
         if (!displayedRanges.equals(other.displayedRanges)) return false;
         if (!calibrationUnit.equals(other.calibrationUnit)) return false;
-        return Double.compare(pixelArea, other.pixelArea) == 0
-                && Double.compare(voxelVolume, other.voxelVolume) == 0;
+        return Double.compare(pixelWidth, other.pixelWidth) == 0
+                && Double.compare(pixelHeight, other.pixelHeight) == 0
+                && Double.compare(pixelDepth, other.pixelDepth) == 0
+                && connectivity.equals(other.connectivity);
     }
 
     public String toCanonicalJson() {
         LinkedHashMap<String, Object> root = new LinkedHashMap<String, Object>();
         root.put("calibrationUnit", calibrationUnit);
+        root.put("connectivity", connectivity);
         root.put("crop", crop.toCanonicalObject());
         root.put("displayedRanges", displayedRangesObject());
         root.put("fullDepth", Integer.valueOf(fullDepth));
         root.put("fullHeight", Integer.valueOf(fullHeight));
         root.put("fullWidth", Integer.valueOf(fullWidth));
         root.put("pixelArea", Double.valueOf(pixelArea));
+        root.put("pixelDepth", Double.valueOf(pixelDepth));
+        root.put("pixelHeight", Double.valueOf(pixelHeight));
+        root.put("pixelWidth", Double.valueOf(pixelWidth));
         root.put("voxelVolume", Double.valueOf(voxelVolume));
         return CanonicalJson.write(root);
     }
@@ -196,6 +241,14 @@ public final class SweepProvenance implements Serializable {
         double voxelVolume = doubleValue(root.get("voxelVolume"), "voxelVolume");
         double pixelArea = root.containsKey("pixelArea")
                 ? doubleValue(root.get("pixelArea"), "pixelArea") : voxelVolume;
+        double pixelWidth = root.containsKey("pixelWidth")
+                ? doubleValue(root.get("pixelWidth"), "pixelWidth") : Math.sqrt(pixelArea);
+        double pixelHeight = root.containsKey("pixelHeight")
+                ? doubleValue(root.get("pixelHeight"), "pixelHeight") : pixelArea / pixelWidth;
+        double pixelDepth = root.containsKey("pixelDepth")
+                ? doubleValue(root.get("pixelDepth"), "pixelDepth") : voxelVolume / pixelArea;
+        String connectivity = root.containsKey("connectivity")
+                ? stringValue(root.get("connectivity"), "connectivity") : "";
         return new SweepProvenance(
                 crop,
                 intValue(root.get("fullWidth"), "fullWidth"),
@@ -203,8 +256,7 @@ public final class SweepProvenance implements Serializable {
                 intValue(root.get("fullDepth"), "fullDepth"),
                 ranges,
                 stringValue(root.get("calibrationUnit"), "calibrationUnit"),
-                pixelArea,
-                voxelVolume);
+                pixelWidth, pixelHeight, pixelDepth, connectivity);
     }
 
     private LinkedHashMap<String, Object> displayedRangesObject() {
@@ -315,10 +367,13 @@ public final class SweepProvenance implements Serializable {
         result = 31 * result + fullDepth;
         result = 31 * result + displayedRanges.hashCode();
         result = 31 * result + calibrationUnit.hashCode();
-        long areaBits = Double.doubleToLongBits(pixelArea);
-        result = 31 * result + (int) (areaBits ^ (areaBits >>> 32));
-        long bits = Double.doubleToLongBits(voxelVolume);
-        result = 31 * result + (int) (bits ^ (bits >>> 32));
+        long widthBits = Double.doubleToLongBits(pixelWidth);
+        result = 31 * result + (int) (widthBits ^ (widthBits >>> 32));
+        long heightBits = Double.doubleToLongBits(pixelHeight);
+        result = 31 * result + (int) (heightBits ^ (heightBits >>> 32));
+        long depthBits = Double.doubleToLongBits(pixelDepth);
+        result = 31 * result + (int) (depthBits ^ (depthBits >>> 32));
+        result = 31 * result + connectivity.hashCode();
         return result;
     }
 

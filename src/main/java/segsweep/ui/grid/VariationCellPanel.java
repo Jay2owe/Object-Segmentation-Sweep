@@ -109,6 +109,8 @@ public final class VariationCellPanel extends JPanel {
     private boolean peeking;
     private boolean suppressNextClick;
     private boolean disposed;
+    private int currentZ = 1;
+    private int renderedPreviewZ = -1;
     private Point pressPoint;
 
     public VariationCellPanel(ParameterCombo combo,
@@ -179,11 +181,12 @@ public final class VariationCellPanel extends JPanel {
     }
 
     int sliceCountForSync() {
-        int previewSlices = Math.max(1, preview.getSliceCount());
-        if (currentPreviewImage != null || previewSlices > 1) {
-            return previewSlices;
+        if (result != null && !result.hasError() && result.hasLabelMap()) {
+            return Math.max(1, result.labelMap().depth());
         }
-        return sliceCount(croppedSource);
+        if (cachedLabel != null) return sliceCount(cachedLabel);
+        if (croppedSource != null) return sliceCount(croppedSource);
+        return Math.max(1, preview.getSliceCount());
     }
 
     public ImagePreviewPanel preview() {
@@ -251,6 +254,7 @@ public final class VariationCellPanel extends JPanel {
                 }
                 releaseOwnedImages();
                 result = next;
+                renderedPreviewZ = -1;
                 cachedLabel = null;
                 cachedLabelOwned = false;
                 objectCount = next.objectCount();
@@ -366,7 +370,14 @@ public final class VariationCellPanel extends JPanel {
     public void setZ(final int z) {
         runOnEdt(new Runnable() {
             @Override public void run() {
-                preview.setCurrentZ(z);
+                currentZ = Math.max(1, z);
+                if (result != null && cachedLabel == null) {
+                    renderedPreviewZ = -1;
+                    setDisplayedPreviewImage(null, false);
+                    materialiseCurrentSliceOnEdt();
+                } else {
+                    preview.setCurrentZ(currentZ);
+                }
             }
         });
     }
@@ -485,10 +496,38 @@ public final class VariationCellPanel extends JPanel {
     }
 
     private void refreshObjectOverlay() {
-        if (baseline || errorState || cachedLabel == null) {
+        if (baseline || errorState) {
             return;
         }
+        if (result != null && cachedLabel == null) {
+            renderedPreviewZ = -1;
+            setDisplayedPreviewImage(null, false);
+            materialiseCurrentSliceOnEdt();
+            return;
+        }
+        if (cachedLabel == null) return;
         setDisplayedPreviewImage(renderObjectPreview(), true);
+    }
+
+    private void materialiseCurrentSliceOnEdt() {
+        if (result == null || result.hasError() || renderedPreviewZ == currentZ) return;
+        ImagePlus labelSlice = result.labelMap().getSlice(currentZ);
+        try {
+            ImagePlus rendered = renderObjectPreviewSlice(labelSlice, currentZ);
+            renderedPreviewZ = currentZ;
+            setDisplayedPreviewImage(rendered, true);
+            if (materialisationListener != null) materialisationListener.run();
+        } finally {
+            labelSlice.changes = false;
+            labelSlice.close();
+            labelSlice.flush();
+        }
+        refreshTooltip();
+    }
+
+    ImagePlus previewImageForComparison() {
+        materialiseCurrentSliceOnEdt();
+        return displayedPreviewImage;
     }
 
     private ImagePlus renderObjectPreview() {
@@ -506,6 +545,37 @@ public final class VariationCellPanel extends JPanel {
             rendered = ObjectOverlayRenderer.renderLabelMap(label, Math.max(0, objectCount));
         }
         return rendered == null ? label : rendered;
+    }
+
+    private ImagePlus renderObjectPreviewSlice(ImagePlus labelSlice, int z) {
+        ImagePlus source = objectOverlayEnabled ? objectOverlaySource() : null;
+        ImagePlus sourceSlice = source == null ? null : duplicateSlice(source, z);
+        try {
+            ImagePlus rendered = null;
+            if (sourceSlice != null && dimensionsMatch(sourceSlice, labelSlice)) {
+                rendered = ObjectOverlayRenderer.renderFiltered(sourceSlice, labelSlice,
+                        null, true, objectDisplaySettings);
+            }
+            if (rendered == null) {
+                rendered = ObjectOverlayRenderer.renderLabelMap(
+                        labelSlice, Math.max(0, objectCount));
+            }
+            return rendered;
+        } finally {
+            if (sourceSlice != null) {
+                sourceSlice.changes = false;
+                sourceSlice.close();
+                sourceSlice.flush();
+            }
+        }
+    }
+
+    private static ImagePlus duplicateSlice(ImagePlus source, int z) {
+        int slice = Math.max(1, Math.min(Math.max(1, source.getStackSize()), z));
+        ImagePlus out = new ImagePlus(source.getTitle() + " z" + slice,
+                source.getStack().getProcessor(slice).duplicate());
+        if (source.getCalibration() != null) out.setCalibration(source.getCalibration().copy());
+        return out;
     }
 
     private ImagePlus objectOverlaySource() {
@@ -679,6 +749,7 @@ public final class VariationCellPanel extends JPanel {
         peeking = true;
         suppressNextClick = true;
         showPreviewImage(rawSourceImage);
+        preview.setCurrentZ(currentZ);
         repaint();
     }
 
@@ -718,7 +789,7 @@ public final class VariationCellPanel extends JPanel {
     }
 
     @Override protected void paintComponent(Graphics g) {
-        materialiseForDisplayOnEdt();
+        materialiseCurrentSliceOnEdt();
         super.paintComponent(g);
         Graphics2D g2 = (Graphics2D) g.create();
         try {
@@ -992,7 +1063,7 @@ public final class VariationCellPanel extends JPanel {
     }
 
     int currentZForTest() {
-        return preview.getCurrentZ();
+        return currentZ;
     }
 
     ImagePlus cachedLabelForTest() {

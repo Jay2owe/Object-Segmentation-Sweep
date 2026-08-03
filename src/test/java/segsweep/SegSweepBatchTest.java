@@ -20,15 +20,18 @@ import segsweep.sweep.ParameterId;
 
 import java.awt.Rectangle;
 import java.io.File;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Scanner;
 import java.util.regex.Pattern;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public class SegSweepBatchTest {
@@ -52,6 +55,18 @@ public class SegSweepBatchTest {
         assertTrue(preview.contains("Preview") || preview.contains("3 files"));
         assertTrue(preview.contains("Exp1-A01_LH_CTX.tif"));
         assertTrue(preview.contains("Exp1-*_RH_CTX.tif"));
+    }
+
+    @Test
+    public void batchCommandIsReachableFromTheNormalPluginMenu() {
+        InputStream stream = SegSweepBatchTest.class.getResourceAsStream("/plugins.config");
+        assertTrue(stream != null);
+        Scanner scanner = new Scanner(stream, "UTF-8").useDelimiter("\\A");
+        String config = scanner.hasNext() ? scanner.next() : "";
+        scanner.close();
+
+        assertTrue(config.contains("Object Segmentation Sweep Batch"));
+        assertTrue(config.contains("segsweep.SegSweep_(\"batch\")"));
     }
 
     @Test
@@ -90,6 +105,11 @@ public class SegSweepBatchTest {
         assertEquals(4, result.processedImages());
         assertEquals(1, result.failedImages());
         assertTrue(result.failures().get(0).image().getName().contains("A03"));
+        for (SegSweepBatchResult.ImageResult imageResult : result.imageResults()) {
+            assertTrue(imageResult.result().results().isEmpty());
+            assertNull(imageResult.result().pickedLabelMap());
+            assertNull(imageResult.result().parameters().image());
+        }
         File failures = new File(result.outputDirectory(), "batch_failures.csv");
         assertTrue(failures.isFile());
         assertTrue(text(failures).contains("Exp1-A03_LH_CTX.tif"));

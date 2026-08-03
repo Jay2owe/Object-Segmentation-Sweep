@@ -19,17 +19,27 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CancellationException;
+import java.util.function.BiConsumer;
+import java.util.function.BooleanSupplier;
 
 public final class ComponentTreeBuilder {
     private ComponentTreeBuilder() {}
 
     public static ComponentTree build(ImagePlus source, SegSweepLabeller.Connectivity connectivity) {
+        return build(source, connectivity, null, null);
+    }
+
+    public static ComponentTree build(ImagePlus source,
+                                      SegSweepLabeller.Connectivity connectivity,
+                                      BooleanSupplier cancelCheck,
+                                      BiConsumer<Integer, Integer> progress) {
         if (source == null || source.getStack() == null || source.getStackSize() == 0) {
             throw new IllegalArgumentException("source image must have a non-empty stack");
         }
         SegSweepLabeller.Connectivity safeConnectivity = connectivity == null
                 ? SegSweepLabeller.DEFAULT_CONNECTIVITY : connectivity;
-        BuilderState state = new BuilderState(source, safeConnectivity);
+        BuilderState state = new BuilderState(source, safeConnectivity, cancelCheck, progress);
         state.build();
         Calibration calibration = source.getCalibration();
         return new ComponentTree(source.getWidth(),
@@ -58,8 +68,13 @@ public final class ComponentTreeBuilder {
         private final int[] currentNode;
         private final boolean[] touchedAtLevel;
         private final IntList[] pendingChildren;
+        private final BooleanSupplier cancelCheck;
+        private final BiConsumer<Integer, Integer> progress;
 
-        BuilderState(ImagePlus source, SegSweepLabeller.Connectivity connectivity) {
+        BuilderState(ImagePlus source,
+                     SegSweepLabeller.Connectivity connectivity,
+                     BooleanSupplier cancelCheck,
+                     BiConsumer<Integer, Integer> progress) {
             this.source = source;
             this.connectivity = connectivity;
             this.width = source.getWidth();
@@ -82,12 +97,21 @@ public final class ComponentTreeBuilder {
             Arrays.fill(currentNode, -1);
             this.touchedAtLevel = new boolean[voxelCount];
             this.pendingChildren = new IntList[voxelCount];
+            this.cancelCheck = cancelCheck;
+            this.progress = progress;
             readIntensities();
         }
 
         void build() {
+            checkCancelled();
+            if (progress != null) {
+                progress.accept(Integer.valueOf(0), Integer.valueOf(order.length));
+            }
             Arrays.sort(order, new java.util.Comparator<Integer>() {
+                private int comparisons;
+
                 @Override public int compare(Integer a, Integer b) {
+                    if ((comparisons++ & 16383) == 0) checkCancelled();
                     float left = intensities[a.intValue()];
                     float right = intensities[b.intValue()];
                     boolean leftFinite = Float.isFinite(left);
@@ -98,9 +122,12 @@ public final class ComponentTreeBuilder {
                     return -Float.compare(left, right);
                 }
             });
+            checkCancelled();
 
             int at = 0;
+            int lastProgress = -1;
             while (at < order.length) {
+                checkCancelled();
                 int first = order[at].intValue();
                 float level = intensities[first];
                 if (!Float.isFinite(level)) {
@@ -116,6 +143,17 @@ public final class ComponentTreeBuilder {
                 }
                 snapshotLevel(level, at, end);
                 at = end;
+                int percent = order.length == 0 ? 100 : (int) ((100L * at) / order.length);
+                if (progress != null && percent != lastProgress) {
+                    progress.accept(Integer.valueOf(at), Integer.valueOf(order.length));
+                    lastProgress = percent;
+                }
+            }
+        }
+
+        private void checkCancelled() {
+            if (cancelCheck != null && cancelCheck.getAsBoolean()) {
+                throw new CancellationException("Component-tree construction was cancelled.");
             }
         }
 
@@ -128,6 +166,7 @@ public final class ComponentTreeBuilder {
                 }
                 for (int i = 0; i < plane; i++) {
                     int index = z * plane + i;
+                    if ((index & 65535) == 0) checkCancelled();
                     intensities[index] = processor.getf(i);
                     order[index] = Integer.valueOf(index);
                 }

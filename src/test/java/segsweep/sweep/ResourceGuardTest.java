@@ -74,6 +74,7 @@ public class ResourceGuardTest {
                 sweep, stack("small", 64, 64, 1));
 
         assertTrue(feasibility.isOk());
+        assertEquals(16L * 16L * 5L * 4L, feasibility.estimate().previewBytes());
         assertFalse(feasibility.getMessage().contains("cell count"));
     }
 

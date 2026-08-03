@@ -106,6 +106,34 @@ public class SegSweepMacroOptionsTest {
     }
 
     @Test
+    public void duplicatePrimaryAndSecondaryAxesAreRejected() {
+        try {
+            SegSweepMacroOptionsParser.parse(
+                    "sweep=threshold from=1 to=3 step=1 "
+                            + "sweep2=threshold from2=4 to2=6 step2=1");
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage().toLowerCase(java.util.Locale.ROOT).contains("different"));
+            return;
+        }
+        throw new AssertionError("Expected duplicate sweep-axis failure.");
+    }
+
+    @Test
+    public void parameterBuilderDoesNotSilentlyOverwriteDuplicateAxes() {
+        try {
+            SegSweepParameters.builder()
+                    .image(SegSweepAnalysisTest.designedKneeStack(true))
+                    .axis(ParameterId.THRESHOLD, 1, 3, 1)
+                    .axis(ParameterId.THRESHOLD, 4, 6, 1);
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage().toLowerCase(java.util.Locale.ROOT)
+                    .contains("more than once"));
+            return;
+        }
+        throw new AssertionError("Expected duplicate builder-axis failure.");
+    }
+
+    @Test
     public void hideDisplayParametersRunWithoutOpeningWindows() {
         SegSweepMacroOptions options = SegSweepMacroOptionsParser.parse(
                 "sweep=threshold from=10 to=60 step=10 hide_display");

@@ -79,6 +79,7 @@ public final class VariationGridWindow extends JDialog {
     private final JButton lutToggleButton = new JButton("Grey LUT");
     private final JButton brightnessButton = new JButton("Adjust Brightness/Contrast");
     private final JButton pickSelectedButton = new JButton("Pick selected");
+    private final JButton cancelButton = new JButton("Cancel");
     private final ZoomableGrid gridPanel;
     private final JScrollPane gridScroll;
     private final JSlider zSlider = new JSlider(1, 1, 1);
@@ -302,6 +303,14 @@ public final class VariationGridWindow extends JDialog {
         pickSelectedButton.addActionListener(listener);
     }
 
+    public void attachCancelActionListener(ActionListener listener) {
+        cancelButton.addActionListener(listener);
+    }
+
+    public void setCancelEnabled(boolean enabled) {
+        cancelButton.setEnabled(enabled);
+    }
+
     public void setPickSelectedEnabled(boolean enabled) {
         pickSelectedButton.setEnabled(enabled);
     }
@@ -372,6 +381,10 @@ public final class VariationGridWindow extends JDialog {
 
     public JButton pickSelectedButtonForTest() {
         return pickSelectedButton;
+    }
+
+    public JButton cancelButtonForTest() {
+        return cancelButton;
     }
 
     public JSlider zSliderForTest() {
@@ -491,14 +504,14 @@ public final class VariationGridWindow extends JDialog {
 
     private static void showComparison(VariationCellPanel left, VariationCellPanel right) {
         if (left == null || right == null || GraphicsEnvironment.isHeadless()) return;
-        ImagePlus leftLabels = left.materialiseForDisplay();
-        ImagePlus rightLabels = right.materialiseForDisplay();
-        if (leftLabels == null || rightLabels == null) return;
+        ImagePlus leftPreview = left.previewImageForComparison();
+        ImagePlus rightPreview = right.previewImageForComparison();
+        if (leftPreview == null || rightPreview == null) return;
         JDialog dialog = new JDialog((Window) null, "Segmentation comparison",
                 Dialog.ModalityType.MODELESS);
         JPanel pair = new JPanel(new GridLayout(1, 2, 8, 0));
-        pair.add(comparisonPanel(left, leftLabels));
-        pair.add(comparisonPanel(right, rightLabels));
+        pair.add(comparisonPanel(left, leftPreview));
+        pair.add(comparisonPanel(right, rightPreview));
         dialog.add(pair);
         dialog.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
         dialog.pack();
@@ -535,6 +548,8 @@ public final class VariationGridWindow extends JDialog {
         toolBar.add(lutToggleButton);
         toolBar.add(brightnessButton);
         toolBar.addSeparator();
+        cancelButton.setToolTipText("Cancel the running sweep.");
+        toolBar.add(cancelButton);
         toolBar.add(pickSelectedButton);
     }
 

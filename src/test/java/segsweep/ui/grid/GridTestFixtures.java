@@ -100,6 +100,12 @@ final class GridTestFixtures {
                 .labelMap();
     }
 
+    static LazyLabelMap labelMap(int slices) {
+        return ComponentTree.build(stack(slices), SegSweepLabeller.Connectivity.SIX)
+                .query(ComponentTreeQuery.builder().threshold(10).build())
+                .labelMap();
+    }
+
     static SweepProvenance provenance() {
         Map<ParameterId, ParameterValueList> ranges =
                 new LinkedHashMap<ParameterId, ParameterValueList>();

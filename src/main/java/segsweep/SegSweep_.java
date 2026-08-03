@@ -21,6 +21,7 @@ import segsweep.sweep.ParameterId;
 import segsweep.sweep.ParameterValueList;
 import segsweep.sweep.ParameterSweep;
 import segsweep.sweep.SourceImageView;
+import segsweep.sweep.SweepProgress;
 import segsweep.sweep.VariationResult;
 import segsweep.token.SettingsTokenWriter;
 import segsweep.ui.SegSweepDialog;
@@ -36,6 +37,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
+import javax.swing.SwingUtilities;
 
 public class SegSweep_ implements PlugIn {
     public static final String COMMAND_NAME = "Object Segmentation Sweep";
@@ -95,6 +101,10 @@ public class SegSweep_ implements PlugIn {
         recordMacroCall(options);
         final SegSweepMacroOptions runOptions = options;
         final ImagePlus runImage = image;
+        if (runOptions.showGrid()) {
+            runInteractiveWithProgressGrid(runOptions, runImage);
+            return;
+        }
         new Thread(new Runnable() {
             @Override public void run() {
                 try {
@@ -107,6 +117,88 @@ public class SegSweep_ implements PlugIn {
                     IJ.showStatus(COMMAND_NAME + ": done.");
                 } catch (Exception ex) {
                     reportError(ex.getMessage());
+                }
+            }
+        }, "SegSweep-Analysis").start();
+    }
+
+    private void runInteractiveWithProgressGrid(final SegSweepMacroOptions options,
+                                                final ImagePlus image) {
+        final ImagePlus progressSource = SourceImageView.selectedChannelAndCrop(
+                image, options.channel(), options.crop());
+        final VariationGridWindow progressGrid = new VariationGridWindow(
+                null, COMMAND_NAME, displayWindow(options), progressSource);
+        final AtomicBoolean cancelled = new AtomicBoolean();
+        final AtomicBoolean finished = new AtomicBoolean();
+        progressGrid.attachCancelActionListener(new java.awt.event.ActionListener() {
+            @Override public void actionPerformed(java.awt.event.ActionEvent e) {
+                cancelled.set(true);
+                progressGrid.setCancelEnabled(false);
+                progressGrid.setActionStatus("Cancelling sweep...");
+            }
+        });
+        progressGrid.addWindowListener(new WindowAdapter() {
+            @Override public void windowClosed(WindowEvent e) {
+                if (!finished.get()) cancelled.set(true);
+                progressSource.changes = false;
+                progressSource.close();
+                progressSource.flush();
+            }
+        });
+        progressGrid.setVisible(true);
+
+        new Thread(new Runnable() {
+            @Override public void run() {
+                try {
+                    IJ.showStatus(COMMAND_NAME + ": running sweep...");
+                    SegSweepResult result = SegSweepAnalysis.run(options.toParameters(image),
+                            new Consumer<SweepProgress>() {
+                                @Override public void accept(final SweepProgress progress) {
+                                    SwingUtilities.invokeLater(new Runnable() {
+                                        @Override public void run() {
+                                            if (!cancelled.get()) progressGrid.applyProgress(progress);
+                                        }
+                                    });
+                                }
+                            }, new BooleanSupplier() {
+                                @Override public boolean getAsBoolean() {
+                                    return cancelled.get();
+                                }
+                            });
+                    if (cancelled.get()) throw new CancellationException("Sweep cancelled.");
+                    final SegSweepResult completed = result;
+                    finished.set(true);
+                    SwingUtilities.invokeLater(new Runnable() {
+                        @Override public void run() {
+                            progressGrid.setCancelEnabled(false);
+                            progressGrid.dispose();
+                            try {
+                                if (shouldAutoSaveImmediately(options)) {
+                                    autoSaveIfRequested(completed, options, image);
+                                }
+                                showMacroResult(completed, options, image);
+                                IJ.showStatus(COMMAND_NAME + ": done.");
+                            } catch (Exception ex) {
+                                reportError(ex.getMessage());
+                            }
+                        }
+                    });
+                } catch (CancellationException ex) {
+                    SwingUtilities.invokeLater(new Runnable() {
+                        @Override public void run() {
+                            progressGrid.setActionStatus("Sweep cancelled.");
+                            progressGrid.setCancelEnabled(false);
+                        }
+                    });
+                    IJ.showStatus(COMMAND_NAME + ": cancelled.");
+                } catch (final Exception ex) {
+                    finished.set(true);
+                    SwingUtilities.invokeLater(new Runnable() {
+                        @Override public void run() {
+                            progressGrid.dispose();
+                            reportError(ex.getMessage());
+                        }
+                    });
                 }
             }
         }, "SegSweep-Analysis").start();
@@ -135,6 +227,7 @@ public class SegSweep_ implements PlugIn {
                 image, result.parameters().channel(), result.parameters().crop());
         final VariationGridWindow grid = new VariationGridWindow(null, COMMAND_NAME,
                 displayWindow(result), displaySource);
+        grid.setCancelEnabled(false);
         grid.addWindowListener(new WindowAdapter() {
             @Override public void windowClosed(WindowEvent e) {
                 displaySource.changes = false;
@@ -239,6 +332,17 @@ public class SegSweep_ implements PlugIn {
                 new LinkedHashMap<ParameterId, ParameterValueList>(result.parameters().axes());
         return new ParameterSweep(ParameterSweep.Method.CLASSICAL, values,
                 result.parameters().crop(), "C" + result.parameters().channel());
+    }
+
+    private static ParameterSweep displayWindow(SegSweepMacroOptions options) {
+        Map<ParameterId, ParameterValueList> values =
+                new LinkedHashMap<ParameterId, ParameterValueList>();
+        values.put(options.primaryAxis().id(), options.primaryAxis().valueList());
+        if (options.secondaryAxis() != null) {
+            values.put(options.secondaryAxis().id(), options.secondaryAxis().valueList());
+        }
+        return new ParameterSweep(ParameterSweep.Method.CLASSICAL, values,
+                options.crop(), "C" + options.channel());
     }
 
     static String settingsTokenForSelected(SegSweepResult result, ParameterCombo selected) {

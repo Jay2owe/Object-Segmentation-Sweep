@@ -91,7 +91,7 @@ public final class SegSweepBatchRunner {
                             AutoSaveWriter.writeToDirectory(imageOutputDir, file, result);
                         }
                         imageResults.add(new SegSweepBatchResult.ImageResult(file,
-                                relativeFolder, groupKey, result, imageOutputDir));
+                                relativeFolder, groupKey, result.compactForBatch(), imageOutputDir));
                         processed++;
                     } catch (Exception e) {
                         failures.add(new SegSweepBatchResult.BatchFailure(file,
