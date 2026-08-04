@@ -13,27 +13,24 @@ import ij.ImageStack;
 import ij.measure.Calibration;
 import ij.process.ShortProcessor;
 
-import java.util.ArrayList;
-import java.util.List;
-
 public final class LazyLabelMap {
     private final int width;
     private final int height;
     private final int depth;
-    private final Calibration calibration;
-    private final List<ComponentNode> nodes;
+    private final ComponentSelection selection;
     private int materializationCount;
 
     LazyLabelMap(int width,
                  int height,
                  int depth,
-                 Calibration calibration,
-                 List<ComponentNode> nodes) {
+                 ComponentSelection selection) {
         this.width = width;
         this.height = height;
         this.depth = depth;
-        this.calibration = calibration == null ? null : calibration.copy();
-        this.nodes = new ArrayList<ComponentNode>(nodes);
+        if (selection == null) {
+            throw new IllegalArgumentException("selection must not be null");
+        }
+        this.selection = selection;
     }
 
     public ImagePlus get() {
@@ -43,18 +40,22 @@ public final class LazyLabelMap {
             stack.addSlice("z" + (z + 1), new ShortProcessor(width, height));
         }
         int plane = width * height;
-        for (int label = 1; label <= nodes.size(); label++) {
-            int[] voxels = nodes.get(label - 1).voxels();
+        int label = 1;
+        for (int nodeId = selection.firstNodeId(); nodeId >= 0;
+             nodeId = selection.nextNodeId(nodeId)) {
+            int[] voxels = selection.voxelIndices(nodeId);
             for (int i = 0; i < voxels.length; i++) {
                 int voxel = voxels[i];
                 int z = voxel / plane;
                 int indexInPlane = voxel - z * plane;
                 ((ShortProcessor) stack.getProcessor(z + 1)).set(indexInPlane, label);
             }
+            label++;
         }
         ImagePlus image = new ImagePlus("Object Segmentation Sweep labels", stack);
+        Calibration calibration = selection.calibrationCopy();
         if (calibration != null) {
-            image.setCalibration(calibration.copy());
+            image.setCalibration(calibration);
         }
         return image;
     }
@@ -65,8 +66,10 @@ public final class LazyLabelMap {
         materializationCount++;
         ShortProcessor processor = new ShortProcessor(width, height);
         int plane = width * height;
-        for (int label = 1; label <= nodes.size(); label++) {
-            int[] voxels = nodes.get(label - 1).voxels();
+        int label = 1;
+        for (int nodeId = selection.firstNodeId(); nodeId >= 0;
+             nodeId = selection.nextNodeId(nodeId)) {
+            int[] voxels = selection.voxelIndices(nodeId);
             for (int i = 0; i < voxels.length; i++) {
                 int voxel = voxels[i];
                 int voxelZ = voxel / plane;
@@ -74,9 +77,11 @@ public final class LazyLabelMap {
                     processor.set(voxel - voxelZ * plane, label);
                 }
             }
+            label++;
         }
         ImagePlus image = new ImagePlus("Object Segmentation Sweep labels z" + (z + 1), processor);
-        if (calibration != null) image.setCalibration(calibration.copy());
+        Calibration calibration = selection.calibrationCopy();
+        if (calibration != null) image.setCalibration(calibration);
         return image;
     }
 

@@ -108,7 +108,8 @@ public class ResourceGuardTest {
 
         assertTrue(feasibility.isOk());
         assertEquals(0L, feasibility.estimate().previewBytes());
-        assertEquals(101L * 512L, feasibility.estimate().combinationBytes());
+        assertEquals(101L * 513L, feasibility.estimate().combinationBytes());
+        assertTrue(feasibility.estimate().queryScratchBytes() > 0L);
     }
 
     @Test
@@ -145,6 +146,25 @@ public class ResourceGuardTest {
     }
 
     @Test
+    public void compactSelectionStateIsChargedAgainstInjectableHeapBudget() {
+        Map<ParameterId, ParameterValueList> values =
+                new LinkedHashMap<ParameterId, ParameterValueList>();
+        values.put(ParameterId.MAX_SIZE, ParameterValueList.fromRange(1, 5000, 1));
+        ParameterSweep sweep = new ParameterSweep(ParameterSweep.Method.CLASSICAL,
+                values, CropSpec.full(), "DAPI");
+        ImagePlus checkerboard = checkerboard("selection-heavy", 100, 100);
+
+        ResourceGuard.Feasibility feasibility =
+                ResourceGuard.assessComputeFeasibilityForBudget(
+                        sweep, checkerboard, 1, 20L * 1024L * 1024L);
+
+        assertFalse(feasibility.isOk());
+        assertTrue(feasibility.estimate().combinationBytes() > 8L * 1024L * 1024L);
+        assertTrue(feasibility.estimate().queryScratchBytes() > 0L);
+        assertTrue(feasibility.getMessage().contains("retained sweep state"));
+    }
+
+    @Test
     public void montageFeasibilityRejectsOversizedHeadlessOutput() {
         Map<ParameterId, ParameterValueList> values =
                 new LinkedHashMap<ParameterId, ParameterValueList>();
@@ -168,5 +188,15 @@ public class ResourceGuardTest {
         ImagePlus image = new ImagePlus(title, stack);
         image.setDimensions(1, slices, 1);
         return image;
+    }
+
+    private static ImagePlus checkerboard(String title, int width, int height) {
+        ByteProcessor pixels = new ByteProcessor(width, height);
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                if (((x + y) & 1) == 0) pixels.set(x, y, 1);
+            }
+        }
+        return new ImagePlus(title, pixels);
     }
 }

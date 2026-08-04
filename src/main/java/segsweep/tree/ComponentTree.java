@@ -84,12 +84,12 @@ public final class ComponentTree {
             return result(ComponentTreeResult.Status.EMPTY,
                     "No nodes can satisfy minSize " + safeQuery.minSize()
                             + " with maxSize " + safeQuery.maxSize() + ".",
-                    Collections.<ComponentNode>emptyList());
+                    Collections.<NodeData>emptyList());
         }
 
-        List<ComponentNode> candidates = nodesAtThreshold(
+        List<NodeData> candidates = nodesAtThreshold(
                 safeQuery.threshold(), cancelCheck);
-        List<ComponentNode> cheapSurvivors = new ArrayList<ComponentNode>();
+        List<NodeData> cheapSurvivors = new ArrayList<NodeData>();
         List<MorphologyPredicate> feretPredicates = new ArrayList<MorphologyPredicate>();
         List<MorphologyPredicate> cheapPredicates = new ArrayList<MorphologyPredicate>();
         for (MorphologyPredicate predicate : safeQuery.predicates()) {
@@ -104,8 +104,8 @@ public final class ComponentTree {
             if ((i & 1023) == 0) {
                 checkCancelled(cancelCheck, "Component-tree query was cancelled.");
             }
-            ComponentNode node = candidates.get(i);
-            int volume = node.voxelCount();
+            NodeData node = candidates.get(i);
+            int volume = node.voxelCount;
             if (volume < safeQuery.minSize() || volume > safeQuery.maxSize()) {
                 continue;
             }
@@ -114,12 +114,12 @@ public final class ComponentTree {
             }
         }
 
-        List<ComponentNode> selected = new ArrayList<ComponentNode>();
+        List<NodeData> selected = new ArrayList<NodeData>();
         for (int i = 0; i < cheapSurvivors.size(); i++) {
             if ((i & 255) == 0) {
                 checkCancelled(cancelCheck, "Component-tree query was cancelled.");
             }
-            ComponentNode node = cheapSurvivors.get(i);
+            NodeData node = cheapSurvivors.get(i);
             if (matchesFeretPredicates(node, feretPredicates, cancelCheck)) {
                 selected.add(node);
             }
@@ -129,7 +129,7 @@ public final class ComponentTree {
             return result(ComponentTreeResult.Status.TOO_MANY_LABELS,
                     "Selected node count " + selected.size()
                             + " exceeds the 16-bit label limit of 65535.",
-                    Collections.<ComponentNode>emptyList(), selected.size());
+                    Collections.<NodeData>emptyList(), selected.size());
         }
         if (selected.isEmpty()) {
             return result(ComponentTreeResult.Status.EMPTY,
@@ -188,11 +188,10 @@ public final class ComponentTree {
             int left = data.parentId < 0
                     ? 0 : lowerBound(thresholds, nodes.get(data.parentId).level);
             if (left >= right) continue;
-            ComponentNode node = new ComponentNode(this, data);
-            int volume = node.voxelCount();
+            int volume = data.voxelCount;
             if (volume < template.minSize() || volume > template.maxSize()) continue;
-            if (!matchesAll(node, cheapPredicates, cancelCheck)
-                    || !matchesFeretPredicates(node, feretPredicates, cancelCheck)) continue;
+            if (!matchesAll(data, cheapPredicates, cancelCheck)
+                    || !matchesFeretPredicates(data, feretPredicates, cancelCheck)) continue;
             changes[left]++;
             changes[right]--;
         }
@@ -238,6 +237,24 @@ public final class ComponentTree {
         return connectivity;
     }
 
+    ComponentNode nodeView(int nodeId) {
+        if (nodeId < 0 || nodeId >= nodes.size()) {
+            throw new IllegalArgumentException("nodeId is outside this component tree");
+        }
+        return new ComponentNode(this, nodes.get(nodeId));
+    }
+
+    int[] voxelsByNodeId(int nodeId, BooleanSupplier cancelCheck) {
+        if (nodeId < 0 || nodeId >= nodes.size()) {
+            throw new IllegalArgumentException("nodeId is outside this component tree");
+        }
+        return voxels(nodes.get(nodeId), cancelCheck);
+    }
+
+    Calibration calibrationCopy() {
+        return calibration == null ? null : calibration.copy();
+    }
+
     public synchronized int feretComputationCount() {
         return feretComputationCount;
     }
@@ -248,22 +265,23 @@ public final class ComponentTree {
 
     private ComponentTreeResult result(ComponentTreeResult.Status status,
                                        String reason,
-                                       List<ComponentNode> selected) {
+                                       List<NodeData> selected) {
         return result(status, reason, selected, selected == null ? 0 : selected.size());
     }
 
     private ComponentTreeResult result(ComponentTreeResult.Status status,
                                        String reason,
-                                       List<ComponentNode> selected,
+                                       List<NodeData> selected,
                                        int reportedObjectCount) {
-        return new ComponentTreeResult(status, reason, selected,
-                new LazyLabelMap(width, height, depth, calibration, selected),
+        ComponentSelection selection = new ComponentSelection(this, selected);
+        return new ComponentTreeResult(status, reason, selection,
+                new LazyLabelMap(width, height, depth, selection),
                 reportedObjectCount);
     }
 
-    private List<ComponentNode> nodesAtThreshold(double threshold,
-                                                 BooleanSupplier cancelCheck) {
-        List<ComponentNode> views = new ArrayList<ComponentNode>();
+    private List<NodeData> nodesAtThreshold(double threshold,
+                                            BooleanSupplier cancelCheck) {
+        List<NodeData> views = new ArrayList<NodeData>();
         for (int i = 0; i < nodes.size(); i++) {
             if ((i & 1023) == 0) {
                 checkCancelled(cancelCheck, "Component-tree query was cancelled.");
@@ -271,7 +289,7 @@ public final class ComponentTree {
             NodeData node = nodes.get(i);
             if (node.level <= threshold) continue;
             if (node.parentId >= 0 && nodes.get(node.parentId).level > threshold) continue;
-            views.add(new ComponentNode(this, node));
+            views.add(node);
         }
         return views;
     }
@@ -290,19 +308,19 @@ public final class ComponentTree {
         return low;
     }
 
-    private static boolean matchesAll(ComponentNode node,
-                                      List<MorphologyPredicate> predicates,
-                                      BooleanSupplier cancelCheck) {
+    private boolean matchesAll(NodeData node,
+                               List<MorphologyPredicate> predicates,
+                               BooleanSupplier cancelCheck) {
         for (int i = 0; i < predicates.size(); i++) {
             MorphologyPredicate predicate = predicates.get(i);
-            if (!predicate.matches(node.attribute(predicate.attribute(), cancelCheck))) {
+            if (!predicate.matches(attribute(node, predicate.attribute(), cancelCheck))) {
                 return false;
             }
         }
         return true;
     }
 
-    private boolean matchesFeretPredicates(ComponentNode node,
+    private boolean matchesFeretPredicates(NodeData node,
                                             List<MorphologyPredicate> predicates,
                                             BooleanSupplier cancelCheck) {
         if (predicates.isEmpty()) return true;
@@ -333,14 +351,42 @@ public final class ComponentTree {
         return !exactRequired || matchesAll(node, predicates, cancelCheck);
     }
 
-    private double feretBoundingBoxUpper(ComponentNode node) {
+    private double feretBoundingBoxUpper(NodeData node) {
         double pixelWidth = calibration == null ? 1.0 : positiveOrOne(calibration.pixelWidth);
         double pixelHeight = calibration == null ? 1.0 : positiveOrOne(calibration.pixelHeight);
         double pixelDepth = calibration == null ? 1.0 : positiveOrOne(calibration.pixelDepth);
-        double dx = (node.maxX() - node.minX()) * pixelWidth;
-        double dy = (node.maxY() - node.minY()) * pixelHeight;
-        double dz = (node.maxZ() - node.minZ()) * pixelDepth;
+        double dx = (node.maxX - node.minX) * pixelWidth;
+        double dy = (node.maxY - node.minY) * pixelHeight;
+        double dz = (node.maxZ - node.minZ) * pixelDepth;
         return Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
+    double attribute(NodeData data,
+                     MorphologyAttribute attribute,
+                     BooleanSupplier cancelCheck) {
+        if (attribute == MorphologyAttribute.VOLUME) return data.voxelCount;
+        if (attribute == MorphologyAttribute.MEAN_INTENSITY) {
+            return data.voxelCount == 0
+                    ? Double.NaN : data.intensitySum / (double) data.voxelCount;
+        }
+        if (attribute == MorphologyAttribute.MAX_INTENSITY) return data.maxIntensity;
+        if (attribute == MorphologyAttribute.ELONGATION) return elongation(data);
+        if (attribute == MorphologyAttribute.SURFACE_AREA) return data.surfaceArea;
+        if (attribute == MorphologyAttribute.SPHERICITY) {
+            if (data.voxelCount <= 0 || data.surfaceArea <= 0.0d) return Double.NaN;
+            return Math.pow(Math.PI, 1.0d / 3.0d)
+                    * Math.pow(6.0d * data.voxelCount, 2.0d / 3.0d)
+                    / data.surfaceArea;
+        }
+        if (attribute == MorphologyAttribute.COMPACTNESS) {
+            if (data.voxelCount <= 0 || data.surfaceArea <= 0.0d) return Double.NaN;
+            return (36.0d * Math.PI * data.voxelCount * data.voxelCount)
+                    / (data.surfaceArea * data.surfaceArea * data.surfaceArea);
+        }
+        if (attribute == MorphologyAttribute.FERET_DIAMETER_MAX) {
+            return feretDiameterMax(data, cancelCheck);
+        }
+        return Double.NaN;
     }
 
     double feretDiameterMax(NodeData data) {

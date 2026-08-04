@@ -24,6 +24,7 @@ public final class ResourceGuard {
     private static final long MONTAGE_CELL_BYTES = 220L * 210L * RGB_PREVIEW_BYTES_PER_PIXEL;
     private static final long SWING_BYTES_PER_CELL = 16L * 1024L;
     private static final long RESULT_STATE_BYTES_PER_CELL = 512L;
+    private static final long QUERY_SCRATCH_BYTES_PER_VOXEL_PER_WORKER = 24L;
     static final long MAX_COMPUTE_CELLS = 10000L;
     static final long MAX_COMPUTE_VOXEL_QUERIES = 250000000L;
     static final long MAX_DISPLAY_CELLS = 100L;
@@ -36,41 +37,67 @@ public final class ResourceGuard {
      * retain Swing cells or preview montages and must not inherit UI limits.
      */
     public static Feasibility assessComputeFeasibility(ParameterSweep sweep, ImagePlus source) {
-        return assessFeasibility(sweep, source, OutputMode.COMPUTE_ONLY);
+        return assessFeasibility(sweep, source, OutputMode.COMPUTE_ONLY,
+                availableBytes(), defaultQueryWorkers(sweep));
+    }
+
+    /** Assesses compute using the same bounded worker count as the analysis API. */
+    public static Feasibility assessComputeFeasibility(ParameterSweep sweep,
+                                                        ImagePlus source,
+                                                        int parallelism) {
+        return assessFeasibility(sweep, source, OutputMode.COMPUTE_ONLY,
+                availableBytes(), boundedQueryWorkers(sweep, parallelism));
+    }
+
+    static Feasibility assessComputeFeasibilityForBudget(ParameterSweep sweep,
+                                                          ImagePlus source,
+                                                          int parallelism,
+                                                          long available) {
+        return assessFeasibility(sweep, source, OutputMode.COMPUTE_ONLY,
+                Math.max(0L, available), boundedQueryWorkers(sweep, parallelism));
     }
 
     /** Assesses compute plus the deterministic PNG montage written by autosave. */
     public static Feasibility assessMontageFeasibility(ParameterSweep sweep, ImagePlus source) {
-        return assessFeasibility(sweep, source, OutputMode.MONTAGE);
+        return assessFeasibility(sweep, source, OutputMode.MONTAGE,
+                availableBytes(), defaultQueryWorkers(sweep));
     }
 
     /** Assesses compute plus the retained preview/Swing grid working set. */
     public static Feasibility assessFeasibility(ParameterSweep sweep, ImagePlus source) {
-        return assessFeasibility(sweep, source, OutputMode.DISPLAY);
+        return assessFeasibility(sweep, source, OutputMode.DISPLAY,
+                availableBytes(), defaultQueryWorkers(sweep));
     }
 
     private static Feasibility assessFeasibility(ParameterSweep sweep,
                                                   ImagePlus source,
-                                                  OutputMode outputMode) {
+                                                  OutputMode outputMode,
+                                                  long available,
+                                                  int queryWorkers) {
         if (sweep == null) {
-            return Feasibility.refused(null, availableBytes(),
+            return Feasibility.refused(null, available,
                     "No parameter sweep was provided.");
         }
         if (source == null) {
-            return Feasibility.refused(null, availableBytes(),
+            return Feasibility.refused(null, available,
                     "No source image was provided.");
         }
         int bitDepth = source.getBitDepth();
         if (bitDepth != 8 && bitDepth != 16 && bitDepth != 32) {
-            return Feasibility.refused(null, availableBytes(),
+            return Feasibility.refused(null, available,
                     "Only 8-bit, 16-bit, or 32-bit grayscale images are supported; received "
                             + bitDepth + "-bit input.");
         }
         Rectangle crop = sweep.cropSpec().boundsFor(source);
         Estimate estimate = estimateTreeMemory(source, crop);
-        long available = availableBytes();
         long cells = sweep.cellCount();
-        estimate = estimate.withCombinationBytes(multiply(cells, RESULT_STATE_BYTES_PER_CELL));
+        long selectionBytesPerCell = saturatingAdd(RESULT_STATE_BYTES_PER_CELL,
+                divideRoundUp(estimate.cropVoxels(), 8L));
+        estimate = estimate.withCombinationBytes(multiply(cells, selectionBytesPerCell));
+        long scratchPerWorker = multiply(estimate.cropVoxels(),
+                QUERY_SCRATCH_BYTES_PER_VOXEL_PER_WORKER);
+        estimate = estimate.withQueryScratchBytes(multiply(
+                Math.min(cells, Math.max(1L, queryWorkers)), scratchPerWorker));
         if (cells > MAX_COMPUTE_CELLS) {
             return Feasibility.refused(estimate, available,
                     "The sweep contains " + cells
@@ -149,7 +176,8 @@ public final class ResourceGuard {
         long totalBytes = saturatingAdd(sourceBytes,
                 saturatingAdd(treeBytes, saturatingAdd(attributeBytes, oneLazyLabelMapBytes)));
         return new Estimate(cropVoxels, sourceBytes, unionFindBytes, nodeArrayBytes,
-                childArrayBytes, attributeBytes, oneLazyLabelMapBytes, 0L, 0L, totalBytes);
+                childArrayBytes, attributeBytes, oneLazyLabelMapBytes,
+                0L, 0L, 0L, totalBytes);
     }
 
     private static Feasibility decide(Estimate estimate, long available, long budget) {
@@ -162,7 +190,8 @@ public final class ResourceGuard {
 
     private static String refusalMessage(Estimate estimate, long limit) {
         long estimatedBytes = estimate == null ? 0L : estimate.totalBytes();
-        return "Estimated component-tree memory is ~" + formatGb(estimatedBytes)
+        return "Estimated component-tree memory plus retained sweep state is ~"
+                + formatGb(estimatedBytes)
                 + " GB (" + estimatedBytes + " bytes), above the limit of ~"
                 + formatGb(limit) + " GB (" + limit
                 + " bytes). Crop tighter before building the tree.";
@@ -172,6 +201,18 @@ public final class ResourceGuard {
         long maxMem = Runtime.getRuntime().maxMemory();
         long usedMem = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
         return Math.max(0L, maxMem - usedMem);
+    }
+
+    private static int defaultQueryWorkers(ParameterSweep sweep) {
+        return boundedQueryWorkers(sweep,
+                Math.max(1, Runtime.getRuntime().availableProcessors() - 1));
+    }
+
+    private static int boundedQueryWorkers(ParameterSweep sweep, int requested) {
+        long cells = sweep == null ? 1L : Math.max(1L, sweep.cellCount());
+        int coreBound = Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
+        long bounded = Math.min(cells, Math.min(Math.max(1, requested), coreBound));
+        return (int) Math.max(1L, bounded);
     }
 
     private static int stackDepth(ImagePlus source) {
@@ -198,6 +239,11 @@ public final class ResourceGuard {
         return a * b;
     }
 
+    private static long divideRoundUp(long value, long divisor) {
+        if (value <= 0L) return 0L;
+        return 1L + (value - 1L) / divisor;
+    }
+
     private static long saturatingAdd(long a, long b) {
         if (Long.MAX_VALUE - a < b) return Long.MAX_VALUE;
         return a + b;
@@ -216,6 +262,7 @@ public final class ResourceGuard {
         private final long childArrayBytes;
         private final long attributeBytes;
         private final long oneLazyLabelMapBytes;
+        private final long queryScratchBytes;
         private final long combinationBytes;
         private final long previewBytes;
         private final long totalBytes;
@@ -227,6 +274,7 @@ public final class ResourceGuard {
                          long childArrayBytes,
                          long attributeBytes,
                          long oneLazyLabelMapBytes,
+                         long queryScratchBytes,
                          long combinationBytes,
                          long previewBytes,
                          long totalBytes) {
@@ -237,6 +285,7 @@ public final class ResourceGuard {
             this.childArrayBytes = childArrayBytes;
             this.attributeBytes = attributeBytes;
             this.oneLazyLabelMapBytes = oneLazyLabelMapBytes;
+            this.queryScratchBytes = queryScratchBytes;
             this.combinationBytes = combinationBytes;
             this.previewBytes = previewBytes;
             this.totalBytes = totalBytes;
@@ -246,7 +295,7 @@ public final class ResourceGuard {
             long safe = Math.max(0L, bytes);
             return new Estimate(cropVoxels, sourceBytes, unionFindBytes,
                     nodeArrayBytes, childArrayBytes, attributeBytes,
-                    oneLazyLabelMapBytes, combinationBytes, safe,
+                    oneLazyLabelMapBytes, queryScratchBytes, combinationBytes, safe,
                     saturatingAdd(totalBytes, safe));
         }
 
@@ -254,7 +303,15 @@ public final class ResourceGuard {
             long safe = Math.max(0L, bytes);
             return new Estimate(cropVoxels, sourceBytes, unionFindBytes,
                     nodeArrayBytes, childArrayBytes, attributeBytes,
-                    oneLazyLabelMapBytes, safe, previewBytes,
+                    oneLazyLabelMapBytes, queryScratchBytes, safe, previewBytes,
+                    saturatingAdd(totalBytes, safe));
+        }
+
+        private Estimate withQueryScratchBytes(long bytes) {
+            long safe = Math.max(0L, bytes);
+            return new Estimate(cropVoxels, sourceBytes, unionFindBytes,
+                    nodeArrayBytes, childArrayBytes, attributeBytes,
+                    oneLazyLabelMapBytes, safe, combinationBytes, previewBytes,
                     saturatingAdd(totalBytes, safe));
         }
 
@@ -288,6 +345,10 @@ public final class ResourceGuard {
 
         public long oneLazyLabelMapBytes() {
             return oneLazyLabelMapBytes;
+        }
+
+        public long queryScratchBytes() {
+            return queryScratchBytes;
         }
 
         public long combinationBytes() {

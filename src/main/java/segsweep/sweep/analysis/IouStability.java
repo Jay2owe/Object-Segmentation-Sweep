@@ -10,7 +10,7 @@ package segsweep.sweep.analysis;
 
 import segsweep.sweep.ParameterCombo;
 import segsweep.sweep.ParameterKey;
-import segsweep.tree.ComponentNode;
+import segsweep.tree.ComponentSelection;
 import segsweep.tree.ComponentTreeResult;
 
 import java.util.ArrayList;
@@ -307,12 +307,12 @@ public final class IouStability {
      */
     public static final class IouSource {
         private final List<Integer> objectIds;
-        private final List<ComponentNode> treeNodes;
+        private final ComponentSelection treeSelection;
         private final int objectCount;
         private final boolean treeBacked;
 
         private IouSource(Collection<Integer> objectIds,
-                          Collection<ComponentNode> treeNodes,
+                          ComponentSelection treeSelection,
                           int objectCount) {
             TreeSet<Integer> sorted = new TreeSet<Integer>();
             if (objectIds != null) {
@@ -323,10 +323,9 @@ public final class IouStability {
                 }
             }
             this.objectIds = Collections.unmodifiableList(new ArrayList<Integer>(sorted));
-            this.treeNodes = Collections.unmodifiableList(new ArrayList<ComponentNode>(
-                    treeNodes == null ? Collections.<ComponentNode>emptyList() : treeNodes));
+            this.treeSelection = treeSelection;
             this.objectCount = Math.max(0, objectCount);
-            this.treeBacked = treeNodes != null;
+            this.treeBacked = treeSelection != null;
         }
 
         public static IouSource fromObjectIds(Collection<Integer> objectIds) {
@@ -338,8 +337,8 @@ public final class IouStability {
             if (result == null) {
                 return new IouSource(Collections.<Integer>emptyList(), null, 0);
             }
-            List<ComponentNode> nodes = result.selectedNodes();
-            return new IouSource(Collections.<Integer>emptyList(), nodes, result.objectCount());
+            return new IouSource(Collections.<Integer>emptyList(),
+                    result.selection(), result.objectCount());
         }
 
         public List<Integer> objectIds() {
@@ -359,26 +358,13 @@ public final class IouStability {
         }
 
         private BitSet foregroundVoxels(ScoringGuard guard) {
-            BitSet foreground = new BitSet();
-            for (int i = 0; i < treeNodes.size(); i++) {
-                check(guard);
-                int[] voxels;
-                try {
-                    voxels = guard == null
-                            ? treeNodes.get(i).voxelIndices()
-                            : treeNodes.get(i).voxelIndices(guard);
-                } catch (CancellationException ex) {
-                    if (guard != null) guard.check();
-                    throw ex;
-                }
-                for (int j = 0; j < voxels.length; j++) {
-                    if ((j & 1023) == 0) check(guard);
-                    if (voxels[j] >= 0) {
-                        foreground.set(voxels[j]);
-                    }
-                }
+            check(guard);
+            try {
+                return treeSelection.foregroundVoxels(guard);
+            } catch (CancellationException ex) {
+                if (guard != null) guard.check();
+                throw ex;
             }
-            return foreground;
         }
 
         /** Returns the tree-backed foreground voxel indexes without creating an ImageJ label map. */
@@ -400,11 +386,7 @@ public final class IouStability {
         /** Returns one voxel-index array per selected tree object. */
         public int[][] objectVoxelIndices() {
             if (!treeBacked) return new int[0][];
-            int[][] objects = new int[treeNodes.size()][];
-            for (int i = 0; i < treeNodes.size(); i++) {
-                objects[i] = treeNodes.get(i).voxelIndices();
-            }
-            return objects;
+            return treeSelection.objectVoxelIndices();
         }
     }
 

@@ -8,8 +8,6 @@
  */
 package segsweep.tree;
 
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 public final class ComponentTreeResult {
@@ -17,15 +15,17 @@ public final class ComponentTreeResult {
 
     private final Status status;
     private final String reason;
-    private final List<ComponentNode> nodes;
+    private final ComponentSelection selection;
     private final LazyLabelMap labelMap;
     private final int reportedObjectCount;
 
-    ComponentTreeResult(Status status, String reason, List<ComponentNode> nodes, LazyLabelMap labelMap) {
-        this(status, reason, nodes, labelMap, nodes == null ? 0 : nodes.size());
+    ComponentTreeResult(Status status, String reason,
+                        ComponentSelection selection, LazyLabelMap labelMap) {
+        this(status, reason, selection, labelMap,
+                selection == null ? 0 : selection.size());
     }
 
-    ComponentTreeResult(Status status, String reason, List<ComponentNode> nodes,
+    ComponentTreeResult(Status status, String reason, ComponentSelection selection,
                         LazyLabelMap labelMap, int reportedObjectCount) {
         if (status == null) {
             throw new IllegalArgumentException("status must not be null");
@@ -33,10 +33,12 @@ public final class ComponentTreeResult {
         if (labelMap == null) {
             throw new IllegalArgumentException("labelMap must not be null");
         }
+        if (selection == null) {
+            throw new IllegalArgumentException("selection must not be null");
+        }
         this.status = status;
         this.reason = reason == null ? "" : reason;
-        this.nodes = Collections.unmodifiableList(new ArrayList<ComponentNode>(
-                nodes == null ? Collections.<ComponentNode>emptyList() : nodes));
+        this.selection = selection;
         this.labelMap = labelMap;
         this.reportedObjectCount = Math.max(0, reportedObjectCount);
     }
@@ -54,7 +56,11 @@ public final class ComponentTreeResult {
     }
 
     public List<ComponentNode> selectedNodes() {
-        return nodes;
+        return selection.selectedNodes();
+    }
+
+    public ComponentSelection selection() {
+        return selection;
     }
 
     public LazyLabelMap labelMap() {

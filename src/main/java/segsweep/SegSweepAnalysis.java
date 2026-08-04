@@ -93,7 +93,8 @@ public final class SegSweepAnalysis {
             checkCancelled(cancelCheck);
 
             ResourceGuard.Feasibility feasibility =
-                    ResourceGuard.assessComputeFeasibility(croppedWindow(displayWindow), cropped);
+                    ResourceGuard.assessComputeFeasibility(
+                            croppedWindow(displayWindow), cropped, params.parallelism());
             if (!feasibility.isOk()) {
                 throw new SweepRefusedException(feasibility.getMessage());
             }
