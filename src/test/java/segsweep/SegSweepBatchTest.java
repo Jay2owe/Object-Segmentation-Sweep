@@ -116,6 +116,22 @@ public class SegSweepBatchTest {
     }
 
     @Test
+    public void unmatchedOptionalCaptureGroupHasReadableValidationFailure() throws Exception {
+        saveImage(new File(tmp.getRoot(), "A.tif"));
+        Pattern pattern = Pattern.compile("A(?:_(\\d+))?\\.tif");
+
+        try {
+            SegSweepBatch.findGroups(tmp.getRoot(), pattern, 1);
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("Capture group 1"));
+            assertTrue(expected.getMessage().contains("A.tif"));
+            assertTrue(expected.getMessage().contains("did not participate"));
+            return;
+        }
+        throw new AssertionError("Expected an unmatched optional capture-group failure.");
+    }
+
+    @Test
     public void corruptImageDoesNotAbortFolderAndFailureCsvNamesIt() throws Exception {
         for (int i = 1; i <= 5; i++) {
             File file = new File(tmp.getRoot(), "Exp1-A0" + i + "_LH_CTX.tif");
@@ -239,6 +255,20 @@ public class SegSweepBatchTest {
                 .contains("no successful image picks"));
         ResultsTable picks = batch.batchPicksTable();
         assertEquals("Not comparable", picks.getStringValue("Picked", picks.getCounter() - 1));
+    }
+
+    @Test
+    public void allFailedBatchIsNotComparable() {
+        List<SegSweepBatchResult.BatchFailure> failures =
+                new ArrayList<SegSweepBatchResult.BatchFailure>();
+        failures.add(new SegSweepBatchResult.BatchFailure(
+                new File("bad.tif"), "", "all", "Could not open image."));
+        SegSweepBatchResult batch = new SegSweepBatchResult(1, 0, 1, null,
+                new ArrayList<SegSweepBatchResult.ImageResult>(), failures);
+
+        assertFalse(batch.allComparable());
+        assertTrue(batch.incomparableReasons().get(0).toLowerCase(java.util.Locale.ROOT)
+                .contains("no successful image picks"));
     }
 
     private static SegSweepResult runResult(CropSpec crop) {

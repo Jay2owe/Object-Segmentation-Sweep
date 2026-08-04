@@ -72,6 +72,12 @@ public final class ComponentTree {
     }
 
     public ComponentTreeResult query(ComponentTreeQuery query) {
+        return query(query, null);
+    }
+
+    public ComponentTreeResult query(ComponentTreeQuery query,
+                                     BooleanSupplier cancelCheck) {
+        checkCancelled(cancelCheck, "Component-tree query was cancelled.");
         ComponentTreeQuery safeQuery = query == null
                 ? ComponentTreeQuery.builder().build() : query;
         if (safeQuery.maxSize() < safeQuery.minSize()) {
@@ -81,7 +87,8 @@ public final class ComponentTree {
                     Collections.<ComponentNode>emptyList());
         }
 
-        List<ComponentNode> candidates = nodesAtThreshold(safeQuery.threshold());
+        List<ComponentNode> candidates = nodesAtThreshold(
+                safeQuery.threshold(), cancelCheck);
         List<ComponentNode> cheapSurvivors = new ArrayList<ComponentNode>();
         List<MorphologyPredicate> feretPredicates = new ArrayList<MorphologyPredicate>();
         List<MorphologyPredicate> cheapPredicates = new ArrayList<MorphologyPredicate>();
@@ -93,19 +100,27 @@ public final class ComponentTree {
             }
         }
 
-        for (ComponentNode node : candidates) {
+        for (int i = 0; i < candidates.size(); i++) {
+            if ((i & 1023) == 0) {
+                checkCancelled(cancelCheck, "Component-tree query was cancelled.");
+            }
+            ComponentNode node = candidates.get(i);
             int volume = node.voxelCount();
             if (volume < safeQuery.minSize() || volume > safeQuery.maxSize()) {
                 continue;
             }
-            if (matchesAll(node, cheapPredicates)) {
+            if (matchesAll(node, cheapPredicates, cancelCheck)) {
                 cheapSurvivors.add(node);
             }
         }
 
         List<ComponentNode> selected = new ArrayList<ComponentNode>();
-        for (ComponentNode node : cheapSurvivors) {
-            if (matchesFeretPredicates(node, feretPredicates)) {
+        for (int i = 0; i < cheapSurvivors.size(); i++) {
+            if ((i & 255) == 0) {
+                checkCancelled(cancelCheck, "Component-tree query was cancelled.");
+            }
+            ComponentNode node = cheapSurvivors.get(i);
+            if (matchesFeretPredicates(node, feretPredicates, cancelCheck)) {
                 selected.add(node);
             }
         }
@@ -164,8 +179,8 @@ public final class ComponentTree {
 
         int[] changes = new int[thresholds.length + 1];
         for (int i = 0; i < nodes.size(); i++) {
-            if ((i & 1023) == 0 && cancelCheck != null && cancelCheck.getAsBoolean()) {
-                throw new CancellationException("Full-axis count scoring was cancelled.");
+            if ((i & 1023) == 0) {
+                checkCancelled(cancelCheck, "Full-axis count scoring was cancelled.");
             }
             NodeData data = nodes.get(i);
             int right = lowerBound(thresholds, data.level);
@@ -176,8 +191,8 @@ public final class ComponentTree {
             ComponentNode node = new ComponentNode(this, data);
             int volume = node.voxelCount();
             if (volume < template.minSize() || volume > template.maxSize()) continue;
-            if (!matchesAll(node, cheapPredicates)
-                    || !matchesFeretPredicates(node, feretPredicates)) continue;
+            if (!matchesAll(node, cheapPredicates, cancelCheck)
+                    || !matchesFeretPredicates(node, feretPredicates, cancelCheck)) continue;
             changes[left]++;
             changes[right]--;
         }
@@ -246,9 +261,13 @@ public final class ComponentTree {
                 reportedObjectCount);
     }
 
-    private List<ComponentNode> nodesAtThreshold(double threshold) {
+    private List<ComponentNode> nodesAtThreshold(double threshold,
+                                                 BooleanSupplier cancelCheck) {
         List<ComponentNode> views = new ArrayList<ComponentNode>();
         for (int i = 0; i < nodes.size(); i++) {
+            if ((i & 1023) == 0) {
+                checkCancelled(cancelCheck, "Component-tree query was cancelled.");
+            }
             NodeData node = nodes.get(i);
             if (node.level <= threshold) continue;
             if (node.parentId >= 0 && nodes.get(node.parentId).level > threshold) continue;
@@ -271,10 +290,12 @@ public final class ComponentTree {
         return low;
     }
 
-    private static boolean matchesAll(ComponentNode node, List<MorphologyPredicate> predicates) {
+    private static boolean matchesAll(ComponentNode node,
+                                      List<MorphologyPredicate> predicates,
+                                      BooleanSupplier cancelCheck) {
         for (int i = 0; i < predicates.size(); i++) {
             MorphologyPredicate predicate = predicates.get(i);
-            if (!predicate.matches(node.attribute(predicate.attribute()))) {
+            if (!predicate.matches(node.attribute(predicate.attribute(), cancelCheck))) {
                 return false;
             }
         }
@@ -282,7 +303,8 @@ public final class ComponentTree {
     }
 
     private boolean matchesFeretPredicates(ComponentNode node,
-                                            List<MorphologyPredicate> predicates) {
+                                            List<MorphologyPredicate> predicates,
+                                            BooleanSupplier cancelCheck) {
         if (predicates.isEmpty()) return true;
         double upper = feretBoundingBoxUpper(node);
         boolean exactRequired = false;
@@ -308,7 +330,7 @@ public final class ComponentTree {
             }
             exactRequired = true;
         }
-        return !exactRequired || matchesAll(node, predicates);
+        return !exactRequired || matchesAll(node, predicates, cancelCheck);
     }
 
     private double feretBoundingBoxUpper(ComponentNode node) {
@@ -322,6 +344,10 @@ public final class ComponentTree {
     }
 
     double feretDiameterMax(NodeData data) {
+        return feretDiameterMax(data, null);
+    }
+
+    double feretDiameterMax(NodeData data, BooleanSupplier cancelCheck) {
         if (Double.isNaN(data.feretDiameterMax)) {
             if (data.voxelCount > MAX_EXACT_FERET_VOXELS) {
                 throw new SweepRefusedException("Exact Feret diameter for a "
@@ -329,13 +355,18 @@ public final class ComponentTree {
                         + MAX_EXACT_FERET_VOXELS
                         + ". Add a cheaper size/morphology filter or crop more tightly.");
             }
-            data.feretDiameterMax = exactFeret(voxels(data));
+            data.feretDiameterMax = exactFeret(
+                    voxels(data, cancelCheck), cancelCheck);
             feretComputationCount++;
         }
         return data.feretDiameterMax;
     }
 
     int[] voxels(NodeData data) {
+        return voxels(data, null);
+    }
+
+    private int[] voxels(NodeData data, BooleanSupplier cancelCheck) {
         if (data == null || data.voxelCount <= 0) {
             return new int[0];
         }
@@ -344,6 +375,9 @@ public final class ComponentTree {
         ArrayDeque<Integer> pending = new ArrayDeque<Integer>();
         pending.push(Integer.valueOf(data.id));
         while (!pending.isEmpty()) {
+            if ((at & 1023) == 0) {
+                checkCancelled(cancelCheck, "Component-tree query was cancelled.");
+            }
             NodeData current = nodes.get(pending.pop().intValue());
             if (at + current.voxels.length > out.length) {
                 throw new IllegalStateException("Component-tree voxel accounting is inconsistent.");
@@ -370,7 +404,7 @@ public final class ComponentTree {
         return count;
     }
 
-    private double exactFeret(int[] voxels) {
+    private double exactFeret(int[] voxels, BooleanSupplier cancelCheck) {
         if (voxels == null || voxels.length <= 1) {
             return 0.0;
         }
@@ -380,6 +414,9 @@ public final class ComponentTree {
         int plane = width * height;
         double maxDistanceSquared = 0.0;
         for (int i = 0; i < voxels.length; i++) {
+            if ((i & 15) == 0) {
+                checkCancelled(cancelCheck, "Component-tree query was cancelled.");
+            }
             int a = voxels[i];
             int az = a / plane;
             int ar = a - az * plane;
@@ -401,6 +438,13 @@ public final class ComponentTree {
             }
         }
         return Math.sqrt(maxDistanceSquared);
+    }
+
+    private static void checkCancelled(BooleanSupplier cancelCheck, String message) {
+        if (Thread.currentThread().isInterrupted()
+                || (cancelCheck != null && cancelCheck.getAsBoolean())) {
+            throw new CancellationException(message);
+        }
     }
 
     private static double positiveOrOne(double value) {

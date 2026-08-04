@@ -13,6 +13,8 @@ import org.junit.Test;
 import segsweep.SegSweepLabeller;
 import segsweep.SegSweepLabellerFixtures;
 
+import java.util.concurrent.CancellationException;
+
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -99,6 +101,16 @@ public class ComponentTreeConstructionTest {
 
         assertEquals(SegSweepLabeller.DEFAULT_CONNECTIVITY, tree.connectivity());
         assertEquals(1, tree.query(query(SegSweepLabellerFixtures.THRESHOLD)).objectCount());
+    }
+
+    @Test(expected = CancellationException.class)
+    public void queryHonoursCancellationSupplier() {
+        ComponentTree tree = ComponentTree.build(
+                SegSweepLabellerFixtures.points(4, 4, 1,
+                        new int[][] { { 1, 1, 0 } }),
+                SegSweepLabeller.Connectivity.SIX);
+
+        tree.query(query(SegSweepLabellerFixtures.THRESHOLD), () -> true);
     }
 
     private static ComponentTreeQuery query(int threshold) {

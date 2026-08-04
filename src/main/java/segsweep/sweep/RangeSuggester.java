@@ -75,25 +75,25 @@ public final class RangeSuggester {
     }
 
     private static ParameterValueList thresholdSuggestions(StackHistogram histogram) {
-        TreeSet<Integer> values = new TreeSet<Integer>();
+        TreeSet<Double> values = new TreeSet<Double>();
         AutoThresholder thresholder = new AutoThresholder();
         for (int i = 0; i < CLASSICAL_METHODS.length; i++) {
             int bin = thresholder.getThreshold(CLASSICAL_METHODS[i], histogram.counts());
-            values.add(Integer.valueOf(darkForegroundLower(histogram, bin)));
+            values.add(Double.valueOf(thresholdValue(histogram, bin)));
         }
-        return ParameterValueList.of(centeredWindow(new ArrayList<Integer>(values), 5));
+        return ParameterValueList.of(centeredWindow(new ArrayList<Double>(values), 5));
     }
 
-    private static int otsuThreshold(StackHistogram histogram) {
+    private static double otsuThreshold(StackHistogram histogram) {
         int bin = new AutoThresholder().getThreshold(AutoThresholder.Method.Otsu,
                 histogram.counts());
-        return darkForegroundLower(histogram, bin);
+        return thresholdValue(histogram, bin);
     }
 
-    private static int darkForegroundLower(StackHistogram histogram, int thresholdBin) {
+    private static double thresholdValue(StackHistogram histogram, int thresholdBin) {
         int[] counts = histogram.counts();
-        int lowerBin = Math.min(Math.max(0, thresholdBin + 1), counts.length - 1);
-        return Math.max(0, (int) Math.round(histogram.valueFor(lowerBin)));
+        int bin = Math.min(Math.max(0, thresholdBin), counts.length - 1);
+        return histogram.valueFor(bin);
     }
 
     static VoxelComponents componentVoxelCounts(ImagePlus source, double threshold, int budget) {
@@ -132,7 +132,7 @@ public final class RangeSuggester {
                 return new VoxelComponents(sizes, true);
             }
             visits++;
-            if (!atOrAbove(planes, sliceSize, width, seed, threshold)) {
+            if (!aboveThreshold(planes, sliceSize, width, seed, threshold)) {
                 state[seed] = 1;
                 continue;
             }
@@ -164,7 +164,7 @@ public final class RangeSuggester {
                                     return new VoxelComponents(sizes, true);
                                 }
                                 visits++;
-                                if (atOrAbove(planes, sliceSize, width, neighbour, threshold)) {
+                                if (aboveThreshold(planes, sliceSize, width, neighbour, threshold)) {
                                     state[neighbour] = 2;
                                     queue.add(Integer.valueOf(neighbour));
                                 } else {
@@ -180,8 +180,8 @@ public final class RangeSuggester {
         return new VoxelComponents(sizes, false);
     }
 
-    private static boolean atOrAbove(ImageProcessor[] planes, int sliceSize, int width,
-                                     int index, double threshold) {
+    private static boolean aboveThreshold(ImageProcessor[] planes, int sliceSize, int width,
+                                          int index, double threshold) {
         int z = index / sliceSize;
         ImageProcessor plane = planes[z];
         if (plane == null) {
@@ -190,7 +190,7 @@ public final class RangeSuggester {
         int rem = index - (z * sliceSize);
         int y = rem / width;
         int x = rem - (y * width);
-        return plane.getf(x, y) >= threshold;
+        return plane.getf(x, y) > threshold;
     }
 
     private static List<Integer> percentileInts(List<Integer> sortedSizes) {
@@ -220,12 +220,12 @@ public final class RangeSuggester {
                 + sorted.get(high).doubleValue() * fraction;
     }
 
-    private static List<Integer> centeredWindow(List<Integer> sorted, int maxCount) {
+    private static <T> List<T> centeredWindow(List<T> sorted, int maxCount) {
         if (sorted.size() <= maxCount) {
             return sorted;
         }
         int start = Math.max(0, (sorted.size() - maxCount) / 2);
-        return new ArrayList<Integer>(sorted.subList(start, start + maxCount));
+        return new ArrayList<T>(sorted.subList(start, start + maxCount));
     }
 
     private static void closeIfOwned(ImagePlus image, ImagePlus source) {

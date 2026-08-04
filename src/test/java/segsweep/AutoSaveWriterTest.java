@@ -29,6 +29,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public class AutoSaveWriterTest {
@@ -132,6 +133,8 @@ public class AutoSaveWriterTest {
         SegSweepResult result = new SegSweep_().runFromMacro(options);
 
         assertNotNull(result);
+        assertNull("plugin-owned source should be flushed after headless use",
+                result.parameters().image().getProcessor());
         assertTrue(new File(output, "sweep_results.csv").isFile());
         assertTrue(new File(output, "picked_settings.txt").isFile());
         assertTrue(new File(output, "grid.png").isFile());

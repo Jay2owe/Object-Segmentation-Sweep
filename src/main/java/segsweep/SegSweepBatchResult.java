@@ -107,6 +107,10 @@ public final class SegSweepBatchResult {
 
     public List<String> incomparableReasons() {
         List<String> reasons = new ArrayList<String>();
+        if (imageResults.isEmpty()) {
+            reasons.add("No successful image picks are available.");
+            return reasons;
+        }
         for (Map.Entry<String, List<ImageResult>> entry : groupedByFolder().entrySet()) {
             List<String> folderReasons = incomparableReasons(entry.getValue());
             String folder = displayFolder(entry.getKey());

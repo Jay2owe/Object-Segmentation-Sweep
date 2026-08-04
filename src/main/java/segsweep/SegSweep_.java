@@ -23,6 +23,7 @@ import segsweep.sweep.ParameterSweep;
 import segsweep.sweep.SourceImageView;
 import segsweep.sweep.SweepProgress;
 import segsweep.sweep.VariationResult;
+import segsweep.sweep.analysis.PickResult;
 import segsweep.token.SettingsTokenWriter;
 import segsweep.ui.SegSweepDialog;
 import segsweep.ui.grid.VariationGridWindow;
@@ -69,9 +70,12 @@ public class SegSweep_ implements PlugIn {
             reportError("Object Segmentation Sweep macro/headless execution requires explicit macro options.");
             return null;
         }
+        ImageLease lease = null;
+        boolean retainedByGrid = false;
         try {
             SegSweepMacroOptions options = SegSweepMacroOptionsParser.parse(optionsText);
-            ImagePlus image = resolveImage(options.image());
+            lease = resolveImage(options.image());
+            ImagePlus image = lease == null ? null : lease.image();
             if (image == null) {
                 throw new IllegalArgumentException("No source image was found. Provide image=[path or title] or open an image.");
             }
@@ -79,11 +83,15 @@ public class SegSweep_ implements PlugIn {
             if (shouldAutoSaveImmediately(options)) {
                 autoSaveIfRequested(result, options, image);
             }
-            showMacroResult(result, options, image);
+            retainedByGrid = showMacroResult(result, options, lease);
             return result;
         } catch (Exception ex) {
             reportError(ex.getMessage());
             return null;
+        } finally {
+            if (lease != null && !retainedByGrid) {
+                lease.close();
+            }
         }
     }
 
@@ -94,7 +102,8 @@ public class SegSweep_ implements PlugIn {
         if (options == null) {
             return;
         }
-        ImagePlus image = resolveImage(options.image());
+        final ImageLease lease = resolveImage(options.image());
+        ImagePlus image = lease == null ? null : lease.image();
         if (image == null) {
             IJ.error(COMMAND_NAME, "No source image was found.");
             return;
@@ -103,28 +112,34 @@ public class SegSweep_ implements PlugIn {
         final SegSweepMacroOptions runOptions = options;
         final ImagePlus runImage = image;
         if (runOptions.showGrid()) {
-            runInteractiveWithProgressGrid(runOptions, runImage);
+            runInteractiveWithProgressGrid(runOptions, lease);
             return;
         }
         new Thread(new Runnable() {
             @Override public void run() {
+                boolean retainedByGrid = false;
                 try {
                     IJ.showStatus(COMMAND_NAME + ": running sweep...");
                     SegSweepResult result = SegSweep.run(runOptions.toParameters(runImage));
                     if (shouldAutoSaveImmediately(runOptions)) {
                         autoSaveIfRequested(result, runOptions, runImage);
                     }
-                    showMacroResult(result, runOptions, runImage);
+                    retainedByGrid = showMacroResult(result, runOptions, lease);
                     IJ.showStatus(COMMAND_NAME + ": done.");
                 } catch (Exception ex) {
                     reportError(ex.getMessage());
+                } finally {
+                    if (!retainedByGrid) {
+                        lease.close();
+                    }
                 }
             }
         }, "SegSweep-Analysis").start();
     }
 
     private void runInteractiveWithProgressGrid(final SegSweepMacroOptions options,
-                                                final ImagePlus image) {
+                                                final ImageLease lease) {
+        final ImagePlus image = lease.image();
         final ImagePlus progressSource = SourceImageView.selectedChannelAndCrop(
                 image, options.channel(), options.crop());
         final VariationGridWindow progressGrid = new VariationGridWindow(
@@ -173,18 +188,24 @@ public class SegSweep_ implements PlugIn {
                         @Override public void run() {
                             progressGrid.setCancelEnabled(false);
                             progressGrid.dispose();
+                            boolean retainedByGrid = false;
                             try {
                                 if (shouldAutoSaveImmediately(options)) {
                                     autoSaveIfRequested(completed, options, image);
                                 }
-                                showMacroResult(completed, options, image);
+                                retainedByGrid = showMacroResult(completed, options, lease);
                                 IJ.showStatus(COMMAND_NAME + ": done.");
                             } catch (Exception ex) {
                                 reportError(ex.getMessage());
+                            } finally {
+                                if (!retainedByGrid) {
+                                    lease.close();
+                                }
                             }
                         }
                     });
                 } catch (CancellationException ex) {
+                    lease.close();
                     SwingUtilities.invokeLater(new Runnable() {
                         @Override public void run() {
                             progressGrid.setActionStatus("Sweep cancelled.");
@@ -193,6 +214,7 @@ public class SegSweep_ implements PlugIn {
                     });
                     IJ.showStatus(COMMAND_NAME + ": cancelled.");
                 } catch (final Exception ex) {
+                    lease.close();
                     finished.set(true);
                     SwingUtilities.invokeLater(new Runnable() {
                         @Override public void run() {
@@ -205,14 +227,15 @@ public class SegSweep_ implements PlugIn {
         }, "SegSweep-Analysis").start();
     }
 
-    private void showMacroResult(final SegSweepResult result,
-                                 SegSweepMacroOptions options,
-                                 ImagePlus image) {
+    private boolean showMacroResult(final SegSweepResult result,
+                                    SegSweepMacroOptions options,
+                                    final ImageLease lease) {
+        final ImagePlus image = lease.image();
         boolean display = !GraphicsEnvironment.isHeadless()
                 && options != null && !options.hideDisplay();
         if (!display) {
             logWarnings(result);
-            return;
+            return false;
         }
         if (options.showTables() && result.sweepTable() != null) {
             result.sweepTable().show("Sweep Results");
@@ -222,7 +245,7 @@ public class SegSweep_ implements PlugIn {
         }
         if (!options.showGrid()) {
             logWarnings(result);
-            return;
+            return false;
         }
         final ImagePlus displaySource = SourceImageView.selectedChannelAndCrop(
                 image, result.parameters().channel(), result.parameters().crop());
@@ -234,6 +257,7 @@ public class SegSweep_ implements PlugIn {
                 displaySource.changes = false;
                 displaySource.close();
                 displaySource.flush();
+                lease.close();
             }
         });
         List<VariationResult> results = result.results();
@@ -335,6 +359,7 @@ public class SegSweep_ implements PlugIn {
                 IJ.error(COMMAND_NAME, "Could not save sweep: " + ex.getMessage());
             }
         }
+        return true;
     }
 
     private static ParameterSweep displayWindow(SegSweepResult result) {
@@ -362,11 +387,13 @@ public class SegSweep_ implements PlugIn {
     static String settingsTokenForSelected(SegSweepResult result,
                                            ParameterCombo selected,
                                            Instant writtenAt) {
-        SettingsTokenWriter.PickSummary summary = SettingsTokenWriter.PickSummary.of(
-                "manual",
-                "",
-                "",
-                "manual grid pick");
+        PickResult automaticPick = result.pick();
+        SettingsTokenWriter.PickSummary summary = SegSweepAnalysis.pickSummary(
+                "manual", automaticPick,
+                automaticPick == null
+                        ? "manual grid pick"
+                        : "manual grid pick; automatic criteria agree="
+                        + automaticPick.criteriaAgree());
         return SettingsTokenWriter.write(
                 SegSweepAnalysis.methodFor(result.parameters(), selected),
                 result.provenance(), summary, writtenAt,
@@ -446,7 +473,7 @@ public class SegSweep_ implements PlugIn {
         return new File("image.tif");
     }
 
-    private ImagePlus resolveImage(String imageOption) {
+    private ImageLease resolveImage(String imageOption) {
         if (hasText(imageOption)) {
             String value = imageOption.trim();
             File file = new File(value);
@@ -455,19 +482,52 @@ public class SegSweep_ implements PlugIn {
                 if (image == null) {
                     throw new IllegalArgumentException("Could not open image: " + value);
                 }
-                return image;
+                return ImageLease.owned(image);
             }
             ImagePlus byTitle = WindowManager.getImage(value);
             if (byTitle != null) {
-                return byTitle;
+                return ImageLease.borrowed(byTitle);
             }
             ImagePlus opened = IJ.openImage(value);
             if (opened != null) {
-                return opened;
+                return ImageLease.owned(opened);
             }
             throw new IllegalArgumentException("Open image or file not found: " + value);
         }
-        return WindowManager.getCurrentImage();
+        ImagePlus current = WindowManager.getCurrentImage();
+        return current == null ? null : ImageLease.borrowed(current);
+    }
+
+    static final class ImageLease {
+        private final ImagePlus image;
+        private final boolean owned;
+        private final AtomicBoolean closed = new AtomicBoolean();
+
+        private ImageLease(ImagePlus image, boolean owned) {
+            this.image = image;
+            this.owned = owned;
+        }
+
+        static ImageLease owned(ImagePlus image) {
+            return new ImageLease(image, true);
+        }
+
+        static ImageLease borrowed(ImagePlus image) {
+            return new ImageLease(image, false);
+        }
+
+        ImagePlus image() {
+            return image;
+        }
+
+        void close() {
+            if (!owned || image == null || !closed.compareAndSet(false, true)) {
+                return;
+            }
+            image.changes = false;
+            image.close();
+            image.flush();
+        }
     }
 
     private void recordMacroCall(SegSweepMacroOptions options) {

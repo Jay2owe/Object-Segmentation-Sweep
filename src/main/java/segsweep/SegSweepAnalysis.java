@@ -399,10 +399,13 @@ public final class SegSweepAnalysis {
                 KneeOutcome outcome = KneeDetector.detect(xs, counts,
                         displayStats[0], displayStats[1], displayStats[2]);
                 if (outcome.kind() == KneeOutcome.Kind.KNEE_AT) {
-                    ParameterCombo pickedCombo = comboWith(base, ParameterId.THRESHOLD,
-                            Double.valueOf(outcome.parameterValue()));
-                    ComponentTreeResult picked = tree.query(toTreeQuery(pickedCombo));
-                    return new KneeAssembly(outcome, pickedCombo, picked.labelMap());
+                    VariationResult displayedPick = nearestDisplayedResult(
+                            displayedResults, ParameterId.THRESHOLD,
+                            outcome.parameterValue());
+                    return displayedPick == null
+                            ? new KneeAssembly(outcome, null, null)
+                            : new KneeAssembly(outcome, displayedPick.combo(),
+                            displayedPick.labelMap());
                 }
                 return new KneeAssembly(outcome, null, null);
             }
@@ -429,6 +432,23 @@ public final class SegSweepAnalysis {
             return new KneeAssembly(outcome, result.combo(), result.labelMap());
         }
         return new KneeAssembly(outcome, null, null);
+    }
+
+    private static VariationResult nearestDisplayedResult(List<VariationResult> results,
+                                                           ParameterId axis,
+                                                           double recommendation) {
+        VariationResult nearest = null;
+        double nearestDistance = Double.POSITIVE_INFINITY;
+        for (int i = 0; i < results.size(); i++) {
+            VariationResult candidate = results.get(i);
+            double value = numericValue(candidate.combo().get(axis), axis);
+            double distance = Math.abs(value - recommendation);
+            if (distance < nearestDistance) {
+                nearest = candidate;
+                nearestDistance = distance;
+            }
+        }
+        return nearest;
     }
 
     private static ChosenPick choosePicked(SegSweepParameters.PickCriterion criterion,
@@ -601,16 +621,25 @@ public final class SegSweepAnalysis {
         SegmentationMethod method = methodFor(params, pickedCombo);
         SettingsTokenWriter.PickSummary summary = pick == null
                 ? SettingsTokenWriter.PickSummary.empty()
-                : SettingsTokenWriter.PickSummary.of(
-                params.pickCriterion().name().toLowerCase(Locale.ROOT),
-                pick.knee().kind().name() + valueSuffix(pick.knee().parameterValue())
-                        + comboSuffix(pick.kneeCombo()),
-                pick.stability().kind().name() + valueSuffix(pick.stability().meanNeighbourIou())
-                        + comboSuffix(pick.stabilityCombo()),
+                : pickSummary(params.pickCriterion().name().toLowerCase(Locale.ROOT), pick,
                 String.valueOf(pick.criteriaAgree()));
         return SettingsTokenWriter.write(method, provenance, summary, java.time.Instant.now(),
                 imageIdentity(params == null ? null : params.image()),
                 params == null ? 0 : params.channel());
+    }
+
+    static SettingsTokenWriter.PickSummary pickSummary(String criterion,
+                                                        PickResult pick,
+                                                        String agreement) {
+        return pick == null
+                ? SettingsTokenWriter.PickSummary.of(criterion, "", "", agreement)
+                : SettingsTokenWriter.PickSummary.of(
+                criterion,
+                pick.knee().kind().name() + valueSuffix(pick.knee().parameterValue())
+                        + comboSuffix(pick.kneeCombo()),
+                pick.stability().kind().name() + valueSuffix(pick.stability().meanNeighbourIou())
+                        + comboSuffix(pick.stabilityCombo()),
+                agreement);
     }
 
     static SegmentationMethod methodFor(SegSweepParameters params, ParameterCombo combo) {
@@ -707,15 +736,6 @@ public final class SegSweepAnalysis {
                     "Display window produced no parameter combinations.");
         }
         return combos.get(0);
-    }
-
-    private static ParameterCombo comboWith(ParameterCombo base,
-                                            ParameterId id,
-                                            Object value) {
-        LinkedHashMap<ParameterKey, Object> values =
-                new LinkedHashMap<ParameterKey, Object>(base.values());
-        values.put(id, value);
-        return new ParameterCombo(values);
     }
 
     private static int displayIndex(ParameterSweep displayWindow, ParameterCombo picked) {

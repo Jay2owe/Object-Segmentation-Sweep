@@ -115,6 +115,11 @@ public final class ComponentNode {
     }
 
     public double attribute(MorphologyAttribute attribute) {
+        return attribute(attribute, null);
+    }
+
+    double attribute(MorphologyAttribute attribute,
+                     java.util.function.BooleanSupplier cancelCheck) {
         if (attribute == MorphologyAttribute.VOLUME) return voxelCount();
         if (attribute == MorphologyAttribute.MEAN_INTENSITY) return meanIntensity();
         if (attribute == MorphologyAttribute.MAX_INTENSITY) return maxIntensity();
@@ -122,7 +127,9 @@ public final class ComponentNode {
         if (attribute == MorphologyAttribute.SURFACE_AREA) return surfaceArea();
         if (attribute == MorphologyAttribute.SPHERICITY) return sphericity();
         if (attribute == MorphologyAttribute.COMPACTNESS) return compactness();
-        if (attribute == MorphologyAttribute.FERET_DIAMETER_MAX) return feretDiameterMax();
+        if (attribute == MorphologyAttribute.FERET_DIAMETER_MAX) {
+            return tree.feretDiameterMax(data, cancelCheck);
+        }
         return Double.NaN;
     }
 

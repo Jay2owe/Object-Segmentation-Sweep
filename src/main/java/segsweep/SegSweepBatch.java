@@ -154,6 +154,11 @@ public final class SegSweepBatch {
             if (!m.matches()) continue;
             String key;
             if (varyingGroup >= 1 && varyingGroup <= m.groupCount()) {
+                if (m.start(varyingGroup) < 0 || m.end(varyingGroup) < 0) {
+                    throw new IllegalArgumentException("Capture group " + varyingGroup
+                            + " did not participate when matching file " + f.getName()
+                            + ". Make that capture group mandatory or choose another group.");
+                }
                 key = f.getName().substring(0, m.start(varyingGroup))
                         + "*" + f.getName().substring(m.end(varyingGroup));
             } else {

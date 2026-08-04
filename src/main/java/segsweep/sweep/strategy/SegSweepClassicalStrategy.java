@@ -36,6 +36,7 @@ import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.function.BiConsumer;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
@@ -135,7 +136,14 @@ public final class SegSweepClassicalStrategy implements VariationStrategy {
 
             emit(progress, new SweepProgress(0, ordered.size(), 0, null,
                     "building", "Building component tree."));
-            TreeHandle tree = treeFactory.build(cropped, connectivity);
+            TreeHandle tree = treeFactory.build(cropped, connectivity, cancelCheck,
+                    new BiConsumer<Integer, Integer>() {
+                        @Override public void accept(Integer completed, Integer total) {
+                            emit(progress, new SweepProgress(0, ordered.size(), 0, null,
+                                    "building", "Building component tree: "
+                                    + completed + "/" + total + " voxels."));
+                        }
+                    });
             if (isCancelled(cancelCheck)) {
                 return;
             }
@@ -150,7 +158,8 @@ public final class SegSweepClassicalStrategy implements VariationStrategy {
                 emit(progress, new SweepProgress(i, ordered.size(), 0, combo,
                         "querying", "Querying component tree."));
                 long started = System.currentTimeMillis();
-                ComponentTreeResult treeResult = tree.query(toTreeQuery(combo));
+                ComponentTreeResult treeResult = tree.query(
+                        toTreeQuery(combo), cancelCheck);
                 long durationMs = Math.max(0L, System.currentTimeMillis() - started);
                 if (isCancelled(cancelCheck)) {
                     return;
@@ -297,11 +306,15 @@ public final class SegSweepClassicalStrategy implements VariationStrategy {
     }
 
     interface TreeFactory {
-        TreeHandle build(ImagePlus cropped, SegSweepLabeller.Connectivity connectivity);
+        TreeHandle build(ImagePlus cropped,
+                         SegSweepLabeller.Connectivity connectivity,
+                         BooleanSupplier cancelCheck,
+                         BiConsumer<Integer, Integer> progress);
     }
 
     interface TreeHandle {
-        ComponentTreeResult query(ComponentTreeQuery query);
+        ComponentTreeResult query(ComponentTreeQuery query,
+                                  BooleanSupplier cancelCheck);
     }
 
     interface TreeMemoryGuard {
@@ -355,11 +368,15 @@ public final class SegSweepClassicalStrategy implements VariationStrategy {
         static final DefaultTreeFactory INSTANCE = new DefaultTreeFactory();
 
         @Override public TreeHandle build(ImagePlus cropped,
-                                          SegSweepLabeller.Connectivity connectivity) {
-            final ComponentTree tree = ComponentTree.build(cropped, connectivity);
+                                          SegSweepLabeller.Connectivity connectivity,
+                                          BooleanSupplier cancelCheck,
+                                          BiConsumer<Integer, Integer> progress) {
+            final ComponentTree tree = ComponentTree.build(
+                    cropped, connectivity, cancelCheck, progress);
             return new TreeHandle() {
-                @Override public ComponentTreeResult query(ComponentTreeQuery query) {
-                    return tree.query(query);
+                @Override public ComponentTreeResult query(ComponentTreeQuery query,
+                                                           BooleanSupplier cancelCheck) {
+                    return tree.query(query, cancelCheck);
                 }
             };
         }

@@ -12,6 +12,7 @@ import ij.ImagePlus;
 import ij.ImageStack;
 import ij.process.AutoThresholder;
 import ij.process.ByteProcessor;
+import ij.process.FloatProcessor;
 import ij.process.ImageProcessor;
 import org.junit.Test;
 
@@ -60,6 +61,39 @@ public class RangeSuggesterTest {
         assertEquals(5, sizes.size());
         assertTrue(sizes.values().contains(Integer.valueOf(8)));
         assertTrue(maxValue(sizes.values()) > 9);
+    }
+
+    @Test
+    public void exclusiveThresholdSuggestionsKeepTheBrightValueSelectable() {
+        ImagePlus source = new ImagePlus("binary", new ByteProcessor(
+                2, 1, new byte[] { 0, 1 }, null));
+
+        ParameterValueList thresholds =
+                RangeSuggester.suggestThresholdDisplayWindow(source, CropSpec.full());
+
+        assertTrue(thresholds.values().contains(Double.valueOf(0.0d)));
+        double threshold = ((Number) thresholds.get(0)).doubleValue();
+        assertEquals(1, RangeSuggester.componentVoxelCounts(source, threshold, 100).sizes.size());
+    }
+
+    @Test
+    public void floatThresholdSuggestionsPreserveNegativeFractionalImageUnits() {
+        ImagePlus source = new ImagePlus("float-range", new FloatProcessor(
+                6, 1, new float[] { -2.5f, -2.0f, -1.25f, -0.5f, 0.25f, 1.5f }));
+
+        ParameterValueList thresholds =
+                RangeSuggester.suggestThresholdDisplayWindow(source, CropSpec.full());
+
+        boolean sawFraction = false;
+        boolean sawNegative = false;
+        for (Object raw : thresholds.values()) {
+            double value = ((Number) raw).doubleValue();
+            assertTrue(value >= -2.5d && value <= 1.5d);
+            sawFraction |= value != Math.rint(value);
+            sawNegative |= value < 0.0d;
+        }
+        assertTrue(sawFraction);
+        assertTrue(sawNegative);
     }
 
     private static void assertCloseToAny(List<Object> suggestions, int expected) {

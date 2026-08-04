@@ -99,9 +99,13 @@ public class TreeBuildOnceTest {
         final AtomicBoolean cancelled = new AtomicBoolean(false);
         CountingFactory factory = new CountingFactory() {
             @Override public SegSweepClassicalStrategy.TreeHandle build(
-                    ImagePlus cropped, SegSweepLabeller.Connectivity connectivity) {
-                SegSweepClassicalStrategy.TreeHandle handle = super.build(cropped, connectivity);
+                    ImagePlus cropped, SegSweepLabeller.Connectivity connectivity,
+                    java.util.function.BooleanSupplier cancelCheck,
+                    java.util.function.BiConsumer<Integer, Integer> progress) {
+                SegSweepClassicalStrategy.TreeHandle handle = super.build(
+                        cropped, connectivity, cancelCheck, progress);
                 cancelled.set(true);
+                assertTrue(cancelCheck.getAsBoolean());
                 return handle;
             }
         };
@@ -130,9 +134,12 @@ public class TreeBuildOnceTest {
         CountingFactory factory = new CountingFactory() {
             @Override SegSweepClassicalStrategy.TreeHandle wrap(final ComponentTree tree) {
                 return new SegSweepClassicalStrategy.TreeHandle() {
-                    @Override public ComponentTreeResult query(ComponentTreeQuery query) {
+                    @Override public ComponentTreeResult query(
+                            ComponentTreeQuery query,
+                            java.util.function.BooleanSupplier cancelCheck) {
                         queries.incrementAndGet();
                         cancelled.set(true);
+                        assertTrue(cancelCheck.getAsBoolean());
                         return tree.query(query);
                     }
                 };
@@ -198,17 +205,22 @@ public class TreeBuildOnceTest {
         final List<ComponentTreeQuery> seenQueries = new ArrayList<ComponentTreeQuery>();
 
         @Override public SegSweepClassicalStrategy.TreeHandle build(
-                ImagePlus cropped, SegSweepLabeller.Connectivity connectivity) {
+                ImagePlus cropped, SegSweepLabeller.Connectivity connectivity,
+                java.util.function.BooleanSupplier cancelCheck,
+                java.util.function.BiConsumer<Integer, Integer> progress) {
             builds.incrementAndGet();
-            return wrap(ComponentTree.build(cropped, connectivity));
+            return wrap(ComponentTree.build(
+                    cropped, connectivity, cancelCheck, progress));
         }
 
         SegSweepClassicalStrategy.TreeHandle wrap(final ComponentTree tree) {
             return new SegSweepClassicalStrategy.TreeHandle() {
-                @Override public ComponentTreeResult query(ComponentTreeQuery query) {
+                @Override public ComponentTreeResult query(
+                        ComponentTreeQuery query,
+                        java.util.function.BooleanSupplier cancelCheck) {
                     queries.incrementAndGet();
                     seenQueries.add(query);
-                    return tree.query(query);
+                    return tree.query(query, cancelCheck);
                 }
             };
         }

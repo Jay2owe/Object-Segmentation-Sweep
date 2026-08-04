@@ -31,6 +31,7 @@ import segsweep.token.SegmentationTokenParser;
 import segsweep.tree.LazyLabelMap;
 
 import java.awt.Rectangle;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -68,14 +69,17 @@ public class SegSweepAnalysisTest {
         assertEquals("knee", pick.getStringValue(SegSweepResult.PICK_CRITERION, 0));
         assertEquals("KNEE_AT", pick.getStringValue(SegSweepResult.PICK_KNEE_OUTCOME, 0));
         assertEquals(32.0d, pick.getValue(SegSweepResult.PICK_KNEE_VALUE, 0), 0.000001d);
-        assertEquals(32.0d, pick.getValue(ParameterId.THRESHOLD.displayLabel(), 0), 0.000001d);
+        assertEquals(30.0d, pick.getValue(ParameterId.THRESHOLD.displayLabel(), 0), 0.000001d);
+        assertEquals(5.0d, pick.getValue(
+                SegSweepResult.PICK_CHOSEN_COMBINATION, 0), 0.0d);
         assertTrue(!pick.getStringValue(
                 SegSweepResult.PICK_KNEE_RECOMMENDATION, 0).isEmpty());
 
         ParameterCombo picked = result.pickedCombo();
         assertNotNull(picked);
-        assertEquals(32.0d, ((Number) picked.get(ParameterId.THRESHOLD)).doubleValue(), 0.000001d);
-        assertTrue(result.pickedSettingsToken().contains("thresh=32"));
+        assertEquals(30.0d, ((Number) picked.get(ParameterId.THRESHOLD)).doubleValue(), 0.000001d);
+        assertTrue(result.pickedSettingsToken().contains("thresh=30"));
+        assertTrue(result.pickedSettingsToken().contains("KNEE_AT=32"));
     }
 
     @Test
@@ -364,6 +368,24 @@ public class SegSweepAnalysisTest {
                 SegSweepResult.PICK_CHOSEN_COMBINATION, 0), 0.0d);
         assertEquals(20.0d, manual.pickTable().getValue(
                 ParameterId.THRESHOLD.displayLabel(), 0), 0.0d);
+    }
+
+    @Test
+    public void manualSettingsRetainIndependentAutomaticRecommendations() {
+        SegSweepResult result = SegSweep.run(SegSweepParameters.builder()
+                .image(designedKneeStack(true))
+                .axis(ParameterId.THRESHOLD, 10, 60, 5)
+                .pickCriterion(SegSweepParameters.PickCriterion.BOTH)
+                .build());
+        ParameterCombo selected = result.results().get(0).combo();
+
+        String token = SegSweep_.settingsTokenForSelected(
+                result, selected, Instant.parse("2026-01-01T00:00:00Z"));
+
+        assertTrue(token.contains("criterion\tmanual"));
+        assertTrue(token.contains("knee\tKNEE_AT=32; combo={"));
+        assertTrue(token.contains("stability\t"));
+        assertTrue(token.contains("agreement\tmanual grid pick; automatic criteria agree="));
     }
 
     @Test
