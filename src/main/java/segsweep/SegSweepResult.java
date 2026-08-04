@@ -45,6 +45,7 @@ public final class SegSweepResult {
     public static final String PICK_DISPLAY_RANGE_MAX = PICK_KNEE_RANGE_MAX;
     public static final String PICK_DISPLAY_RANGE_STEP = PICK_KNEE_RANGE_STEP;
     public static final String PICK_STABILITY_SCORE = "stability score";
+    public static final String PICK_STABILITY_OUTCOME = "stability outcome kind";
     public static final String PICK_KNEE_RECOMMENDATION = "knee recommended settings";
     public static final String PICK_STABILITY_RECOMMENDATION = "stability recommended settings";
     public static final String PICK_ELIGIBLE_COUNT = "eligible count";

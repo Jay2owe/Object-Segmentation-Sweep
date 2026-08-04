@@ -21,6 +21,7 @@ import java.util.Arrays;
  */
 public final class KneeOutcome {
     public enum Kind {
+        NOT_REQUESTED,
         KNEE_AT,
         ALL_PLATEAU,
         TOO_FEW_POINTS,

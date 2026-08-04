@@ -95,6 +95,21 @@ public class ResourceGuardTest {
         assertTrue(feasibility.getMessage().contains("practical limit of 100"));
     }
 
+    @Test
+    public void computeFeasibilityDoesNotChargeSwingCellsOrApplyGridLimit() {
+        Map<ParameterId, ParameterValueList> values =
+                new LinkedHashMap<ParameterId, ParameterValueList>();
+        values.put(ParameterId.THRESHOLD, ParameterValueList.fromRange(0, 100, 1));
+        ParameterSweep sweep = new ParameterSweep(ParameterSweep.Method.CLASSICAL,
+                values, CropSpec.full(), "DAPI");
+
+        ResourceGuard.Feasibility feasibility = ResourceGuard.assessComputeFeasibility(
+                sweep, stack("tiny-headless", 2, 2, 1));
+
+        assertTrue(feasibility.isOk());
+        assertEquals(0L, feasibility.estimate().previewBytes());
+    }
+
     private static ImagePlus stack(String title, int width, int height, int slices) {
         ImageStack stack = new ImageStack(width, height);
         for (int i = 0; i < slices; i++) {

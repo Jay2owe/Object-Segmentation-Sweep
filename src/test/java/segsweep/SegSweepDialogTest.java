@@ -53,6 +53,20 @@ public class SegSweepDialogTest {
     }
 
     @Test
+    public void disabledGridDoesNotApplySwingCellLimit() {
+        SegSweepMacroOptions options = SegSweepMacroOptions.defaults();
+        options.setPrimaryAxis(SegSweepMacroOptions.AxisSpec.range(
+                ParameterId.THRESHOLD, 0, 100, 1));
+        options.setShowGrid(false);
+
+        assertTrue(SegSweepDialog.feasibility(
+                new ImagePlus("tiny-headless", new ByteProcessor(2, 2)), options).isOk());
+        assertTrue(SegSweepDialog.costEstimateText(
+                new ImagePlus("tiny-headless", new ByteProcessor(2, 2)), options)
+                .contains("computed without a grid"));
+    }
+
+    @Test
     public void rgbInputRefusalIsVisibleBeforeRun() {
         String text = SegSweepDialog.costEstimateText(
                 new ImagePlus("rgb", new ColorProcessor(8, 8)),

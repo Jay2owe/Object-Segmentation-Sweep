@@ -341,7 +341,7 @@ public final class AutoSaveWriter {
     private static String readmeText() {
         return "Object Segmentation Sweep output.\n\n"
                 + "sweep_results.csv: one row per displayed parameter combination.\n"
-                + "pick_summary.csv: the selected value and independent knee/stability reports.\n"
+                + "pick_summary.csv: one row with the selected value and independent knee/stability reports; pick=none records NOT_REQUESTED.\n"
                 + "picked_settings.txt: reproducible settings token plus crop bounds, crop fraction, calibration and displayed range; present only when a combination was picked.\n"
                 + "grid.png: interactive saves capture the current reviewed grid; headless, hidden, and batch saves use a deterministic middle-slice montage.\n"
                 + "labels/: contains its README and, when picked, the label map materialised from the lazy result.\n\n"

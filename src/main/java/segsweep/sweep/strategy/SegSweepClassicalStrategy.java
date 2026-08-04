@@ -359,7 +359,8 @@ public final class SegSweepClassicalStrategy implements VariationStrategy {
         @Override public GuardVerdict assess(ParameterSweep displayWindow, ImagePlus cropped) {
             ParameterSweep croppedWindow = new ParameterSweep(displayWindow.method(),
                     displayWindow.valueLists(), CropSpec.full(), displayWindow.channelName());
-            ResourceGuard.Feasibility feasibility = ResourceGuard.assessFeasibility(croppedWindow, cropped);
+            ResourceGuard.Feasibility feasibility =
+                    ResourceGuard.assessComputeFeasibility(croppedWindow, cropped);
             return feasibility.isOk()
                     ? GuardVerdict.allow()
                     : GuardVerdict.deny(feasibility.getMessage());

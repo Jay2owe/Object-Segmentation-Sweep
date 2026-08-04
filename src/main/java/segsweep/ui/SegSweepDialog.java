@@ -143,7 +143,12 @@ public final class SegSweepDialog {
     public static String costEstimateText(ImagePlus image, SegSweepMacroOptions options) {
         ResourceGuard.Feasibility feasibility = feasibility(image, options);
         long combinations = combinationCount(options);
-        String prefix = combinations + " combinations displayed; classical computes the crop once. ";
+        boolean gridRequested = options == null
+                || (!options.hideDisplay() && options.showGrid());
+        String prefix = combinations + (gridRequested
+                ? " combinations displayed; "
+                : " combinations computed without a grid; ")
+                + "classical computes the crop once. ";
         ResourceGuard.Estimate estimate = feasibility.estimate();
         String memory = estimate == null
                 ? ""
@@ -171,7 +176,9 @@ public final class SegSweepDialog {
         }
         ParameterSweep sweep = new ParameterSweep(ParameterSweep.Method.CLASSICAL,
                 axes, safe.crop(), "C" + safe.channel());
-        return ResourceGuard.assessFeasibility(sweep, image);
+        return safe.hideDisplay() || !safe.showGrid()
+                ? ResourceGuard.assessComputeFeasibility(sweep, image)
+                : ResourceGuard.assessFeasibility(sweep, image);
     }
 
     public static SegSweepMacroOptions applySuggestedRange(ImagePlus image,
@@ -388,6 +395,11 @@ public final class SegSweepDialog {
         state.showTables = addToggle(content, "Show results tables", true);
         state.autosaveField = addField(content, "Save to:",
                 SegSweepMacroOptions.AUTOSAVE_ALONGSIDE_INPUT, 22);
+        state.showGrid.addChangeListener(new Runnable() {
+            @Override public void run() {
+                state.refreshCostLine();
+            }
+        });
     }
 
     private static void addHeader(JPanel content, String text) {

@@ -83,7 +83,7 @@ public final class SegSweepAnalysis {
             checkCancelled(cancelCheck);
 
             ResourceGuard.Feasibility feasibility =
-                    ResourceGuard.assessFeasibility(croppedWindow(displayWindow), cropped);
+                    ResourceGuard.assessComputeFeasibility(croppedWindow(displayWindow), cropped);
             if (!feasibility.isOk()) {
                 throw new SweepRefusedException(feasibility.getMessage());
             }
@@ -110,9 +110,7 @@ public final class SegSweepAnalysis {
 
             ResultsTable sweepTable = buildSweepTable(displayWindow,
                     pickAssembly.scoredResults, pickAssembly.stability);
-            ResultsTable pickTable = params.pickCriterion() == SegSweepParameters.PickCriterion.NONE
-                    ? new ResultsTable()
-                    : buildPickTable(displayWindow, pickAssembly.pick,
+            ResultsTable pickTable = buildPickTable(displayWindow, pickAssembly.pick,
                     pickAssembly.pickedCombo, pickAssembly.chosenCombinationIndex,
                     params.pickCriterion().name().toLowerCase(Locale.ROOT), provenance);
             String token = pickAssembly.pickedCombo == null ? ""
@@ -643,8 +641,10 @@ public final class SegSweepAnalysis {
         }
         KneeOutcome knee = pick == null ? null : pick.knee();
         StabilityOutcome stability = pick == null ? null : pick.stability();
+        boolean notRequested = "none".equalsIgnoreCase(criterion);
         table.setValue(SegSweepResult.PICK_KNEE_OUTCOME, row,
-                knee == null ? "" : knee.kind().name());
+                knee == null ? (notRequested ? KneeOutcome.Kind.NOT_REQUESTED.name() : "")
+                        : knee.kind().name());
         if (knee != null && Double.isFinite(knee.parameterValue())) {
             table.setValue(SegSweepResult.PICK_KNEE_VALUE, row,
                     knee.parameterValue());
@@ -673,6 +673,10 @@ public final class SegSweepAnalysis {
         } else {
             table.setValue(SegSweepResult.PICK_STABILITY_SCORE, row, "");
         }
+        table.setValue(SegSweepResult.PICK_STABILITY_OUTCOME, row,
+                stability == null
+                        ? (notRequested ? StabilityOutcome.Kind.NOT_REQUESTED.name() : "")
+                        : stability.kind().name());
         table.setValue(SegSweepResult.PICK_KNEE_RECOMMENDATION, row,
                 pick == null || pick.kneeCombo() == null
                         ? "" : pick.kneeCombo().toCanonicalJson());

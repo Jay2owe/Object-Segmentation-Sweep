@@ -28,7 +28,22 @@ public final class ResourceGuard {
     private ResourceGuard() {
     }
 
+    /**
+     * Assesses the tree and query working set only. Headless/API callers do not
+     * retain Swing cells or preview montages and must not inherit UI limits.
+     */
+    public static Feasibility assessComputeFeasibility(ParameterSweep sweep, ImagePlus source) {
+        return assessFeasibility(sweep, source, false);
+    }
+
+    /** Assesses compute plus the retained preview/Swing grid working set. */
     public static Feasibility assessFeasibility(ParameterSweep sweep, ImagePlus source) {
+        return assessFeasibility(sweep, source, true);
+    }
+
+    private static Feasibility assessFeasibility(ParameterSweep sweep,
+                                                  ImagePlus source,
+                                                  boolean includeDisplay) {
         if (sweep == null) {
             return Feasibility.refused(null, availableBytes(),
                     "No parameter sweep was provided.");
@@ -45,19 +60,21 @@ public final class ResourceGuard {
         }
         Rectangle crop = sweep.cropSpec().boundsFor(source);
         Estimate estimate = estimateTreeMemory(source, crop);
-        long cropPreviewBytes = multiply(multiply(crop.width, crop.height),
-                RGB_PREVIEW_BYTES_PER_PIXEL);
-        long retainedBytesPerCell = saturatingAdd(
-                Math.max(cropPreviewBytes, MONTAGE_CELL_BYTES), SWING_BYTES_PER_CELL);
-        long previewBytes = multiply(sweep.cellCount(), retainedBytesPerCell);
-        estimate = estimate.withPreviewBytes(previewBytes);
         long available = availableBytes();
-        if (sweep.cellCount() > MAX_DISPLAY_CELLS) {
-            return Feasibility.refused(estimate, available,
-                    "The display grid contains " + sweep.cellCount()
-                            + " cells, above the practical limit of "
-                            + MAX_DISPLAY_CELLS
-                            + ". Narrow the ranges or step sizes before opening the grid.");
+        if (includeDisplay) {
+            long cropPreviewBytes = multiply(multiply(crop.width, crop.height),
+                    RGB_PREVIEW_BYTES_PER_PIXEL);
+            long retainedBytesPerCell = saturatingAdd(
+                    Math.max(cropPreviewBytes, MONTAGE_CELL_BYTES), SWING_BYTES_PER_CELL);
+            long previewBytes = multiply(sweep.cellCount(), retainedBytesPerCell);
+            estimate = estimate.withPreviewBytes(previewBytes);
+            if (sweep.cellCount() > MAX_DISPLAY_CELLS) {
+                return Feasibility.refused(estimate, available,
+                        "The display grid contains " + sweep.cellCount()
+                                + " cells, above the practical limit of "
+                                + MAX_DISPLAY_CELLS
+                                + ". Narrow the ranges or step sizes before opening the grid.");
+            }
         }
         return decide(estimate, available, (long) Math.floor(available * DEFAULT_AVAILABLE_FRACTION));
     }

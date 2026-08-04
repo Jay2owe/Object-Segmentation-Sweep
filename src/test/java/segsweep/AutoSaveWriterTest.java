@@ -121,6 +121,10 @@ public class AutoSaveWriterTest {
         }
         assertFalse(new File(output, "labels/none_picked.tif").exists());
         assertFalse(new File(output, "picked_settings.txt").exists());
+        String pickSummary = new String(Files.readAllBytes(
+                new File(output, "pick_summary.csv").toPath()), StandardCharsets.UTF_8);
+        assertTrue(pickSummary.contains("NOT_REQUESTED"));
+        assertTrue(pickSummary.contains("none"));
     }
 
     @Test

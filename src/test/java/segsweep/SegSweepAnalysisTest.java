@@ -344,7 +344,7 @@ public class SegSweepAnalysisTest {
     }
 
     @Test
-    public void pickNoneReturnsSweepWithoutPickedComboOrPickRows() {
+    public void pickNoneReturnsSweepAndExplicitNotRequestedSummary() {
         SegSweepResult result = SegSweep.run(SegSweepParameters.builder()
                 .image(designedKneeStack(true))
                 .axis(ParameterId.THRESHOLD, 10, 60, 10)
@@ -352,11 +352,36 @@ public class SegSweepAnalysisTest {
                 .build());
 
         assertEquals(6, result.sweepTable().size());
-        assertEquals(0, result.pickTable().size());
+        assertEquals(1, result.pickTable().size());
+        assertEquals("none", result.pickTable().getStringValue(
+                SegSweepResult.PICK_CRITERION, 0));
+        assertEquals(0.0d, result.pickTable().getValue(
+                SegSweepResult.PICK_CHOSEN_COMBINATION, 0), 0.0d);
+        assertEquals("NOT_REQUESTED", result.pickTable().getStringValue(
+                SegSweepResult.PICK_KNEE_OUTCOME, 0));
+        assertEquals("NOT_REQUESTED", result.pickTable().getStringValue(
+                SegSweepResult.PICK_STABILITY_OUTCOME, 0));
+        assertEquals(1.0d, result.pickTable().getValue(
+                SegSweepResult.PICK_CROP_FRACTION, 0), 0.0d);
         assertNull(result.pick());
         assertNull(result.pickedCombo());
         assertNull(result.pickedLabelMap());
         assertEquals("", result.pickedSettingsToken());
+    }
+
+    @Test
+    public void headlessApiCanComputeMoreThanDisplayGridLimit() {
+        ByteProcessor pixels = new ByteProcessor(2, 2);
+        pixels.set(0, 0, 100);
+
+        SegSweepResult result = SegSweep.run(SegSweepParameters.builder()
+                .image(new ImagePlus("tiny-headless", pixels))
+                .axis(ParameterId.THRESHOLD, 0, 100, 1)
+                .pickCriterion(SegSweepParameters.PickCriterion.NONE)
+                .build());
+
+        assertEquals(101, result.sweepTable().size());
+        assertEquals(1, result.pickTable().size());
     }
 
     @Test

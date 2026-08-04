@@ -18,6 +18,7 @@ package segsweep.sweep.analysis;
  */
 public final class StabilityOutcome {
     public enum Kind {
+        NOT_REQUESTED,
         STABLE_AT,
         NO_ELIGIBLE_COMBINATIONS,
         TOO_MANY_AXES,
