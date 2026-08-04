@@ -14,7 +14,7 @@
 
 	<groupId>io.github.jay2owe</groupId>
 	<artifactId>Object-Segmentation-Sweep</artifactId>
-	<version>0.1.0-SNAPSHOT</version>
+	<version>0.1.0</version>
 
 	<name>Object Segmentation Sweep</name>
 	<description>Sweep segmentation settings across a range, review every result side by side as label maps, and select a value from the object-count knee or parameter stability.</description>

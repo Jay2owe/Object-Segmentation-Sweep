@@ -115,7 +115,8 @@ public final class SegSweepAnalysis {
                     : buildPickTable(displayWindow, pickAssembly.pick,
                     pickAssembly.pickedCombo, pickAssembly.chosenCombinationIndex,
                     params.pickCriterion().name().toLowerCase(Locale.ROOT), provenance);
-            String token = buildSettingsToken(params, provenance, pickAssembly.pick,
+            String token = pickAssembly.pickedCombo == null ? ""
+                    : buildSettingsToken(params, provenance, pickAssembly.pick,
                     pickAssembly.pickedCombo);
 
             return new SegSweepResult(params, sweepTable, pickTable, pickAssembly.pick,
@@ -266,18 +267,27 @@ public final class SegSweepAnalysis {
             checkCancelled(cancelCheck);
             ParameterCombo combo = ordered.get(i);
             long started = System.currentTimeMillis();
-            ComponentTreeResult treeResult = tree.query(toTreeQuery(combo));
-            long durationMs = Math.max(0L, System.currentTimeMillis() - started);
             EnumSet<VariationResult.Flag> flags = EnumSet.noneOf(VariationResult.Flag.class);
-            if (treeResult.status() == ComponentTreeResult.Status.TOO_MANY_LABELS) {
-                flags.add(VariationResult.Flag.TOO_MANY_LABELS);
-                results.add(VariationResult.failure(combo,
-                        new IllegalStateException(treeResult.reason()), provenance,
-                        flags, treeResult.objectCount()));
-            } else {
-                results.add(VariationResult.success(combo, treeResult.labelMap(),
-                        treeResult.objectCount(), durationMs, null, provenance, flags,
-                        IouStability.IouSource.fromTreeResult(treeResult)));
+            try {
+                ComponentTreeResult treeResult = tree.query(
+                        toTreeQuery(combo), cancelCheck);
+                long durationMs = Math.max(0L, System.currentTimeMillis() - started);
+                if (treeResult.status() == ComponentTreeResult.Status.TOO_MANY_LABELS) {
+                    flags.add(VariationResult.Flag.TOO_MANY_LABELS);
+                    results.add(VariationResult.failure(combo,
+                            new IllegalStateException(treeResult.reason()), provenance,
+                            flags, treeResult.objectCount(), durationMs));
+                } else {
+                    results.add(VariationResult.success(combo, treeResult.labelMap(),
+                            treeResult.objectCount(), durationMs, null, provenance, flags,
+                            IouStability.IouSource.fromTreeResult(treeResult)));
+                }
+            } catch (CancellationException ex) {
+                throw ex;
+            } catch (RuntimeException ex) {
+                long durationMs = Math.max(0L, System.currentTimeMillis() - started);
+                results.add(VariationResult.failure(combo, ex, provenance,
+                        flags, 0, durationMs));
             }
             emit(progress, i + 1, ordered.size(), "querying",
                     "Querying component tree.");
@@ -363,17 +373,20 @@ public final class SegSweepAnalysis {
         ParameterId rangeAxis = axis == null ? firstAxis(params) : axis;
         ParameterValueList displayedValues = params.axes().get(rangeAxis);
         double[] displayStats = rangeStats(displayedValues);
+        double[] computationStats = axis == ParameterId.THRESHOLD
+                && fullThresholdValues != null && fullThresholdValues.length > 0
+                ? rangeStats(fullThresholdValues) : displayStats;
         if (varyingAxes > 1) {
             return new KneeAssembly(KneeOutcome.of(
                     KneeOutcome.Kind.MULTI_AXIS_UNSUPPORTED,
-                    displayStats[0], displayStats[1], displayStats[2],
+                    computationStats[0], computationStats[1], computationStats[2],
                     "Knee scoring is one-dimensional; it is not defined for two varying sweep axes."),
                     null, null);
         }
         if (axis == null) {
             return new KneeAssembly(KneeOutcome.of(
                     KneeOutcome.Kind.TOO_FEW_POINTS,
-                    displayStats[0], displayStats[1], displayStats[2],
+                    computationStats[0], computationStats[1], computationStats[2],
                     "Knee scoring requires one varying sweep axis; every displayed axis is fixed."),
                     null, null);
         }
@@ -384,20 +397,41 @@ public final class SegSweepAnalysis {
                 double[] xs = Arrays.copyOf(thresholdValues, thresholdValues.length);
                 double[] counts = new double[thresholdValues.length];
                 ParameterCombo base = firstCombo(displayWindow);
-                int[] objectCounts = tree.objectCountsAtThresholds(
-                        xs, toTreeQuery(base), cancelCheck);
+                for (int i = 0; i < displayedResults.size(); i++) {
+                    if (displayedResults.get(i).hasFlag(VariationResult.Flag.TOO_MANY_LABELS)) {
+                        return new KneeAssembly(KneeOutcome.of(
+                                KneeOutcome.Kind.TOO_MANY_OBJECTS,
+                                computationStats[0], computationStats[1], computationStats[2],
+                                "At least one displayed combination exceeds the 16-bit object limit; knee scoring was refused."),
+                                null, null);
+                    }
+                    if (isOrdinaryFailure(displayedResults.get(i))) {
+                        return failedKnee(computationStats,
+                                "At least one displayed combination failed; knee scoring was refused.");
+                    }
+                }
+                int[] objectCounts;
+                try {
+                    objectCounts = tree.objectCountsAtThresholds(
+                            xs, toTreeQuery(base), cancelCheck);
+                } catch (CancellationException ex) {
+                    throw ex;
+                } catch (RuntimeException ex) {
+                    return failedKnee(computationStats,
+                            "Full-axis knee scoring failed: " + readableMessage(ex));
+                }
                 for (int i = 0; i < objectCounts.length; i++) {
                     if (objectCounts[i] < 0) {
                         return new KneeAssembly(KneeOutcome.of(
                                 KneeOutcome.Kind.TOO_MANY_OBJECTS,
-                                displayStats[0], displayStats[1], displayStats[2],
+                                computationStats[0], computationStats[1], computationStats[2],
                                 "At least one threshold exceeds the 16-bit object limit; knee scoring was refused."),
                                 null, null);
                     }
                     counts[i] = objectCounts[i];
                 }
                 KneeOutcome outcome = KneeDetector.detect(xs, counts,
-                        displayStats[0], displayStats[1], displayStats[2]);
+                        computationStats[0], computationStats[1], computationStats[2]);
                 if (outcome.kind() == KneeOutcome.Kind.KNEE_AT) {
                     VariationResult displayedPick = nearestDisplayedResult(
                             displayedResults, ParameterId.THRESHOLD,
@@ -417,21 +451,45 @@ public final class SegSweepAnalysis {
             if (displayedResults.get(i).hasFlag(VariationResult.Flag.TOO_MANY_LABELS)) {
                 return new KneeAssembly(KneeOutcome.of(
                         KneeOutcome.Kind.TOO_MANY_OBJECTS,
-                        displayStats[0], displayStats[1], displayStats[2],
+                        computationStats[0], computationStats[1], computationStats[2],
                         "At least one displayed combination exceeds the 16-bit object limit; knee scoring was refused."),
                         null, null);
+            }
+            if (isOrdinaryFailure(displayedResults.get(i))) {
+                return failedKnee(computationStats,
+                        "At least one displayed combination failed; knee scoring was refused.");
             }
             xs[i] = numericValue(displayedResults.get(i).combo().get(axis), axis);
             counts[i] = displayedResults.get(i).objectCount();
         }
         KneeOutcome outcome = KneeDetector.detect(xs, counts,
-                displayStats[0], displayStats[1], displayStats[2]);
+                computationStats[0], computationStats[1], computationStats[2]);
         if (outcome.kind() == KneeOutcome.Kind.KNEE_AT
                 && outcome.index() >= 0 && outcome.index() < displayedResults.size()) {
             VariationResult result = displayedResults.get(outcome.index());
             return new KneeAssembly(outcome, result.combo(), result.labelMap());
         }
         return new KneeAssembly(outcome, null, null);
+    }
+
+    private static KneeAssembly failedKnee(double[] computationStats, String explanation) {
+        return new KneeAssembly(KneeOutcome.of(
+                KneeOutcome.Kind.FAILED_COMBINATIONS,
+                computationStats[0], computationStats[1], computationStats[2],
+                explanation), null, null);
+    }
+
+    private static boolean isOrdinaryFailure(VariationResult result) {
+        return result != null
+                && result.hasFlag(VariationResult.Flag.FAILED)
+                && !result.hasFlag(VariationResult.Flag.TOO_MANY_LABELS);
+    }
+
+    private static String readableMessage(Throwable error) {
+        if (error == null) return "unknown error";
+        String message = error.getMessage();
+        return message == null || message.trim().isEmpty()
+                ? error.getClass().getSimpleName() : message.trim();
     }
 
     private static VariationResult nearestDisplayedResult(List<VariationResult> results,
@@ -509,7 +567,9 @@ public final class SegSweepAnalysis {
                 } else {
                     table.setValue(SegSweepResult.COL_OBJECTS_PER_MM3, row, "");
                 }
+                table.setValue(SegSweepResult.COL_OBJECTS_PER_MM2, row, "");
             } else {
+                table.setValue(SegSweepResult.COL_OBJECTS_PER_MM3, row, "");
                 if (Double.isFinite(result.objectsPerCalibratedArea())) {
                     table.setValue(SegSweepResult.COL_OBJECTS_PER_MM2, row,
                             result.objectsPerCalibratedArea());
@@ -567,13 +627,13 @@ public final class SegSweepAnalysis {
             table.setValue(SegSweepResult.PICK_KNEE_VALUE, row, "");
         }
         if (knee != null) {
-            table.setValue(SegSweepResult.PICK_DISPLAY_RANGE_MIN, row, knee.rangeMin());
-            table.setValue(SegSweepResult.PICK_DISPLAY_RANGE_MAX, row, knee.rangeMax());
-            table.setValue(SegSweepResult.PICK_DISPLAY_RANGE_STEP, row, knee.step());
+            table.setValue(SegSweepResult.PICK_KNEE_RANGE_MIN, row, knee.rangeMin());
+            table.setValue(SegSweepResult.PICK_KNEE_RANGE_MAX, row, knee.rangeMax());
+            table.setValue(SegSweepResult.PICK_KNEE_RANGE_STEP, row, knee.step());
         } else {
-            table.setValue(SegSweepResult.PICK_DISPLAY_RANGE_MIN, row, "");
-            table.setValue(SegSweepResult.PICK_DISPLAY_RANGE_MAX, row, "");
-            table.setValue(SegSweepResult.PICK_DISPLAY_RANGE_STEP, row, "");
+            table.setValue(SegSweepResult.PICK_KNEE_RANGE_MIN, row, "");
+            table.setValue(SegSweepResult.PICK_KNEE_RANGE_MAX, row, "");
+            table.setValue(SegSweepResult.PICK_KNEE_RANGE_STEP, row, "");
         }
         if (stability != null && Double.isFinite(stability.meanNeighbourIou())) {
             table.setValue(SegSweepResult.PICK_STABILITY_SCORE, row,
@@ -636,7 +696,7 @@ public final class SegSweepAnalysis {
                 : SettingsTokenWriter.PickSummary.of(
                 criterion,
                 pick.knee().kind().name() + valueSuffix(pick.knee().parameterValue())
-                        + comboSuffix(pick.kneeCombo()),
+                        + comboSuffix(pick.kneeCombo()) + rangeSuffix(pick.knee()),
                 pick.stability().kind().name() + valueSuffix(pick.stability().meanNeighbourIou())
                         + comboSuffix(pick.stabilityCombo()),
                 agreement);
@@ -807,6 +867,26 @@ public final class SegSweepAnalysis {
         return new double[] { min, max, step };
     }
 
+    private static double[] rangeStats(double[] values) {
+        if (values == null || values.length == 0) {
+            return new double[] { Double.NaN, Double.NaN, Double.NaN };
+        }
+        double min = Double.POSITIVE_INFINITY;
+        double max = Double.NEGATIVE_INFINITY;
+        double step = values.length >= 2 ? Math.abs(values[1] - values[0]) : Double.NaN;
+        boolean regular = Double.isFinite(step);
+        for (int i = 0; i < values.length; i++) {
+            double value = values[i];
+            if (!Double.isFinite(value)) continue;
+            min = Math.min(min, value);
+            max = Math.max(max, value);
+            if (i >= 2 && Math.abs(Math.abs(value - values[i - 1]) - step) > 1.0e-9d) {
+                regular = false;
+            }
+        }
+        return new double[] { min, max, regular ? step : Double.NaN };
+    }
+
     private static double[] fullThresholdAxis(ImagePlus image, ComponentTree tree) {
         if (image == null || image.getStack() == null) {
             return new double[0];
@@ -844,7 +924,8 @@ public final class SegSweepAnalysis {
     }
 
     private static void checkCancelled(BooleanSupplier cancelCheck) {
-        if (cancelCheck != null && cancelCheck.getAsBoolean()) {
+        if (Thread.currentThread().isInterrupted()
+                || (cancelCheck != null && cancelCheck.getAsBoolean())) {
             throw new CancellationException("Object Segmentation Sweep was cancelled.");
         }
     }
@@ -912,6 +993,20 @@ public final class SegSweepAnalysis {
 
     private static String comboSuffix(ParameterCombo combo) {
         return combo == null ? "" : "; combo=" + combo.toCanonicalJson();
+    }
+
+    private static String rangeSuffix(KneeOutcome knee) {
+        if (knee == null || !Double.isFinite(knee.rangeMin())
+                || !Double.isFinite(knee.rangeMax())) {
+            return "";
+        }
+        String suffix = "; computation_range=["
+                + CanonicalScale.formatNumber(Double.valueOf(knee.rangeMin())) + ","
+                + CanonicalScale.formatNumber(Double.valueOf(knee.rangeMax())) + "]";
+        return Double.isFinite(knee.step())
+                ? suffix + "; computation_step="
+                + CanonicalScale.formatNumber(Double.valueOf(knee.step()))
+                : suffix + "; computation_step=irregular";
     }
 
     private static ImagePlus selectChannel(ImagePlus source, int channel) {

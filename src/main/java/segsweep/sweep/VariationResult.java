@@ -131,7 +131,16 @@ public final class VariationResult {
                                           SweepProvenance provenance,
                                           EnumSet<Flag> flags,
                                           int objectCount) {
-        return new VariationResult(combo, null, objectCount, 0L, null, error, provenance,
+        return failure(combo, error, provenance, flags, objectCount, 0L);
+    }
+
+    public static VariationResult failure(ParameterCombo combo,
+                                          Throwable error,
+                                          SweepProvenance provenance,
+                                          EnumSet<Flag> flags,
+                                          int objectCount,
+                                          long durationMs) {
+        return new VariationResult(combo, null, objectCount, durationMs, null, error, provenance,
                 flags, Double.NaN, null);
     }
 

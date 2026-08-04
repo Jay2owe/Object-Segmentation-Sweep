@@ -63,12 +63,14 @@ public class SweepIntegrationTest {
     }
 
     static ImagePlus monotoneObjectStack() {
-        ImageStack stack = new ImageStack(128, 128);
-        for (int z = 0; z < 10; z++) {
-            stack.addSlice("z" + (z + 1), new ShortProcessor(128, 128));
+        // Keep the integration fixture deliberately small so the production memory
+        // guard remains deterministic even in a memory-constrained test JVM.
+        ImageStack stack = new ImageStack(80, 16);
+        for (int z = 0; z < 3; z++) {
+            stack.addSlice("z" + (z + 1), new ShortProcessor(80, 16));
         }
         ImagePlus image = new ImagePlus("stage-09-integration", stack);
-        image.setDimensions(1, 10, 1);
+        image.setDimensions(1, 3, 1);
         Calibration calibration = new Calibration();
         calibration.pixelWidth = 0.5;
         calibration.pixelHeight = 0.5;

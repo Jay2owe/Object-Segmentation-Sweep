@@ -1,0 +1,42 @@
+cff-version: 1.2.0
+message: "If you use Object Segmentation Sweep in published work, please cite it as below."
+type: software
+title: "Object Segmentation Sweep"
+abstract: >-
+  ImageJ/Fiji plugin for reviewing classical segmentation settings across one
+  or two parameter axes and reporting independent object-count-knee and
+  neighbour-IoU-stability recommendations with crop and range provenance.
+authors:
+  - given-names: Jamie
+    family-names: Malcolm
+    orcid: "https://orcid.org/0009-0008-3862-2776"
+    affiliation: "UK Dementia Research Institute at Imperial College London"
+    email: jamiemalcolm12@gmail.com
+repository-code: "https://github.com/Jay2owe/Object-Segmentation-Sweep"
+url: "https://github.com/Jay2owe/Object-Segmentation-Sweep"
+license: BSD-3-Clause
+version: "0.1.0"
+date-released: "2026-08-04"
+keywords:
+  - imagej
+  - fiji
+  - microscopy
+  - segmentation
+  - parameter-sweep
+  - label-images
+  - reproducibility
+references:
+  - type: software
+    title: "CPC — Centre-Particle Coincidence"
+    authors:
+      - given-names: Jamie
+        family-names: Malcolm
+    version: "1.4.0"
+    repository-code: "https://github.com/Jay2owe/CPC"
+  - type: software
+    title: "3D Objects Counter+"
+    authors:
+      - given-names: Jamie
+        family-names: Malcolm
+    version: "0.1.1"
+    repository-code: "https://github.com/Jay2owe/3DObjectsCounterPlus"

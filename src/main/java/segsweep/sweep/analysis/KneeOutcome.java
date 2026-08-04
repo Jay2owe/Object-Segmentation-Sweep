@@ -11,9 +11,9 @@ package segsweep.sweep.analysis;
 /**
  * Typed result of object-count knee detection.
  *
- * <p>The outcome records the parameter units and the displayed range reviewed
- * by the user, but the calculation is expected to be run over the full
- * available axis for the classical component-tree engine. This is a heuristic
+ * <p>The outcome records the parameter units and the actual range used for the
+ * calculation, which may be broader than the displayed review window for the
+ * classical component-tree engine. This is a heuristic
  * curve summary, not a ground-truth optimiser; no randomisation null model is
  * included before v0.2.0.</p>
  */
@@ -25,6 +25,7 @@ public final class KneeOutcome {
         NO_BEND,
         DEGENERATE_RANGE,
         TOO_MANY_OBJECTS,
+        FAILED_COMBINATIONS,
         MULTI_AXIS_UNSUPPORTED
     }
 

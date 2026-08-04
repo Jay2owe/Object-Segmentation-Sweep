@@ -50,6 +50,7 @@ public class AutoSaveWriterTest {
         assertTrue(new File(output, "picked_settings.txt").isFile());
         assertTrue(new File(output, "grid.png").isFile());
         assertTrue(new File(output, "labels/Exp1-A01_LH_CTX_picked.tif").isFile());
+        assertTrue(new File(output, "labels/README.txt").isFile());
         assertTrue(new File(output, "README.txt").isFile());
         assertEquals(1, picked.materializationCount());
         BufferedImage montage = ImageIO.read(new File(output, "grid.png"));
@@ -101,7 +102,7 @@ public class AutoSaveWriterTest {
     }
 
     @Test
-    public void noPickLeavesLabelsDirectoryEmptyAndGridDoesNotMaterialiseLabels() throws Exception {
+    public void noPickOmitsFalseSettingsAndLeavesOnlyLabelsReadme() throws Exception {
         File input = tmp.newFile("none.tif");
         SegSweepResult result = SegSweep.run(SegSweepParameters.builder()
                 .image(SegSweepAnalysisTest.designedKneeStack(true))
@@ -113,11 +114,13 @@ public class AutoSaveWriterTest {
 
         File[] labels = new File(output, "labels").listFiles();
         assertNotNull(labels);
-        assertEquals(0, labels.length);
+        assertEquals(1, labels.length);
+        assertEquals("README.txt", labels[0].getName());
         for (int i = 0; i < result.results().size(); i++) {
             assertEquals(0, result.results().get(i).labelMap().materializationCount());
         }
         assertFalse(new File(output, "labels/none_picked.tif").exists());
+        assertFalse(new File(output, "picked_settings.txt").exists());
     }
 
     @Test

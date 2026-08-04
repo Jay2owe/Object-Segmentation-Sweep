@@ -366,7 +366,7 @@ public final class ComponentTree {
         return voxels(data, null);
     }
 
-    private int[] voxels(NodeData data, BooleanSupplier cancelCheck) {
+    int[] voxels(NodeData data, BooleanSupplier cancelCheck) {
         if (data == null || data.voxelCount <= 0) {
             return new int[0];
         }

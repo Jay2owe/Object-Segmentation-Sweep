@@ -37,9 +37,12 @@ public final class SegSweepResult {
     public static final String PICK_CHOSEN_COMBINATION = "chosen combination index";
     public static final String PICK_KNEE_OUTCOME = "knee outcome kind";
     public static final String PICK_KNEE_VALUE = "knee value";
-    public static final String PICK_DISPLAY_RANGE_MIN = "displayed range min";
-    public static final String PICK_DISPLAY_RANGE_MAX = "displayed range max";
-    public static final String PICK_DISPLAY_RANGE_STEP = "displayed range step";
+    public static final String PICK_KNEE_RANGE_MIN = "knee computation range min";
+    public static final String PICK_KNEE_RANGE_MAX = "knee computation range max";
+    public static final String PICK_KNEE_RANGE_STEP = "knee computation range step";
+    public static final String PICK_DISPLAY_RANGE_MIN = PICK_KNEE_RANGE_MIN;
+    public static final String PICK_DISPLAY_RANGE_MAX = PICK_KNEE_RANGE_MAX;
+    public static final String PICK_DISPLAY_RANGE_STEP = PICK_KNEE_RANGE_STEP;
     public static final String PICK_STABILITY_SCORE = "stability score";
     public static final String PICK_KNEE_RECOMMENDATION = "knee recommended settings";
     public static final String PICK_STABILITY_RECOMMENDATION = "stability recommended settings";

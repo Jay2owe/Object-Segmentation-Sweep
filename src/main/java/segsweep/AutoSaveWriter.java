@@ -91,7 +91,9 @@ public final class AutoSaveWriter {
 
         saveTable(result.sweepTable(), new File(outputDir, "sweep_results.csv"));
         saveTable(result.pickTable(), new File(outputDir, "pick_summary.csv"));
-        writeText(new File(outputDir, "picked_settings.txt"), result.pickedSettingsToken());
+        if (result.pickedCombo() != null && !result.pickedSettingsToken().trim().isEmpty()) {
+            writeText(new File(outputDir, "picked_settings.txt"), result.pickedSettingsToken());
+        }
         File gridFile = new File(outputDir, "grid.png");
         if (reviewedGrid == null) {
             writeGridPng(gridFile, result);
@@ -101,6 +103,7 @@ public final class AutoSaveWriter {
         }
         writePickedLabels(new File(labelsDir, baseName(inputFile) + "_picked.tif"), result);
         writeText(new File(outputDir, "README.txt"), readmeText());
+        writeText(new File(labelsDir, "README.txt"), labelsReadmeText());
     }
 
     static File uniqueDirectory(File desired) throws IOException {
@@ -339,10 +342,17 @@ public final class AutoSaveWriter {
         return "Object Segmentation Sweep output.\n\n"
                 + "sweep_results.csv: one row per displayed parameter combination.\n"
                 + "pick_summary.csv: the selected value and independent knee/stability reports.\n"
-                + "picked_settings.txt: reproducible settings token plus crop bounds, crop fraction, calibration and displayed range.\n"
+                + "picked_settings.txt: reproducible settings token plus crop bounds, crop fraction, calibration and displayed range; present only when a combination was picked.\n"
                 + "grid.png: interactive saves capture the current reviewed grid; headless, hidden, and batch saves use a deterministic middle-slice montage.\n"
-                + "labels/: contains only the picked label map materialised from the lazy result.\n\n"
-                + "All values are conditional on the image region and displayed range recorded in picked_settings.txt.\n";
+                + "labels/: contains its README and, when picked, the label map materialised from the lazy result.\n\n"
+                + "When picked_settings.txt is present, all values are conditional on its recorded image region, displayed range and picker computation range.\n";
+    }
+
+    private static String labelsReadmeText() {
+        return "Object Segmentation Sweep picked labels.\n\n"
+                + "When a combination is picked, this folder contains one 16-bit TIFF label map.\n"
+                + "Pixel value 0 is background and each positive value identifies one object.\n"
+                + "If no combination was picked, this README is the only file in the folder.\n";
     }
 
     private static String baseName(File file) {

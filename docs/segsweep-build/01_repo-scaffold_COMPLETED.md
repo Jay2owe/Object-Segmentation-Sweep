@@ -26,7 +26,7 @@ None.
 - `Experiments\CPC\src\main\java\cpc\LabelUtils.java` and `ui\ToggleSwitch.java` — copied verbatim
 - `Experiments\CPC\.github\workflows\build-main.yml`
 
-Ignore CPC files with `(Jamie Malcolm's conflicted copy …)` in the name — they are Dropbox
+Ignore CPC files with `(Jamie Malcolm's conflicted copy …)` in the name — they are sync-conflict
 artefacts, not source.
 
 ## Scope
@@ -154,11 +154,11 @@ bash mvnw clean package -Denforcer.skip=true
 
 - **`ij` version resolution.** `pom-scijava` manages the `ij` version; do not pin it. If the build
   fails on a missing `ij`, check that the parent POM resolved rather than adding a version by hand.
-- **CPC's conflicted-copy files.** Dropbox has left `… (Jamie Malcolm's conflicted copy …).java` and
+- **CPC's conflicted-copy files.** File synchronization has left `… (Jamie Malcolm's conflicted copy …).java` and
   `.xml` files in the CPC repo. Copying one of these instead of the real file will produce a build
   that looks fine and diverges silently. Check every source path before copying.
 - **`plugins.config` encoding.** Must be plain ASCII with a trailing newline. A BOM makes Fiji skip
   the entry with no error message.
-- **This repo lives inside a Dropbox folder.** Per FLASH's `CLAUDE.md`, run all git commands from
-  the repo root — never from the parent Dropbox folder, and be aware that `C:\Users\jamie` is itself
+- **This repo lives inside a synchronized folder.** Run all git commands from
+  the repo root — never from the synchronized parent folder, and be aware that the user profile is itself
   a git repo that will shadow if you get the working directory wrong.

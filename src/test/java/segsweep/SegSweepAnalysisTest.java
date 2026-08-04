@@ -69,6 +69,9 @@ public class SegSweepAnalysisTest {
         assertEquals("knee", pick.getStringValue(SegSweepResult.PICK_CRITERION, 0));
         assertEquals("KNEE_AT", pick.getStringValue(SegSweepResult.PICK_KNEE_OUTCOME, 0));
         assertEquals(32.0d, pick.getValue(SegSweepResult.PICK_KNEE_VALUE, 0), 0.000001d);
+        assertEquals(0.0d, pick.getValue(SegSweepResult.PICK_KNEE_RANGE_MIN, 0), 0.0d);
+        assertEquals(60.0d, pick.getValue(SegSweepResult.PICK_KNEE_RANGE_MAX, 0), 0.0d);
+        assertEquals(1.0d, pick.getValue(SegSweepResult.PICK_KNEE_RANGE_STEP, 0), 0.0d);
         assertEquals(30.0d, pick.getValue(ParameterId.THRESHOLD.displayLabel(), 0), 0.000001d);
         assertEquals(5.0d, pick.getValue(
                 SegSweepResult.PICK_CHOSEN_COMBINATION, 0), 0.0d);
@@ -80,6 +83,7 @@ public class SegSweepAnalysisTest {
         assertEquals(30.0d, ((Number) picked.get(ParameterId.THRESHOLD)).doubleValue(), 0.000001d);
         assertTrue(result.pickedSettingsToken().contains("thresh=30"));
         assertTrue(result.pickedSettingsToken().contains("KNEE_AT=32"));
+        assertTrue(result.pickedSettingsToken().contains("computation_range=[0,60]"));
     }
 
     @Test
@@ -96,9 +100,10 @@ public class SegSweepAnalysisTest {
         ResultsTable pick = result.pickTable();
         assertTrue(!pick.getStringValue(
                 SegSweepResult.PICK_STABILITY_RECOMMENDATION, 0).isEmpty());
-        assertTrue(result.pickedSettingsToken().contains("knee\t"));
-        assertTrue(result.pickedSettingsToken().contains("stability\t"));
-        assertTrue(result.pickedSettingsToken().contains("; combo={"));
+        assertTrue(!pick.getStringValue(
+                SegSweepResult.PICK_KNEE_OUTCOME, 0).isEmpty());
+        assertNull(result.pickedCombo());
+        assertEquals("", result.pickedSettingsToken());
     }
 
     @Test
@@ -278,6 +283,7 @@ public class SegSweepAnalysisTest {
         assertNull(result.pick());
         assertNull(result.pickedCombo());
         assertNull(result.pickedLabelMap());
+        assertEquals("", result.pickedSettingsToken());
     }
 
     @Test
@@ -453,6 +459,31 @@ public class SegSweepAnalysisTest {
     }
 
     @Test
+    public void combinationRefusalProducesFailedRowsAndTypedKneeRefusal() {
+        ShortProcessor processor = new ShortProcessor(65, 65);
+        processor.setValue(20);
+        processor.fill();
+
+        SegSweepResult result = SegSweep.run(SegSweepParameters.builder()
+                .image(new ImagePlus("large-feret", processor))
+                .axis(ParameterId.FERET_DIAMETER_MAX, 0, 3, 1)
+                .pickCriterion(SegSweepParameters.PickCriterion.KNEE)
+                .build());
+
+        assertEquals(4, result.sweepTable().size());
+        assertTrue(!result.results().get(0).hasFlag(VariationResult.Flag.FAILED));
+        for (int i = 1; i < result.results().size(); i++) {
+            assertTrue(result.results().get(i).hasFlag(VariationResult.Flag.FAILED));
+            assertTrue(result.sweepTable().getStringValue(
+                    SegSweepResult.COL_FLAGS, i).contains("FAILED"));
+        }
+        assertEquals(KneeOutcome.Kind.FAILED_COMBINATIONS,
+                result.pick().knee().kind());
+        assertNull(result.pickedCombo());
+        assertEquals("", result.pickedSettingsToken());
+    }
+
+    @Test
     public void excessLabelCellIsFailedAndRetainsTrueObjectCount() {
         SegSweepResult result = SegSweep.run(SegSweepParameters.builder()
                 .image(SegSweepLabellerFixtures.overLimitCheckerboard())
@@ -497,11 +528,7 @@ public class SegSweepAnalysisTest {
                 .build());
 
         assertNull(result.pickedCombo());
-        assertTrue(result.pickedSettingsToken().contains("settings\tclassical"));
-        assertTrue(!result.pickedSettingsToken().contains("thresh=0"));
-        assertTrue(!result.pickedSettingsToken().contains("minSize=0"));
-        assertTrue(result.pickedSettingsToken().contains("image\tstage-12-knee"));
-        assertTrue(result.pickedSettingsToken().contains("channel\t1"));
+        assertEquals("", result.pickedSettingsToken());
     }
 
     private static void assertSweepColumns(ResultsTable table) {
@@ -509,6 +536,7 @@ public class SegSweepAnalysisTest {
                 SegSweepResult.COL_COMBINATION,
                 ParameterId.THRESHOLD.displayLabel(),
                 SegSweepResult.COL_OBJECTS,
+                SegSweepResult.COL_OBJECTS_PER_MM3,
                 SegSweepResult.COL_OBJECTS_PER_MM2,
                 SegSweepResult.COL_MEAN_NEIGHBOUR_IOU,
                 SegSweepResult.COL_STABILITY_ELIGIBLE,

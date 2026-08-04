@@ -23,6 +23,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeSet;
+import java.util.concurrent.CancellationException;
 import java.util.function.BooleanSupplier;
 import java.util.function.LongSupplier;
 
@@ -103,20 +104,13 @@ public final class IouStability {
                 return System.nanoTime();
             }
         } : clock;
-        long started = safeClock.getAsLong();
-        long budgetNanos = budgetMs <= 0L ? 0L
-                : budgetMs > Long.MAX_VALUE / 1000000L
-                ? Long.MAX_VALUE : budgetMs * 1000000L;
+        ScoringGuard guard = new ScoringGuard(cancelCheck, budgetMs, safeClock);
         for (int i = 0; i < combos.size(); i++) {
-            if (cancelCheck != null && cancelCheck.getAsBoolean()) {
+            String abortReason = guard.abortReason();
+            if (abortReason != null) {
                 return StabilityOutcome.of(StabilityOutcome.Kind.ABORTED,
                         eligibleCount, eligible, means,
-                        "Stability scoring was cancelled.");
-            }
-            if (budgetExceeded(started, budgetNanos, safeClock)) {
-                return StabilityOutcome.of(StabilityOutcome.Kind.ABORTED,
-                        eligibleCount, eligible, means,
-                        "Stability scoring exceeded its " + budgetMs + " ms budget.");
+                        abortReason);
             }
             List<Integer> neighbours = topology.fullNeighboursOf(i);
             if (neighbours.isEmpty()) {
@@ -131,10 +125,11 @@ public final class IouStability {
             int compared = 0;
             boolean countGateFailed = false;
             for (int n = 0; n < neighbours.size(); n++) {
-                if (budgetExceeded(started, budgetNanos, safeClock)) {
+                abortReason = guard.abortReason();
+                if (abortReason != null) {
                     return StabilityOutcome.of(StabilityOutcome.Kind.ABORTED,
                             eligibleCount, eligible, means,
-                            "Stability scoring exceeded its " + budgetMs + " ms budget.");
+                            abortReason);
                 }
                 int neighbourIndex = neighbours.get(n).intValue();
                 IouSource neighbour = sources.get(neighbourIndex);
@@ -148,9 +143,15 @@ public final class IouStability {
                     break;
                 }
                 Double cached = pairCache.get(pairKey(i, neighbourIndex));
-                double value = cached == null
-                        ? objectMembershipIou(source, neighbour)
-                        : cached.doubleValue();
+                double value;
+                try {
+                    value = cached == null
+                            ? objectMembershipIou(source, neighbour, guard)
+                            : cached.doubleValue();
+                } catch (ScoringAbortedException ex) {
+                    return StabilityOutcome.of(StabilityOutcome.Kind.ABORTED,
+                            eligibleCount, eligible, means, ex.getMessage());
+                }
                 if (cached == null) {
                     pairCache.put(pairKey(i, neighbourIndex), Double.valueOf(value));
                 }
@@ -181,12 +182,6 @@ public final class IouStability {
         return StabilityOutcome.stableAt(bestIndex, bestMean, eligibleCount,
                 eligible, means,
                 "Highest mean object-membership IoU among eligible combinations.");
-    }
-
-    private static boolean budgetExceeded(long started,
-                                          long budgetNanos,
-                                          LongSupplier clock) {
-        return budgetNanos > 0L && clock.getAsLong() - started >= budgetNanos;
     }
 
     public static double meanNeighbourCountRatio(List<ParameterCombo> combos,
@@ -221,31 +216,71 @@ public final class IouStability {
     }
 
     static double objectMembershipIou(IouSource left, IouSource right) {
+        return objectMembershipIou(left, right, null);
+    }
+
+    private static double objectMembershipIou(IouSource left,
+                                              IouSource right,
+                                              ScoringGuard guard) {
+        check(guard);
         if (left == null || right == null) {
             return 0.0d;
         }
         if (left.hasTreeMembership() && right.hasTreeMembership()) {
-            BitSet a = left.foregroundVoxels();
-            BitSet b = right.foregroundVoxels();
-            BitSet intersection = (BitSet) a.clone();
-            intersection.and(b);
-            a.or(b);
-            return a.isEmpty() ? 0.0d
-                    : (double) intersection.cardinality() / (double) a.cardinality();
+            BitSet a = left.foregroundVoxels(guard);
+            BitSet b = right.foregroundVoxels(guard);
+            int intersection = 0;
+            int union = 0;
+            int visited = 0;
+            for (int voxel = a.nextSetBit(0); voxel >= 0;
+                 voxel = a.nextSetBit(voxel + 1)) {
+                if ((visited++ & 1023) == 0) check(guard);
+                union++;
+                if (b.get(voxel)) intersection++;
+                if (voxel == Integer.MAX_VALUE) break;
+            }
+            for (int voxel = b.nextSetBit(0); voxel >= 0;
+                 voxel = b.nextSetBit(voxel + 1)) {
+                if ((visited++ & 1023) == 0) check(guard);
+                if (!a.get(voxel)) union++;
+                if (voxel == Integer.MAX_VALUE) break;
+            }
+            return union == 0 ? 0.0d : (double) intersection / (double) union;
         }
         List<Integer> a = left.objectIds();
         List<Integer> b = right.objectIds();
         if (a.isEmpty() && b.isEmpty()) {
             return 0.0d;
         }
-        TreeSet<Integer> union = new TreeSet<Integer>(a);
-        union.addAll(b);
-        if (union.isEmpty()) {
-            return 0.0d;
+        int ai = 0;
+        int bi = 0;
+        int intersection = 0;
+        int union = 0;
+        while (ai < a.size() || bi < b.size()) {
+            if ((union & 1023) == 0) check(guard);
+            if (ai >= a.size()) {
+                bi++;
+            } else if (bi >= b.size()) {
+                ai++;
+            } else {
+                int comparison = a.get(ai).compareTo(b.get(bi));
+                if (comparison == 0) {
+                    intersection++;
+                    ai++;
+                    bi++;
+                } else if (comparison < 0) {
+                    ai++;
+                } else {
+                    bi++;
+                }
+            }
+            union++;
         }
-        TreeSet<Integer> intersection = new TreeSet<Integer>(a);
-        intersection.retainAll(b);
-        return (double) intersection.size() / (double) union.size();
+        return union == 0 ? 0.0d : (double) intersection / (double) union;
+    }
+
+    private static void check(ScoringGuard guard) {
+        if (guard != null) guard.check();
     }
 
     private static double countRatio(int left, int right) {
@@ -332,10 +367,24 @@ public final class IouStability {
         }
 
         private BitSet foregroundVoxels() {
+            return foregroundVoxels(null);
+        }
+
+        private BitSet foregroundVoxels(ScoringGuard guard) {
             BitSet foreground = new BitSet();
             for (int i = 0; i < treeNodes.size(); i++) {
-                int[] voxels = treeNodes.get(i).voxelIndices();
+                check(guard);
+                int[] voxels;
+                try {
+                    voxels = guard == null
+                            ? treeNodes.get(i).voxelIndices()
+                            : treeNodes.get(i).voxelIndices(guard);
+                } catch (CancellationException ex) {
+                    if (guard != null) guard.check();
+                    throw ex;
+                }
                 for (int j = 0; j < voxels.length; j++) {
+                    if ((j & 1023) == 0) check(guard);
                     if (voxels[j] >= 0) {
                         foreground.set(voxels[j]);
                     }
@@ -368,6 +417,56 @@ public final class IouStability {
                 objects[i] = treeNodes.get(i).voxelIndices();
             }
             return objects;
+        }
+    }
+
+    private static final class ScoringGuard implements BooleanSupplier {
+        private final BooleanSupplier cancelCheck;
+        private final long budgetMs;
+        private final long budgetNanos;
+        private final LongSupplier clock;
+        private final long started;
+        private String lastReason;
+
+        ScoringGuard(BooleanSupplier cancelCheck, long budgetMs, LongSupplier clock) {
+            this.cancelCheck = cancelCheck;
+            this.budgetMs = budgetMs;
+            this.budgetNanos = budgetMs <= 0L ? 0L
+                    : budgetMs > Long.MAX_VALUE / 1000000L
+                    ? Long.MAX_VALUE : budgetMs * 1000000L;
+            this.clock = clock;
+            this.started = clock.getAsLong();
+        }
+
+        @Override public boolean getAsBoolean() {
+            if (Thread.currentThread().isInterrupted()
+                    || (cancelCheck != null && cancelCheck.getAsBoolean())) {
+                lastReason = "Stability scoring was cancelled.";
+                return true;
+            }
+            if (budgetNanos > 0L && clock.getAsLong() - started >= budgetNanos) {
+                lastReason = "Stability scoring exceeded its " + budgetMs + " ms budget.";
+                return true;
+            }
+            return false;
+        }
+
+        String abortReason() {
+            return getAsBoolean() ? lastReason : null;
+        }
+
+        void check() {
+            if (getAsBoolean()) {
+                throw new ScoringAbortedException(lastReason);
+            }
+        }
+    }
+
+    private static final class ScoringAbortedException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        ScoringAbortedException(String message) {
+            super(message);
         }
     }
 

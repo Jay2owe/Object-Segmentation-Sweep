@@ -141,4 +141,9 @@ public final class ComponentNode {
     public int[] voxelIndices() {
         return tree.voxels(data);
     }
+
+    /** Returns voxel indexes while periodically observing cancellation. */
+    public int[] voxelIndices(java.util.function.BooleanSupplier cancelCheck) {
+        return tree.voxels(data, cancelCheck);
+    }
 }
