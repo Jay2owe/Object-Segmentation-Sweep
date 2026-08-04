@@ -309,11 +309,19 @@ public final class SegSweepDialog {
         });
         state.imageChoice.addActionListener(new ActionListener() {
             @Override public void actionPerformed(ActionEvent e) {
+                state.clearSuggestedPrimaryValues();
                 state.releaseBrowsedImageIfUnselected();
                 state.refreshInputMetadata();
                 state.refreshCostLine();
             }
         });
+        state.cropChoice.addActionListener(new ActionListener() {
+            @Override public void actionPerformed(ActionEvent e) {
+                state.clearSuggestedPrimaryValues();
+                state.refreshCostLine();
+            }
+        });
+        installSuggestionDependencyRefresh(state.channelField, state);
         state.refreshInputMetadata();
     }
 
@@ -326,6 +334,7 @@ public final class SegSweepDialog {
         state.toField = new JTextField("60", 5);
         state.stepField = new JTextField("5", 5);
         JButton suggest = new JButton("Suggest range");
+        state.suggestButton = suggest;
         range.add(state.fromField);
         range.add(new JLabel("To:"));
         range.add(state.toField);
@@ -358,11 +367,18 @@ public final class SegSweepDialog {
                     ParameterId axis = ParameterId.fromStableKey((String) state.axisChoice.getSelectedItem());
                     SegSweepMacroOptions suggested = applySuggestedRange(image, current, axis);
                     ParameterValueList list = suggested.primaryAxis().valueList();
-                    state.fromField.setText(format(list.get(0)));
-                    state.toField.setText(format(list.get(list.size() - 1)));
-                    state.stepField.setText(list.size() > 1
-                            ? format(stepBetween(list))
-                            : "1");
+                    state.suggestedPrimaryAxis = axis;
+                    state.suggestedPrimaryValues = list;
+                    state.applyingSuggestedPrimaryValues = true;
+                    try {
+                        state.fromField.setText(format(list.get(0)));
+                        state.toField.setText(format(list.get(list.size() - 1)));
+                        state.stepField.setText(list.size() > 1
+                                ? format(stepBetween(list))
+                                : "1");
+                    } finally {
+                        state.applyingSuggestedPrimaryValues = false;
+                    }
                     state.refreshCostLine();
                 } catch (RuntimeException ex) {
                     IJ.error("Object Segmentation Sweep", ex.getMessage());
@@ -377,13 +393,21 @@ public final class SegSweepDialog {
                 state.refreshCostLine();
             }
         };
-        state.axisChoice.addActionListener(refresh);
+        state.axisChoice.addActionListener(new ActionListener() {
+            @Override public void actionPerformed(ActionEvent e) {
+                state.clearSuggestedPrimaryValues();
+                ParameterId axis = ParameterId.fromStableKey(
+                        (String) state.axisChoice.getSelectedItem());
+                updateSuggestButton(suggest, axis);
+                state.refreshCostLine();
+            }
+        });
         state.axis2Choice.addActionListener(refresh);
         state.pickChoice.addActionListener(refresh);
         updateSuggestButton(suggest, ParameterId.THRESHOLD);
-        installTextRefresh(state.fromField, state);
-        installTextRefresh(state.toField, state);
-        installTextRefresh(state.stepField, state);
+        installPrimaryRangeRefresh(state.fromField, state);
+        installPrimaryRangeRefresh(state.toField, state);
+        installPrimaryRangeRefresh(state.stepField, state);
         installTextRefresh(state.from2Field, state);
         installTextRefresh(state.to2Field, state);
         installTextRefresh(state.step2Field, state);
@@ -461,6 +485,36 @@ public final class SegSweepDialog {
         });
     }
 
+    private static void installPrimaryRangeRefresh(JTextField field,
+                                                   final DialogState state) {
+        field.getDocument().addDocumentListener(new DocumentListener() {
+            private void changed() {
+                if (!state.applyingSuggestedPrimaryValues) {
+                    state.clearSuggestedPrimaryValues();
+                }
+                state.refreshCostLine();
+            }
+
+            @Override public void insertUpdate(DocumentEvent e) { changed(); }
+            @Override public void removeUpdate(DocumentEvent e) { changed(); }
+            @Override public void changedUpdate(DocumentEvent e) { changed(); }
+        });
+    }
+
+    private static void installSuggestionDependencyRefresh(JTextField field,
+                                                            final DialogState state) {
+        field.getDocument().addDocumentListener(new DocumentListener() {
+            private void changed() {
+                state.clearSuggestedPrimaryValues();
+                state.refreshCostLine();
+            }
+
+            @Override public void insertUpdate(DocumentEvent e) { changed(); }
+            @Override public void removeUpdate(DocumentEvent e) { changed(); }
+            @Override public void changedUpdate(DocumentEvent e) { changed(); }
+        });
+    }
+
     private static JPanel row(String labelText) {
         JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 2));
         row.setOpaque(false);
@@ -521,6 +575,14 @@ public final class SegSweepDialog {
         return state;
     }
 
+    static DialogState analysisStateForTest(ImagePlus image) {
+        DialogState state = new DialogState(image);
+        JPanel content = new JPanel();
+        addInputSection(content, state);
+        addAnalysisSection(content, state);
+        return state;
+    }
+
     private static String[] secondaryAxisNames() {
         String[] axes = axisNames();
         String[] out = new String[axes.length + 1];
@@ -562,6 +624,7 @@ public final class SegSweepDialog {
         ImagePlus browsedImage;
         JComboBox<String> imageChoice;
         JButton browseButton;
+        JButton suggestButton;
         JPanel channelRow;
         JTextField channelField;
         JLabel calibrationLabel;
@@ -580,6 +643,9 @@ public final class SegSweepDialog {
         ToggleSwitch showGrid;
         ToggleSwitch showTables;
         JTextField autosaveField;
+        ParameterId suggestedPrimaryAxis;
+        ParameterValueList suggestedPrimaryValues;
+        boolean applyingSuggestedPrimaryValues;
 
         DialogState(ImagePlus image) {
             this.image = image;
@@ -643,11 +709,18 @@ public final class SegSweepDialog {
                 options.setImage(selectedImage);
             }
             options.setChannel(Integer.parseInt(channelField.getText().trim()));
-            options.setPrimaryAxis(SegSweepMacroOptions.AxisSpec.range(
-                    ParameterId.fromStableKey((String) axisChoice.getSelectedItem()),
-                    Double.parseDouble(fromField.getText().trim()),
-                    Double.parseDouble(toField.getText().trim()),
-                    Double.parseDouble(stepField.getText().trim())));
+            ParameterId primaryAxis = ParameterId.fromStableKey(
+                    (String) axisChoice.getSelectedItem());
+            if (suggestedPrimaryValues != null && primaryAxis == suggestedPrimaryAxis) {
+                options.setPrimaryAxis(SegSweepMacroOptions.AxisSpec.values(
+                        primaryAxis, suggestedPrimaryValues));
+            } else {
+                options.setPrimaryAxis(SegSweepMacroOptions.AxisSpec.range(
+                        primaryAxis,
+                        Double.parseDouble(fromField.getText().trim()),
+                        Double.parseDouble(toField.getText().trim()),
+                        Double.parseDouble(stepField.getText().trim())));
+            }
             String axis2 = (String) axis2Choice.getSelectedItem();
             if (axis2 != null && !NONE.equals(axis2)) {
                 options.setSecondaryAxis(SegSweepMacroOptions.AxisSpec.range(
@@ -675,6 +748,12 @@ public final class SegSweepDialog {
             if (showTables != null) options.setShowTables(showTables.isSelected());
             options.validate();
             return options;
+        }
+
+        void clearSuggestedPrimaryValues() {
+            if (applyingSuggestedPrimaryValues) return;
+            suggestedPrimaryAxis = null;
+            suggestedPrimaryValues = null;
         }
 
         void refreshCostLine() {

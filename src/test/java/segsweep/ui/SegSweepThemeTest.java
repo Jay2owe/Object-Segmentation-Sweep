@@ -8,6 +8,10 @@ import ij.process.ByteProcessor;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import segsweep.SegSweepMacroOptions;
+import segsweep.sweep.CropSpec;
+import segsweep.sweep.ParameterValueList;
+import segsweep.sweep.RangeSuggester;
 
 import javax.swing.border.EmptyBorder;
 import java.awt.Dimension;
@@ -95,5 +99,48 @@ public class SegSweepThemeTest {
         assertTrue(state.channelRow.isVisible());
         assertTrue(state.channelField.isEnabled());
         assertTrue(state.calibrationLabel.getText().contains("uncalibrated"));
+    }
+
+    @Test
+    public void suggestButtonRetainsIrregularExplicitValuesUntilManualEdit() {
+        ImagePlus image = irregularComponentSizes();
+        ParameterValueList expected = RangeSuggester.suggestSizeDisplayWindow(
+                image, CropSpec.full());
+        assertFalse("fixture must yield a genuinely irregular suggestion", isRegular(expected));
+        SegSweepDialog.DialogState state = SegSweepDialog.analysisStateForTest(image);
+        state.axisChoice.setSelectedItem("min_size");
+
+        state.suggestButton.doClick();
+
+        SegSweepMacroOptions suggested = state.optionsFromFields();
+        assertTrue(suggested.primaryAxis().hasExplicitValues());
+        assertEquals(expected, suggested.primaryAxis().valueList());
+        assertTrue(suggested.toMacroOptions().contains("values=["));
+
+        state.stepField.setText("1");
+        assertFalse(state.optionsFromFields().primaryAxis().hasExplicitValues());
+    }
+
+    private static ImagePlus irregularComponentSizes() {
+        ByteProcessor pixels = new ByteProcessor(80, 3);
+        int[] sizes = { 2, 5, 8, 18, 23 };
+        int x = 1;
+        for (int i = 0; i < sizes.length; i++) {
+            for (int j = 0; j < sizes[i]; j++) pixels.set(x + j, 1, 255);
+            x += sizes[i] + 2;
+        }
+        return new ImagePlus("irregular-components", pixels);
+    }
+
+    private static boolean isRegular(ParameterValueList values) {
+        if (values.size() < 3) return true;
+        double step = ((Number) values.get(1)).doubleValue()
+                - ((Number) values.get(0)).doubleValue();
+        for (int i = 2; i < values.size(); i++) {
+            double gap = ((Number) values.get(i)).doubleValue()
+                    - ((Number) values.get(i - 1)).doubleValue();
+            if (Math.abs(gap - step) > 1.0e-9d) return false;
+        }
+        return true;
     }
 }
