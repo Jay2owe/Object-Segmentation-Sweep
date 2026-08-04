@@ -11,6 +11,7 @@ package segsweep.sweep.analysis;
 import org.junit.Test;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.function.LongSupplier;
 
 import static org.junit.Assert.assertEquals;
@@ -43,6 +44,24 @@ public class IouStabilityEligibilityTest {
         assertFalse(outcome.isEligible(0));
         assertTrue(outcome.isEligible(1));
         assertFalse(outcome.isEligible(2));
+    }
+
+    @Test
+    public void numericAdjacencyIsIndependentOfExplicitValueOrder() {
+        List<segsweep.sweep.ParameterCombo> ascending = TestCombos.oneAxis(
+                Arrays.asList(Integer.valueOf(10), Integer.valueOf(20), Integer.valueOf(30)));
+        List<segsweep.sweep.ParameterCombo> permuted = TestCombos.oneAxis(
+                Arrays.asList(Integer.valueOf(10), Integer.valueOf(30), Integer.valueOf(20)));
+
+        StabilityOutcome first = IouStability.score(ascending,
+                TestCombos.sources(TestCombos.ids(1), TestCombos.ids(1), TestCombos.ids(1)));
+        StabilityOutcome second = IouStability.score(permuted,
+                TestCombos.sources(TestCombos.ids(1), TestCombos.ids(1), TestCombos.ids(1)));
+
+        assertEquals(Integer.valueOf(20), ascending.get(first.index()).get(
+                segsweep.sweep.ParameterId.THRESHOLD));
+        assertEquals(Integer.valueOf(20), permuted.get(second.index()).get(
+                segsweep.sweep.ParameterId.THRESHOLD));
     }
 
     @Test

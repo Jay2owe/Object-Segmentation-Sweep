@@ -116,9 +116,13 @@ public class SegSweepThemeTest {
         assertTrue(suggested.primaryAxis().hasExplicitValues());
         assertEquals(expected, suggested.primaryAxis().valueList());
         assertTrue(suggested.toMacroOptions().contains("values=["));
+        assertTrue(state.explicitValuesLabel.isVisible());
+        assertTrue(state.explicitValuesLabel.getText().contains(expected.toCanonicalJson()));
+        assertTrue(state.explicitValuesLabel.getText().contains("Using explicit values"));
 
         state.stepField.setText("1");
         assertFalse(state.optionsFromFields().primaryAxis().hasExplicitValues());
+        assertFalse(state.explicitValuesLabel.isVisible());
     }
 
     private static ImagePlus irregularComponentSizes() {

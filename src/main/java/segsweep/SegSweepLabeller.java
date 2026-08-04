@@ -114,7 +114,7 @@ public final class SegSweepLabeller {
         int finalCount = 0;
         for (int label = 1; label < rootSizes.length; label++) {
             int size = rootSizes[label];
-            if (size >= safeMin && size <= safeMax) {
+            if (size > 0 && size >= safeMin && size <= safeMax) {
                 finalByRoot[label] = ++finalCount;
             }
         }

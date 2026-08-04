@@ -235,17 +235,19 @@ public final class SegSweepParameters {
                 throw new ValidationException(ValidationFailure.EMPTY_AXIS,
                         "Axis " + id.stableKey() + " range values must be finite.");
             }
-            if (from > to) {
+            if (from > to && step > 0.0d) {
                 throw new ValidationException(ValidationFailure.FROM_GREATER_THAN_TO,
-                        "Axis " + id.stableKey() + " has from > to (" + from + " > " + to + ").");
+                        "Axis " + id.stableKey()
+                                + " descends but has a positive step; use a negative step.");
             }
             if (step == 0.0d) {
                 throw new ValidationException(ValidationFailure.ZERO_STEP,
                         "Axis " + id.stableKey() + " step must not be zero.");
             }
-            if (step < 0.0d) {
-                throw new ValidationException(ValidationFailure.ZERO_STEP,
-                        "Axis " + id.stableKey() + " step must be positive for an ascending range.");
+            if (from < to && step < 0.0d) {
+                throw new ValidationException(ValidationFailure.FROM_GREATER_THAN_TO,
+                        "Axis " + id.stableKey()
+                                + " ascends but has a negative step; use a positive step.");
             }
             return axis(id, ParameterValueList.fromRange(from, to, step));
         }

@@ -164,7 +164,9 @@ public final class IouStability {
             eligible[i] = true;
             eligibleCount++;
             means[i] = total / compared;
-            if (means[i] > bestMean) {
+            if (means[i] > bestMean
+                    || (Double.compare(means[i], bestMean) == 0
+                    && (bestIndex < 0 || topology.compareCoordinates(i, bestIndex) < 0))) {
                 bestMean = means[i];
                 bestIndex = i;
             }
@@ -513,7 +515,7 @@ public final class IouStability {
                         values = new ArrayList<Object>();
                         valuesById.put(entry.getKey(), values);
                     }
-                    if (!values.contains(entry.getValue())) {
+                    if (!containsAxisValue(values, entry.getValue())) {
                         values.add(entry.getValue());
                     }
                 }
@@ -562,6 +564,13 @@ public final class IouStability {
                     StabilityOutcome.Kind.STABLE_AT, "");
         }
 
+        private static boolean containsAxisValue(List<Object> values, Object candidate) {
+            for (int i = 0; i < values.size(); i++) {
+                if (sameAxisValue(values.get(i), candidate)) return true;
+            }
+            return false;
+        }
+
         List<Integer> fullNeighboursOf(int index) {
             if (index < 0 || index >= coordinates.length) {
                 return Collections.emptyList();
@@ -584,6 +593,16 @@ public final class IouStability {
             }
             return out.size() == expected ? out : Collections.<Integer>emptyList();
         }
+
+        int compareCoordinates(int leftIndex, int rightIndex) {
+            int[] left = coordinates[leftIndex];
+            int[] right = coordinates[rightIndex];
+            for (int i = 0; i < Math.min(left.length, right.length); i++) {
+                int compared = Integer.compare(left[i], right[i]);
+                if (compared != 0) return compared;
+            }
+            return Integer.compare(left.length, right.length);
+        }
     }
 
     private static final class Axis {
@@ -592,12 +611,31 @@ public final class IouStability {
 
         Axis(ParameterKey id, List<Object> values) {
             this.id = id;
-            this.values = values;
+            this.values = new ArrayList<Object>(values);
+            Collections.sort(this.values, new java.util.Comparator<Object>() {
+                @Override public int compare(Object left, Object right) {
+                    if (left instanceof Number && right instanceof Number) {
+                        return Double.compare(((Number) left).doubleValue(),
+                                ((Number) right).doubleValue());
+                    }
+                    return String.valueOf(left).compareTo(String.valueOf(right));
+                }
+            });
         }
 
         int indexOf(Object value) {
-            return values.indexOf(value);
+            for (int i = 0; i < values.size(); i++) {
+                if (sameAxisValue(values.get(i), value)) return i;
+            }
+            return -1;
         }
+    }
+
+    private static boolean sameAxisValue(Object left, Object right) {
+        if (left instanceof Number && right instanceof Number) {
+            return ((Number) left).doubleValue() == ((Number) right).doubleValue();
+        }
+        return left == null ? right == null : left.equals(right);
     }
 
     private static final class Coordinate {

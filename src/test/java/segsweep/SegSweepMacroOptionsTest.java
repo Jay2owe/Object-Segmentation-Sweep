@@ -49,6 +49,23 @@ public class SegSweepMacroOptionsTest {
     }
 
     @Test
+    public void descendingRangeParsesConvertsAndExecutesConsistently() {
+        SegSweepMacroOptions options = SegSweepMacroOptionsParser.parse(
+                "sweep=threshold from=60 to=10 step=-5 pick=none hide_display");
+        SegSweepParameters parameters = options.toParameters(
+                SegSweepAnalysisTest.designedKneeStack(true));
+
+        assertEquals("[60,55,50,45,40,35,30,25,20,15,10]",
+                parameters.axes().get(ParameterId.THRESHOLD).toCanonicalJson());
+        SegSweepResult result = SegSweep.run(parameters);
+        assertEquals(11, result.sweepTable().size());
+        assertEquals(60.0d, result.sweepTable().getValue(
+                ParameterId.THRESHOLD.displayLabel(), 0), 0.0d);
+        assertEquals(10.0d, result.sweepTable().getValue(
+                ParameterId.THRESHOLD.displayLabel(), 10), 0.0d);
+    }
+
+    @Test
     public void croppedRecordedMacroReplaysToSameDeterministicSweepFields() {
         SegSweepMacroOptions options = SegSweepMacroOptions.defaults();
         options.setCrop(CropSpec.custom(new Rectangle(0, 0, 20, 8)));

@@ -12,6 +12,7 @@ import ij.ImagePlus;
 import ij.ImageStack;
 import ij.measure.Calibration;
 import ij.process.ImageProcessor;
+import ij.process.ByteProcessor;
 import org.junit.Test;
 
 import java.util.HashSet;
@@ -90,6 +91,25 @@ public class SegSweepLabellerTest {
         assertEquals(LabelResult.Status.OK, result.status());
         assertEquals(2, result.objectCount());
         assertArrayEquals(new int[] { 0, 1, 2 }, result.objectSizes());
+        assertObjectCountMatchesDistinctLabels(result);
+    }
+
+    @Test
+    public void mergedUnionFindAliasesAreNotCountedWhenMinimumSizeIsZero() {
+        ByteProcessor pixels = new ByteProcessor(3, 2);
+        pixels.set(0, 0, 1);
+        pixels.set(2, 0, 1);
+        pixels.set(0, 1, 1);
+        pixels.set(1, 1, 1);
+        pixels.set(2, 1, 1);
+
+        LabelResult result = SegSweepLabeller.label(
+                new ImagePlus("merge-shape", pixels), 0.0d, 0, Integer.MAX_VALUE,
+                SegSweepLabeller.Connectivity.SIX);
+
+        assertEquals(LabelResult.Status.OK, result.status());
+        assertEquals(1, result.objectCount());
+        assertArrayEquals(new int[] { 0, 5 }, result.objectSizes());
         assertObjectCountMatchesDistinctLabels(result);
     }
 

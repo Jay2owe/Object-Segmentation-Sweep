@@ -342,6 +342,9 @@ public final class SegSweepDialog {
         range.add(state.stepField);
         range.add(suggest);
         content.add(range);
+        state.explicitValuesLabel = addMessage(content, "");
+        state.explicitValuesLabel.setForeground(LABEL_COLOR);
+        state.explicitValuesLabel.setVisible(false);
         state.axis2Choice = addChoice(content, "Also sweep:",
                 secondaryAxisNames(), NONE);
         JPanel range2 = row("From:");
@@ -369,6 +372,7 @@ public final class SegSweepDialog {
                     ParameterValueList list = suggested.primaryAxis().valueList();
                     state.suggestedPrimaryAxis = axis;
                     state.suggestedPrimaryValues = list;
+                    state.showSuggestedPrimaryValues();
                     state.applyingSuggestedPrimaryValues = true;
                     try {
                         state.fromField.setText(format(list.get(0)));
@@ -628,6 +632,7 @@ public final class SegSweepDialog {
         JPanel channelRow;
         JTextField channelField;
         JLabel calibrationLabel;
+        JLabel explicitValuesLabel;
         JComboBox<String> cropChoice;
         JComboBox<String> engineChoice;
         JComboBox<String> axisChoice;
@@ -754,6 +759,19 @@ public final class SegSweepDialog {
             if (applyingSuggestedPrimaryValues) return;
             suggestedPrimaryAxis = null;
             suggestedPrimaryValues = null;
+            if (explicitValuesLabel != null) {
+                explicitValuesLabel.setText("");
+                explicitValuesLabel.setVisible(false);
+            }
+        }
+
+        void showSuggestedPrimaryValues() {
+            if (explicitValuesLabel == null || suggestedPrimaryValues == null) return;
+            explicitValuesLabel.setText("<html><body style='width:430px;'><b>Using explicit values:</b> "
+                    + suggestedPrimaryValues.toCanonicalJson()
+                    + ". From/To/Step summarize the list; editing any field switches to a regular range."
+                    + "</body></html>");
+            explicitValuesLabel.setVisible(true);
         }
 
         void refreshCostLine() {
