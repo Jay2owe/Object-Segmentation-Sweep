@@ -25,8 +25,11 @@ import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.File;
-import java.io.FileWriter;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStreamWriter;
+import java.io.Writer;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /**
@@ -323,7 +326,8 @@ public final class AutoSaveWriter {
     }
 
     private static void writeText(File file, String text) throws IOException {
-        FileWriter writer = new FileWriter(file);
+        Writer writer = new OutputStreamWriter(
+                new FileOutputStream(file), StandardCharsets.UTF_8);
         try {
             writer.write(text == null ? "" : text);
         } finally {

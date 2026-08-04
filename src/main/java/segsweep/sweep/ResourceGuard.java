@@ -37,6 +37,12 @@ public final class ResourceGuard {
             return Feasibility.refused(null, availableBytes(),
                     "No source image was provided.");
         }
+        int bitDepth = source.getBitDepth();
+        if (bitDepth != 8 && bitDepth != 16 && bitDepth != 32) {
+            return Feasibility.refused(null, availableBytes(),
+                    "Only 8-bit, 16-bit, or 32-bit grayscale images are supported; received "
+                            + bitDepth + "-bit input.");
+        }
         Rectangle crop = sweep.cropSpec().boundsFor(source);
         Estimate estimate = estimateTreeMemory(source, crop);
         long cropPreviewBytes = multiply(multiply(crop.width, crop.height),

@@ -14,6 +14,7 @@ import ij.measure.Calibration;
 import ij.measure.ResultsTable;
 import ij.process.ImageProcessor;
 import ij.process.FloatProcessor;
+import ij.process.ColorProcessor;
 import ij.process.ShortProcessor;
 import org.junit.Test;
 import segsweep.sweep.CropSpec;
@@ -223,6 +224,41 @@ public class SegSweepAnalysisTest {
                                 .build());
                     }
                 });
+        expectFailure(SegSweepParameters.ValidationFailure.INVALID_AXIS_VALUE,
+                new Runnable() {
+                    @Override public void run() {
+                        SegSweepParameters.builder()
+                                .image(designedKneeStack(true))
+                                .axis(ParameterId.THRESHOLD, Arrays.<Object>asList("bad"));
+                    }
+                });
+        expectFailure(SegSweepParameters.ValidationFailure.INVALID_AXIS_VALUE,
+                new Runnable() {
+                    @Override public void run() {
+                        SegSweepParameters.builder()
+                                .image(designedKneeStack(true))
+                                .axis(ParameterId.MIN_SIZE,
+                                        ParameterValueList.ofDoubles(1.0d, 1.5d));
+                    }
+                });
+        expectFailure(SegSweepParameters.ValidationFailure.INVALID_AXIS_VALUE,
+                new Runnable() {
+                    @Override public void run() {
+                        SegSweepParameters.builder()
+                                .image(designedKneeStack(true))
+                                .axis(ParameterId.MAX_SIZE,
+                                        ParameterValueList.ofDoubles(-1.0d, 4.0d));
+                    }
+                });
+        expectFailure(SegSweepParameters.ValidationFailure.UNSUPPORTED_BIT_DEPTH,
+                new Runnable() {
+                    @Override public void run() {
+                        SegSweep.run(SegSweepParameters.builder()
+                                .image(new ImagePlus("rgb", new ColorProcessor(8, 8)))
+                                .axis(ParameterId.THRESHOLD, 1, 3, 1)
+                                .build());
+                    }
+                });
     }
 
     @Test
@@ -368,6 +404,33 @@ public class SegSweepAnalysisTest {
     }
 
     @Test
+    public void kneeFollowsTheSoleVaryingAxisWhenThresholdIsFixed() {
+        SegSweepResult result = SegSweep.run(SegSweepParameters.builder()
+                .image(designedKneeStack(true))
+                .axis(ParameterId.THRESHOLD, ParameterValueList.ofDoubles(10.0d))
+                .axis(ParameterId.MIN_SIZE, 1, 4, 1)
+                .pickCriterion(SegSweepParameters.PickCriterion.KNEE)
+                .build());
+
+        assertEquals(KneeOutcome.Kind.ALL_PLATEAU, result.pick().knee().kind());
+        assertEquals(1.0d, result.pick().knee().rangeMin(), 0.0d);
+        assertEquals(4.0d, result.pick().knee().rangeMax(), 0.0d);
+        assertEquals(1.0d, result.pick().knee().step(), 0.0d);
+    }
+
+    @Test
+    public void kneeReturnsTypedTooFewPointsWhenEveryAxisIsFixed() {
+        SegSweepResult result = SegSweep.run(SegSweepParameters.builder()
+                .image(designedKneeStack(true))
+                .axis(ParameterId.THRESHOLD, ParameterValueList.ofDoubles(10.0d))
+                .pickCriterion(SegSweepParameters.PickCriterion.KNEE)
+                .build());
+
+        assertEquals(KneeOutcome.Kind.TOO_FEW_POINTS, result.pick().knee().kind());
+        assertContains(result.warnings(), "every displayed axis is fixed");
+    }
+
+    @Test
     public void excessLabelCellIsFailedAndRetainsTrueObjectCount() {
         SegSweepResult result = SegSweep.run(SegSweepParameters.builder()
                 .image(SegSweepLabellerFixtures.overLimitCheckerboard())
@@ -385,6 +448,22 @@ public class SegSweepAnalysisTest {
         assertTrue(!cell.hasLabelMap());
         assertEquals(cell.objectCount(), (int) result.sweepTable().getValue(
                 SegSweepResult.COL_OBJECTS, 0));
+    }
+
+    @Test
+    public void excessLabelsOnNonThresholdAxisReturnTypedKneeRefusal() {
+        SegSweepResult result = SegSweep.run(SegSweepParameters.builder()
+                .image(SegSweepLabellerFixtures.overLimitCheckerboard())
+                .axis(ParameterId.THRESHOLD,
+                        ParameterValueList.ofDoubles(SegSweepLabellerFixtures.THRESHOLD))
+                .axis(ParameterId.MIN_SIZE, 1, 4, 1)
+                .connectivity(SegSweepLabeller.Connectivity.SIX)
+                .pickCriterion(SegSweepParameters.PickCriterion.KNEE)
+                .build());
+
+        assertEquals(KneeOutcome.Kind.TOO_MANY_OBJECTS, result.pick().knee().kind());
+        assertNull(result.pickedCombo());
+        assertContains(result.warnings(), "16-bit object limit");
     }
 
     @Test

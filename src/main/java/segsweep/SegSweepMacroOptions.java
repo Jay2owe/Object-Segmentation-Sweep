@@ -180,8 +180,11 @@ public final class SegSweepMacroOptions {
             throw new IllegalArgumentException("Macro option sweep is required.");
         }
         primaryAxis.validate("values", "from/to/step");
+        SegSweepParameters.validateAxisValues(primaryAxis.id(), primaryAxis.valueList());
         if (secondaryAxis != null) {
             secondaryAxis.validate("values2", "from2/to2/step2");
+            SegSweepParameters.validateAxisValues(
+                    secondaryAxis.id(), secondaryAxis.valueList());
             if (primaryAxis.id() == secondaryAxis.id()) {
                 throw new IllegalArgumentException("sweep and sweep2 must name different parameters.");
             }

@@ -103,6 +103,19 @@ public class SegSweepBatchTest {
     }
 
     @Test
+    public void captureGroupBeyondRegexGroupCountIsRejected() {
+        try {
+            SegSweepBatchRunner.preview(SegSweepBatchParameters.builder(
+                    tmp.getRoot(), "Exp1-(A\\d+)\\.tif", 2).build());
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("Capture group 2"));
+            assertTrue(expected.getMessage().contains("regex has 1 capture group"));
+            return;
+        }
+        throw new AssertionError("Expected an out-of-range capture-group failure.");
+    }
+
+    @Test
     public void corruptImageDoesNotAbortFolderAndFailureCsvNamesIt() throws Exception {
         for (int i = 1; i <= 5; i++) {
             File file = new File(tmp.getRoot(), "Exp1-A0" + i + "_LH_CTX.tif");

@@ -1,17 +1,25 @@
 package segsweep.ui;
 
+import ij.ImagePlus;
+import ij.io.FileSaver;
+import ij.process.ByteProcessor;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 
 import javax.swing.border.EmptyBorder;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Insets;
+import java.io.File;
 import java.util.Arrays;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 public class SegSweepThemeTest {
+    @Rule
+    public TemporaryFolder tmp = new TemporaryFolder();
 
     @Test
     public void exposesInheritedSpacingAndTypographyWithoutFlashBranding() {
@@ -33,5 +41,24 @@ public class SegSweepThemeTest {
                         "mean_intensity", "max_intensity", "elongation", "surface_area",
                         "sphericity", "compactness", "feret_diameter_max"),
                 Arrays.asList(SegSweepDialog.axisNames()));
+    }
+
+    @Test
+    public void dialogCanBrowseAnImageAndRetainsItsAbsolutePath() throws Exception {
+        File source = new File(tmp.getRoot(), "browsed.tif");
+        ImagePlus image = new ImagePlus("browsed", new ByteProcessor(4, 4));
+        assertTrue(new FileSaver(image).saveAsTiff(source.getAbsolutePath()));
+        image.close();
+        SegSweepDialog.DialogState state = SegSweepDialog.inputStateForTest(null);
+        try {
+            assertEquals("Browse...", state.browseButton.getText());
+
+            state.selectBrowsedFile(source);
+
+            assertEquals(source.getAbsolutePath(), state.imageChoice.getSelectedItem());
+            assertTrue(state.browsedImage != null);
+        } finally {
+            state.disposeBrowsedImage();
+        }
     }
 }

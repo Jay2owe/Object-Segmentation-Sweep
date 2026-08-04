@@ -138,7 +138,9 @@ public final class SegSweepBatchRunner {
 
     private static void writeRootReadme(File outputRoot,
                                         SegSweepBatchResult result) throws IOException {
-        java.io.FileWriter writer = new java.io.FileWriter(new File(outputRoot, "README.txt"));
+        java.io.Writer writer = new java.io.OutputStreamWriter(
+                new java.io.FileOutputStream(new File(outputRoot, "README.txt")),
+                java.nio.charset.StandardCharsets.UTF_8);
         try {
             writer.write("Object Segmentation Sweep batch output.\n\n"
                     + "Each image subfolder contains one single-image autosave tree.\n"
@@ -156,7 +158,14 @@ public final class SegSweepBatchRunner {
     private static CompiledBatch compile(SegSweepBatchParameters parameters) {
         validate(parameters);
         try {
-            return new CompiledBatch(Pattern.compile(parameters.filenameRegex()));
+            Pattern pattern = Pattern.compile(parameters.filenameRegex());
+            int groupCount = pattern.matcher("").groupCount();
+            if (parameters.varyingGroup() > groupCount) {
+                throw new IllegalArgumentException("Capture group "
+                        + parameters.varyingGroup() + " was requested, but the filename regex has "
+                        + groupCount + " capture group" + (groupCount == 1 ? "." : "s."));
+            }
+            return new CompiledBatch(pattern);
         } catch (PatternSyntaxException ex) {
             throw new IllegalArgumentException("Invalid filename regex: "
                     + ex.getMessage(), ex);

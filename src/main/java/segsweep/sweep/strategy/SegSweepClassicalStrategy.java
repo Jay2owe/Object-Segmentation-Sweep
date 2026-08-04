@@ -252,55 +252,34 @@ public final class SegSweepClassicalStrategy implements VariationStrategy {
         if (value == null) {
             return fallback;
         }
-        if (value instanceof Number) {
-            double parsed = ((Number) value).doubleValue();
-            if (!Double.isFinite(parsed)) {
-                return fallback;
-            }
-            if (parsed >= Integer.MAX_VALUE) {
-                return Integer.MAX_VALUE;
-            }
-            if (parsed <= Integer.MIN_VALUE) {
-                return Integer.MIN_VALUE;
-            }
-            return Math.max(0, (int) Math.round(parsed));
+        if (!(value instanceof Number)) {
+            throw new IllegalArgumentException("Axis " + id.stableKey()
+                    + " must be numeric.");
         }
-        try {
-            return Math.max(0, (int) Math.round(Double.parseDouble(String.valueOf(value))));
-        } catch (NumberFormatException e) {
-            return fallback;
+        double parsed = ((Number) value).doubleValue();
+        if (!Double.isFinite(parsed) || parsed < 0.0d
+                || parsed > Integer.MAX_VALUE || parsed != Math.rint(parsed)) {
+            throw new IllegalArgumentException("Axis " + id.stableKey()
+                    + " must be a non-negative integer no greater than "
+                    + Integer.MAX_VALUE + ".");
         }
+        return (int) parsed;
     }
 
     private static double thresholdParameter(ParameterCombo combo) {
         Object value = combo == null ? null : combo.get(ParameterId.THRESHOLD);
         if (value == null) return 0.0d;
-        if (value instanceof Number) {
-            double parsed = ((Number) value).doubleValue();
-            return Double.isFinite(parsed) ? parsed : 0.0d;
+        if (!(value instanceof Number)
+                || !Double.isFinite(((Number) value).doubleValue())) {
+            throw new IllegalArgumentException("Axis threshold must be a finite numeric value.");
         }
-        try {
-            double parsed = Double.parseDouble(String.valueOf(value));
-            return Double.isFinite(parsed) ? parsed : 0.0d;
-        } catch (NumberFormatException e) {
-            return 0.0d;
-        }
+        return ((Number) value).doubleValue();
     }
 
     private static double doubleParameter(Object value, ParameterKey key) {
-        if (value instanceof Number) {
-            double parsed = ((Number) value).doubleValue();
-            if (Double.isFinite(parsed)) {
-                return parsed;
-            }
-        }
-        try {
-            double parsed = Double.parseDouble(String.valueOf(value));
-            if (Double.isFinite(parsed)) {
-                return parsed;
-            }
-        } catch (NumberFormatException ignored) {
-            // Fall through to typed error.
+        if (value instanceof Number
+                && Double.isFinite(((Number) value).doubleValue())) {
+            return ((Number) value).doubleValue();
         }
         throw new IllegalArgumentException("Morphology axis " + key.stableKey()
                 + " must be a finite numeric value.");

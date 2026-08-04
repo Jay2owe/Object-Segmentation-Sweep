@@ -155,6 +155,36 @@ public final class SegSweepParameters {
         return new SegSweepParameters(builder);
     }
 
+    static void validateAxisValues(ParameterId id, ParameterValueList values) {
+        if (id == null || values == null || values.size() == 0) {
+            throw new ValidationException(ValidationFailure.EMPTY_AXIS,
+                    "Sweep axes must have a parameter id and at least one value.");
+        }
+        for (int i = 0; i < values.size(); i++) {
+            Object value = values.get(i);
+            if (!(value instanceof Number)) {
+                throw new ValidationException(ValidationFailure.INVALID_AXIS_VALUE,
+                        "Axis " + id.stableKey() + " value " + (i + 1)
+                                + " must be numeric, not " + String.valueOf(value) + ".");
+            }
+            double numeric = ((Number) value).doubleValue();
+            if (!Double.isFinite(numeric)) {
+                throw new ValidationException(ValidationFailure.INVALID_AXIS_VALUE,
+                        "Axis " + id.stableKey() + " value " + (i + 1)
+                                + " must be finite.");
+            }
+            if (id == ParameterId.MIN_SIZE || id == ParameterId.MAX_SIZE) {
+                if (numeric < 0.0d || numeric > Integer.MAX_VALUE
+                        || numeric != Math.rint(numeric)) {
+                    throw new ValidationException(ValidationFailure.INVALID_AXIS_VALUE,
+                            "Axis " + id.stableKey() + " value " + (i + 1)
+                                    + " must be a non-negative integer no greater than "
+                                    + Integer.MAX_VALUE + ".");
+                }
+            }
+        }
+    }
+
     public static final class Builder {
         private ImagePlus image;
         private int channel = 1;
@@ -219,6 +249,7 @@ public final class SegSweepParameters {
                 throw new ValidationException(ValidationFailure.UNSUPPORTED_AXIS_COMBINATION,
                         "Sweep parameter " + id.stableKey() + " was provided more than once.");
             }
+            validateAxisValues(id, values);
             axes.put(id, values);
             return this;
         }
@@ -284,6 +315,8 @@ public final class SegSweepParameters {
         UNSUPPORTED_ENGINE,
         UNSUPPORTED_AXIS_COMBINATION,
         INVALID_CHANNEL,
+        UNSUPPORTED_BIT_DEPTH,
+        INVALID_AXIS_VALUE,
         INVALID_CROP_FRACTION,
         INVALID_STABILITY_BUDGET
     }

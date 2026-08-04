@@ -95,6 +95,7 @@ public final class IouStability {
         double[] means = emptyMeans(combos.size());
         Map<Long, Double> pairCache = new HashMap<Long, Double>();
         int eligibleCount = 0;
+        int topologicallyEligibleCount = 0;
         int bestIndex = -1;
         double bestMean = Double.NEGATIVE_INFINITY;
         LongSupplier safeClock = clock == null ? new LongSupplier() {
@@ -121,8 +122,7 @@ public final class IouStability {
             if (neighbours.isEmpty()) {
                 continue;
             }
-            eligible[i] = true;
-            eligibleCount++;
+            topologicallyEligibleCount++;
             IouSource source = sources.get(i);
             if (source == null || source.objectCount() <= 0) {
                 continue;
@@ -160,6 +160,8 @@ public final class IouStability {
             if (countGateFailed || compared != neighbours.size()) {
                 continue;
             }
+            eligible[i] = true;
+            eligibleCount++;
             means[i] = total / compared;
             if (means[i] > bestMean) {
                 bestMean = means[i];
@@ -170,8 +172,10 @@ public final class IouStability {
         if (eligibleCount == 0 || bestIndex < 0 || bestMean <= 0.0d) {
             return StabilityOutcome.of(StabilityOutcome.Kind.NO_ELIGIBLE_COMBINATIONS,
                     eligibleCount, eligible, means,
-                    eligibleCount == 0
+                    topologicallyEligibleCount == 0
                             ? "No combination has a full neighbour complement."
+                            : eligibleCount == 0
+                            ? "No topologically interior combination passed the non-empty and object-count-ratio gates."
                             : "No eligible combination had positive neighbour agreement.");
         }
         return StabilityOutcome.stableAt(bestIndex, bestMean, eligibleCount,

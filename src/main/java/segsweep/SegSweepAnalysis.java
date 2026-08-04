@@ -97,7 +97,10 @@ public final class SegSweepAnalysis {
                         }
                     });
             checkCancelled(cancelCheck);
-            double[] fullThresholdValues = fullThresholdAxis(cropped, tree);
+            double[] fullThresholdValues = params.pickCriterion()
+                    != SegSweepParameters.PickCriterion.NONE
+                    && soleVaryingAxis(params) == ParameterId.THRESHOLD
+                    ? fullThresholdAxis(cropped, tree) : new double[0];
             List<VariationResult> displayedResults =
                     queryDisplayedResults(tree, displayWindow, provenance, progress, cancelCheck);
             PickAssembly pickAssembly = scoreAndPick(tree, displayWindow,
@@ -141,6 +144,13 @@ public final class SegSweepAnalysis {
                     SegSweepParameters.ValidationFailure.NO_IMAGE,
                     "SegSweep requires a source ImagePlus with at least one slice.");
         }
+        int bitDepth = image.getBitDepth();
+        if (bitDepth != 8 && bitDepth != 16 && bitDepth != 32) {
+            throw new SegSweepParameters.ValidationException(
+                    SegSweepParameters.ValidationFailure.UNSUPPORTED_BIT_DEPTH,
+                    "SegSweep supports only 8-bit, 16-bit, or 32-bit grayscale images; received "
+                            + bitDepth + "-bit input.");
+        }
         int channels = Math.max(1, image.getNChannels());
         if (params.channel() < 1 || params.channel() > channels) {
             throw new SegSweepParameters.ValidationException(
@@ -177,6 +187,7 @@ public final class SegSweepAnalysis {
                         "Axis " + id.stableKey()
                                 + " is not supported by the v0.1.0 Classical engine.");
             }
+            SegSweepParameters.validateAxisValues(id, values);
         }
         if (params.crop().mode() == CropSpec.Mode.CUSTOM) {
             Rectangle requested = params.crop().bounds();
@@ -347,15 +358,23 @@ public final class SegSweepAnalysis {
                                           List<VariationResult> displayedResults,
                                           double[] fullThresholdValues,
                                           BooleanSupplier cancelCheck) {
-        ParameterId axis = params.axes().containsKey(ParameterId.THRESHOLD)
-                ? ParameterId.THRESHOLD : firstAxis(params);
-        ParameterValueList displayedValues = params.axes().get(axis);
+        int varyingAxes = varyingAxisCount(params);
+        ParameterId axis = soleVaryingAxis(params);
+        ParameterId rangeAxis = axis == null ? firstAxis(params) : axis;
+        ParameterValueList displayedValues = params.axes().get(rangeAxis);
         double[] displayStats = rangeStats(displayedValues);
-        if (varyingAxisCount(params) > 1) {
+        if (varyingAxes > 1) {
             return new KneeAssembly(KneeOutcome.of(
                     KneeOutcome.Kind.MULTI_AXIS_UNSUPPORTED,
                     displayStats[0], displayStats[1], displayStats[2],
                     "Knee scoring is one-dimensional; it is not defined for two varying sweep axes."),
+                    null, null);
+        }
+        if (axis == null) {
+            return new KneeAssembly(KneeOutcome.of(
+                    KneeOutcome.Kind.TOO_FEW_POINTS,
+                    displayStats[0], displayStats[1], displayStats[2],
+                    "Knee scoring requires one varying sweep axis; every displayed axis is fixed."),
                     null, null);
         }
         if (axis == ParameterId.THRESHOLD) {
@@ -392,6 +411,13 @@ public final class SegSweepAnalysis {
         double[] xs = new double[displayedResults.size()];
         double[] counts = new double[displayedResults.size()];
         for (int i = 0; i < displayedResults.size(); i++) {
+            if (displayedResults.get(i).hasFlag(VariationResult.Flag.TOO_MANY_LABELS)) {
+                return new KneeAssembly(KneeOutcome.of(
+                        KneeOutcome.Kind.TOO_MANY_OBJECTS,
+                        displayStats[0], displayStats[1], displayStats[2],
+                        "At least one displayed combination exceeds the 16-bit object limit; knee scoring was refused."),
+                        null, null);
+            }
             xs[i] = numericValue(displayedResults.get(i).combo().get(axis), axis);
             counts[i] = displayedResults.get(i).objectCount();
         }
@@ -711,6 +737,17 @@ public final class SegSweepAnalysis {
         return count;
     }
 
+    private static ParameterId soleVaryingAxis(SegSweepParameters params) {
+        ParameterId varying = null;
+        for (Map.Entry<ParameterId, ParameterValueList> entry : params.axes().entrySet()) {
+            if (entry.getValue() != null && entry.getValue().size() > 1) {
+                if (varying != null) return null;
+                varying = entry.getKey();
+            }
+        }
+        return varying;
+    }
+
     private static List<VariationResult> canonicalResultOrder(
             ParameterSweep displayWindow,
             List<VariationResult> dispatched) {
@@ -795,48 +832,46 @@ public final class SegSweepAnalysis {
     private static int intParameter(ParameterCombo combo, ParameterId id, int fallback) {
         Object value = combo == null ? null : combo.get(id);
         if (value == null) return fallback;
-        if (value instanceof Number) {
-            double parsed = ((Number) value).doubleValue();
-            if (!Double.isFinite(parsed)) return fallback;
-            if (parsed >= Integer.MAX_VALUE) return Integer.MAX_VALUE;
-            if (parsed <= Integer.MIN_VALUE) return Integer.MIN_VALUE;
-            return Math.max(0, (int) Math.round(parsed));
+        if (!(value instanceof Number)) {
+            throw invalidAxisValue(id, "must be numeric");
         }
-        try {
-            return Math.max(0, (int) Math.round(Double.parseDouble(String.valueOf(value))));
-        } catch (NumberFormatException e) {
-            return fallback;
+        double parsed = ((Number) value).doubleValue();
+        if (!Double.isFinite(parsed) || parsed < 0.0d
+                || parsed > Integer.MAX_VALUE || parsed != Math.rint(parsed)) {
+            throw invalidAxisValue(id, "must be a non-negative integer no greater than "
+                    + Integer.MAX_VALUE);
         }
+        return (int) parsed;
     }
 
     private static double doubleParameter(ParameterCombo combo, ParameterId id, double fallback) {
         Object value = combo == null ? null : combo.get(id);
         if (value == null) return fallback;
-        if (value instanceof Number) {
-            double parsed = ((Number) value).doubleValue();
-            return Double.isFinite(parsed) ? parsed : fallback;
+        if (!(value instanceof Number)) {
+            throw invalidAxisValue(id, "must be numeric");
         }
-        try {
-            double parsed = Double.parseDouble(String.valueOf(value));
-            return Double.isFinite(parsed) ? parsed : fallback;
-        } catch (NumberFormatException e) {
-            return fallback;
-        }
+        double parsed = ((Number) value).doubleValue();
+        if (!Double.isFinite(parsed)) throw invalidAxisValue(id, "must be finite");
+        return parsed;
     }
 
     private static double numericValue(Object value, ParameterKey key) {
-        if (value instanceof Number) {
-            double parsed = ((Number) value).doubleValue();
-            if (Double.isFinite(parsed)) return parsed;
+        if (!(value instanceof Number)
+                || !Double.isFinite(((Number) value).doubleValue())) {
+            ParameterId id = key instanceof ParameterId ? (ParameterId) key : null;
+            if (id != null) throw invalidAxisValue(id, "must be a finite numeric value");
+            throw new IllegalArgumentException("Parameter " + key.stableKey()
+                    + " must be a finite numeric value.");
         }
-        try {
-            double parsed = Double.parseDouble(String.valueOf(value));
-            if (Double.isFinite(parsed)) return parsed;
-        } catch (NumberFormatException ignored) {
-            // Typed message below.
-        }
-        throw new IllegalArgumentException("Parameter " + key.stableKey()
-                + " must be a finite numeric value.");
+        return ((Number) value).doubleValue();
+    }
+
+    private static SegSweepParameters.ValidationException invalidAxisValue(
+            ParameterId id, String requirement) {
+        return new SegSweepParameters.ValidationException(
+                SegSweepParameters.ValidationFailure.INVALID_AXIS_VALUE,
+                "Axis " + (id == null ? "<unknown>" : id.stableKey()) + " "
+                        + requirement + ".");
     }
 
     private static String flags(EnumSet<VariationResult.Flag> flags) {

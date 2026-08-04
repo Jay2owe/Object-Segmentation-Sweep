@@ -55,6 +55,22 @@ public class IouStabilityEligibilityTest {
     }
 
     @Test
+    public void countGateFailureIsNotReportedAsStabilityEligible() {
+        StabilityOutcome outcome = IouStability.score(
+                TestCombos.oneAxis(Arrays.asList(
+                        Integer.valueOf(0), Integer.valueOf(1), Integer.valueOf(2))),
+                TestCombos.sources(
+                        TestCombos.ids(1, 2, 3, 4, 5, 6, 7, 8, 9, 10),
+                        TestCombos.ids(1),
+                        TestCombos.ids(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)));
+
+        assertEquals(StabilityOutcome.Kind.NO_ELIGIBLE_COMBINATIONS, outcome.kind());
+        assertEquals(0, outcome.eligibleCount());
+        assertFalse(outcome.isEligible(1));
+        assertTrue(outcome.explanation().contains("object-count-ratio gates"));
+    }
+
+    @Test
     public void twoAxisStabilityUsesOnlyTheTwoNeighboursAlongEachAxis() {
         StabilityOutcome outcome = IouStability.score(
                 TestCombos.twoAxis(3, 3),

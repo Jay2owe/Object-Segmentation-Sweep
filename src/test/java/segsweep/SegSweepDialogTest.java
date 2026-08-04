@@ -11,6 +11,7 @@ package segsweep;
 import ij.ImagePlus;
 import ij.ImageStack;
 import ij.process.ByteProcessor;
+import ij.process.ColorProcessor;
 import ij.process.ShortProcessor;
 import org.junit.Test;
 import segsweep.sweep.ParameterCombo;
@@ -49,6 +50,16 @@ public class SegSweepDialogTest {
         String text = SegSweepDialog.costEstimateText(huge, SegSweepMacroOptions.defaults());
         assertTrue(text.toLowerCase(Locale.ROOT).contains("above the limit"));
         assertTrue(text.toLowerCase(Locale.ROOT).contains("crop"));
+    }
+
+    @Test
+    public void rgbInputRefusalIsVisibleBeforeRun() {
+        String text = SegSweepDialog.costEstimateText(
+                new ImagePlus("rgb", new ColorProcessor(8, 8)),
+                SegSweepMacroOptions.defaults());
+
+        assertTrue(text.contains("8-bit, 16-bit, or 32-bit grayscale"));
+        assertTrue(text.contains("24-bit input"));
     }
 
     @Test

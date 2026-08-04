@@ -172,6 +172,21 @@ public class AutoSaveWriterTest {
         assertEquals(0x00ff00ff, written.getRGB(3, 2) & 0x00ffffff);
     }
 
+    @Test
+    public void unicodeCalibrationUnitIsPreservedAsUtf8() throws Exception {
+        File input = tmp.newFile("unicode.tif");
+        ImagePlus image = SegSweepAnalysisTest.designedKneeStack(true);
+        image.getCalibration().setUnit("μm");
+
+        File output = AutoSaveWriter.write(input, runPickedResult(image));
+
+        byte[] bytes = Files.readAllBytes(new File(output, "picked_settings.txt").toPath());
+        String settings = new String(bytes, StandardCharsets.UTF_8);
+        assertTrue(settings.contains("unit=μm"));
+        assertTrue(settings.contains("\"calibrationUnit\":\"μm\""));
+        assertTrue(containsBytes(bytes, new byte[] { (byte) 0xce, (byte) 0xbc }));
+    }
+
     private static SegSweepResult runPickedResult(ImagePlus image) {
         return SegSweep.run(SegSweepParameters.builder()
                 .image(image)
@@ -217,5 +232,16 @@ public class AutoSaveWriterTest {
             }
         }
         return hues.size();
+    }
+
+    private static boolean containsBytes(byte[] haystack, byte[] needle) {
+        for (int i = 0; i <= haystack.length - needle.length; i++) {
+            int matched = 0;
+            while (matched < needle.length && haystack[i + matched] == needle[matched]) {
+                matched++;
+            }
+            if (matched == needle.length) return true;
+        }
+        return false;
     }
 }

@@ -28,6 +28,7 @@ import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JDialog;
+import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
@@ -36,6 +37,7 @@ import javax.swing.WindowConstants;
 import javax.swing.border.EmptyBorder;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
@@ -45,6 +47,7 @@ import java.awt.GraphicsEnvironment;
 import java.awt.Rectangle;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.io.File;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -124,8 +127,12 @@ public final class SegSweepDialog {
         Dimension pref = dialog.getPreferredSize();
         dialog.setSize(Math.max(560, pref.width), Math.min(620, Math.max(460, pref.height)));
         dialog.setLocationRelativeTo(null);
-        dialog.setVisible(true);
-        return accepted[0];
+        try {
+            dialog.setVisible(true);
+            return accepted[0];
+        } finally {
+            state.disposeBrowsedImage();
+        }
     }
 
     public static SegSweepMacroOptions defaults() {
@@ -250,12 +257,45 @@ public final class SegSweepDialog {
         return SegSweepMacroOptionsParser.parse(source.toMacroOptions());
     }
 
-    private static void addInputSection(JPanel content, DialogState state) {
+    private static void addInputSection(final JPanel content, final DialogState state) {
         addHeader(content, "INPUT");
-        state.imageChoice = addChoice(content, "Image:", imageTitles(), defaultImageTitle());
+        JPanel imageRow = row("Image:");
+        state.imageChoice = new JComboBox<String>(imageTitles());
+        state.imageChoice.setSelectedItem(defaultImageTitle());
+        state.imageChoice.setMaximumSize(new Dimension(300, 24));
+        imageRow.add(state.imageChoice);
+        JButton browse = new JButton("Browse...");
+        state.browseButton = browse;
+        browse.setToolTipText("Choose an image file without opening it in ImageJ first.");
+        imageRow.add(browse);
+        content.add(imageRow);
         state.channelField = addField(content, "Channel:", "1", 4);
         state.cropChoice = addChoice(content, "Region:", new String[] { "Whole image", "Sweep in ROI" },
                 activeRoiExists(state.image) ? "Sweep in ROI" : "Whole image");
+        browse.addActionListener(new ActionListener() {
+            @Override public void actionPerformed(ActionEvent e) {
+                JFileChooser chooser = new JFileChooser();
+                chooser.setDialogTitle("Choose image for Object Segmentation Sweep");
+                chooser.setFileFilter(new FileNameExtensionFilter(
+                        "Image files", "tif", "tiff", "png", "jpg", "jpeg", "gif", "bmp"));
+                if (state.browsedFile != null) chooser.setSelectedFile(state.browsedFile);
+                if (chooser.showOpenDialog(content) != JFileChooser.APPROVE_OPTION) return;
+                try {
+                    state.selectBrowsedFile(chooser.getSelectedFile());
+                    state.cropChoice.setSelectedItem("Whole image");
+                    state.refreshCostLine();
+                } catch (RuntimeException ex) {
+                    JOptionPane.showMessageDialog(content, ex.getMessage(),
+                            "Object Segmentation Sweep", JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        });
+        state.imageChoice.addActionListener(new ActionListener() {
+            @Override public void actionPerformed(ActionEvent e) {
+                state.releaseBrowsedImageIfUnselected();
+                state.refreshCostLine();
+            }
+        });
     }
 
     private static void addAnalysisSection(JPanel content, final DialogState state) {
@@ -431,7 +471,14 @@ public final class SegSweepDialog {
         if (selected == null || NONE.equals(selected.toString())) {
             return state.image;
         }
-        return WindowManager.getImage(selected.toString());
+        String value = selected.toString();
+        ImagePlus openImage = WindowManager.getImage(value);
+        if (openImage != null) return openImage;
+        File selectedFile = new File(value);
+        if (selectedFile.isFile()) {
+            return state.browsedImage(selectedFile);
+        }
+        return null;
     }
 
     private static boolean activeRoiExists(ImagePlus image) {
@@ -442,6 +489,12 @@ public final class SegSweepDialog {
         return new String[] { "threshold", "min_size", "max_size", "volume",
                 "mean_intensity", "max_intensity", "elongation", "surface_area",
                 "sphericity", "compactness", "feret_diameter_max" };
+    }
+
+    static DialogState inputStateForTest(ImagePlus image) {
+        DialogState state = new DialogState(image);
+        addInputSection(new JPanel(), state);
+        return state;
     }
 
     private static String[] secondaryAxisNames() {
@@ -479,9 +532,12 @@ public final class SegSweepDialog {
                 Double.valueOf(bytes / (1024.0d * 1024.0d)));
     }
 
-    private static final class DialogState {
+    static final class DialogState {
         final ImagePlus image;
+        File browsedFile;
+        ImagePlus browsedImage;
         JComboBox<String> imageChoice;
+        JButton browseButton;
         JTextField channelField;
         JComboBox<String> cropChoice;
         JComboBox<String> engineChoice;
@@ -501,6 +557,57 @@ public final class SegSweepDialog {
 
         DialogState(ImagePlus image) {
             this.image = image;
+        }
+
+        void selectBrowsedFile(File file) {
+            if (file == null || !file.isFile()) {
+                throw new IllegalArgumentException("Selected image file does not exist: " + file);
+            }
+            File absolute = file.getAbsoluteFile();
+            ImagePlus opened = IJ.openImage(absolute.getAbsolutePath());
+            if (opened == null) {
+                throw new IllegalArgumentException("ImageJ could not open: "
+                        + absolute.getAbsolutePath());
+            }
+            disposeBrowsedImage();
+            browsedFile = absolute;
+            browsedImage = opened;
+            String path = absolute.getAbsolutePath();
+            boolean present = false;
+            for (int i = 0; i < imageChoice.getItemCount(); i++) {
+                if (path.equals(imageChoice.getItemAt(i))) {
+                    present = true;
+                    break;
+                }
+            }
+            if (!present) imageChoice.addItem(path);
+            imageChoice.setSelectedItem(path);
+        }
+
+        ImagePlus browsedImage(File file) {
+            File absolute = file.getAbsoluteFile();
+            if (browsedImage != null && absolute.equals(browsedFile)) return browsedImage;
+            selectBrowsedFile(absolute);
+            return browsedImage;
+        }
+
+        void releaseBrowsedImageIfUnselected() {
+            if (browsedFile == null || imageChoice == null) return;
+            Object selected = imageChoice.getSelectedItem();
+            if (selected == null
+                    || !browsedFile.getAbsolutePath().equals(selected.toString())) {
+                disposeBrowsedImage();
+            }
+        }
+
+        void disposeBrowsedImage() {
+            if (browsedImage != null) {
+                browsedImage.changes = false;
+                browsedImage.close();
+                browsedImage.flush();
+            }
+            browsedImage = null;
+            browsedFile = null;
         }
 
         SegSweepMacroOptions optionsFromFields() {
