@@ -63,7 +63,7 @@ The main artifact is written to `target/Object-Segmentation-Sweep-0.1.0.jar`.
 ## Usage
 
 1. Open an 8-, 16-, or 32-bit grayscale image, or use **Browse…** in the plugin dialog.
-2. Choose the channel for a hyperstack and optionally enter a crop.
+2. Choose the channel for a multichannel Z hyperstack and optionally enter a crop.
 3. Select one axis and its `From`, `To`, and `Step` values. Optionally enable a second axis.
 4. Choose `knee`, `stability`, `both`, or `none`, then configure grid/table/save output.
 5. Run the sweep and inspect the synchronized label-map grid.
@@ -162,6 +162,7 @@ For sweeping preprocessing filter chains rather than segmentation settings, see
 - Knee and stability are heuristics, not proofs of an optimal segmentation.
 - v0.1.0 has no randomization null model and cannot claim that a knee differs from chance.
 - The classical engine is the only executable engine; StarDist and Cellpose are deferred.
+- v0.1.0 rejects time-series inputs; split timepoints and analyse each frame separately.
 - Knee scoring is one-dimensional and is explicitly refused for two varying axes.
 - Exact Feret evaluation is bounded to 4096 voxels per candidate; affected combinations are
   reported as failed rows and remain available for manual diagnosis.

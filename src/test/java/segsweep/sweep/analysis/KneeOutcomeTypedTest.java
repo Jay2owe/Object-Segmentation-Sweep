@@ -12,6 +12,7 @@ import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertArrayEquals;
 
 public class KneeOutcomeTypedTest {
 
@@ -54,6 +55,18 @@ public class KneeOutcomeTypedTest {
         assertEquals(3.0d, outcome.parameterValue(), 0.000001d);
         assertEquals(1.0d, outcome.rangeMin(), 0.000001d);
         assertEquals(5.0d, outcome.rangeMax(), 0.000001d);
+        assertArrayEquals(new double[] { 0, 1, 2, 3, 4, 5, 6 },
+                outcome.sampledValues(), 0.0d);
+    }
+
+    @Test
+    public void comparabilityIncludesExactIrregularSamples() {
+        KneeOutcome first = KneeOutcome.of(KneeOutcome.Kind.ALL_PLATEAU,
+                1, 50, Double.NaN, new double[] { 1, 2, 10, 50 }, "flat");
+        KneeOutcome second = KneeOutcome.of(KneeOutcome.Kind.ALL_PLATEAU,
+                1, 50, Double.NaN, new double[] { 1, 4, 20, 50 }, "flat");
+
+        assertFalse(first.comparable(second));
     }
 
     private static void assertKind(KneeOutcome.Kind expected, KneeOutcome outcome) {

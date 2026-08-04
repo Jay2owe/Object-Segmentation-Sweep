@@ -40,6 +40,7 @@ public final class SegSweepResult {
     public static final String PICK_KNEE_RANGE_MIN = "knee computation range min";
     public static final String PICK_KNEE_RANGE_MAX = "knee computation range max";
     public static final String PICK_KNEE_RANGE_STEP = "knee computation range step";
+    public static final String PICK_KNEE_RANGE_VALUES = "knee computation values";
     public static final String PICK_DISPLAY_RANGE_MIN = PICK_KNEE_RANGE_MIN;
     public static final String PICK_DISPLAY_RANGE_MAX = PICK_KNEE_RANGE_MAX;
     public static final String PICK_DISPLAY_RANGE_STEP = PICK_KNEE_RANGE_STEP;

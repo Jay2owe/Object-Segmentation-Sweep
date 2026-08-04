@@ -11,6 +11,7 @@ package segsweep.ui;
 import ij.IJ;
 import ij.ImagePlus;
 import ij.WindowManager;
+import ij.measure.Calibration;
 import segsweep.SegSweepMacroOptions;
 import segsweep.SegSweepMacroOptionsParser;
 import segsweep.SegSweepParameters;
@@ -269,7 +270,15 @@ public final class SegSweepDialog {
         browse.setToolTipText("Choose an image file without opening it in ImageJ first.");
         imageRow.add(browse);
         content.add(imageRow);
-        state.channelField = addField(content, "Channel:", "1", 4);
+        state.channelRow = row("Channel:");
+        state.channelField = new JTextField("1", 4);
+        state.channelRow.add(state.channelField);
+        content.add(state.channelRow);
+        JPanel calibrationRow = row("Calibration:");
+        state.calibrationLabel = new JLabel();
+        state.calibrationLabel.setForeground(LABEL_COLOR);
+        calibrationRow.add(state.calibrationLabel);
+        content.add(calibrationRow);
         state.cropChoice = addChoice(content, "Region:", new String[] { "Whole image", "Sweep in ROI" },
                 activeRoiExists(state.image) ? "Sweep in ROI" : "Whole image");
         browse.addActionListener(new ActionListener() {
@@ -283,6 +292,7 @@ public final class SegSweepDialog {
                 try {
                     state.selectBrowsedFile(chooser.getSelectedFile());
                     state.cropChoice.setSelectedItem("Whole image");
+                    state.refreshInputMetadata();
                     state.refreshCostLine();
                 } catch (RuntimeException ex) {
                     JOptionPane.showMessageDialog(content, ex.getMessage(),
@@ -293,9 +303,11 @@ public final class SegSweepDialog {
         state.imageChoice.addActionListener(new ActionListener() {
             @Override public void actionPerformed(ActionEvent e) {
                 state.releaseBrowsedImageIfUnselected();
+                state.refreshInputMetadata();
                 state.refreshCostLine();
             }
         });
+        state.refreshInputMetadata();
     }
 
     private static void addAnalysisSection(JPanel content, final DialogState state) {
@@ -538,7 +550,9 @@ public final class SegSweepDialog {
         ImagePlus browsedImage;
         JComboBox<String> imageChoice;
         JButton browseButton;
+        JPanel channelRow;
         JTextField channelField;
+        JLabel calibrationLabel;
         JComboBox<String> cropChoice;
         JComboBox<String> engineChoice;
         JComboBox<String> axisChoice;
@@ -662,5 +676,53 @@ public final class SegSweepDialog {
                         + "</body></html>");
             }
         }
+
+        void refreshInputMetadata() {
+            ImagePlus chosen = selectedImage(this);
+            int channels = chosen == null ? 1 : Math.max(1, chosen.getNChannels());
+            boolean showChannel = chosen != null && channels > 1;
+            if (channelRow != null) channelRow.setVisible(showChannel);
+            if (channelField != null) {
+                channelField.setEnabled(showChannel);
+                int selectedChannel = 1;
+                try {
+                    selectedChannel = Integer.parseInt(channelField.getText().trim());
+                } catch (RuntimeException ignored) {
+                    // Reset malformed or stale channel text when the input changes.
+                    selectedChannel = 0;
+                }
+                if (selectedChannel < 1 || selectedChannel > channels) {
+                    channelField.setText("1");
+                }
+            }
+            if (calibrationLabel != null) {
+                calibrationLabel.setText(calibrationReadout(chosen));
+            }
+        }
+    }
+
+    private static String calibrationReadout(ImagePlus image) {
+        if (image == null) return "No image selected";
+        Calibration calibration = image.getCalibration();
+        if (calibration == null) return "Uncalibrated (pixel units)";
+        boolean validX = Double.isFinite(calibration.pixelWidth)
+                && calibration.pixelWidth > 0.0d;
+        boolean validY = Double.isFinite(calibration.pixelHeight)
+                && calibration.pixelHeight > 0.0d;
+        boolean validZ = Double.isFinite(calibration.pixelDepth)
+                && calibration.pixelDepth > 0.0d;
+        String unit = calibration.getUnit();
+        if (unit == null || unit.trim().isEmpty()) unit = "pixel";
+        boolean needsZ = image.getNSlices() > 1;
+        if (!validX || !validY || (needsZ && !validZ)) {
+            return "Invalid spacing; density will be uncalibrated";
+        }
+        String spacing = format(calibration.pixelWidth) + " x "
+                + format(calibration.pixelHeight);
+        if (needsZ) spacing += " x " + format(calibration.pixelDepth);
+        if ("pixel".equalsIgnoreCase(unit) || "pixels".equalsIgnoreCase(unit)) {
+            return spacing + " pixel spacing (uncalibrated)";
+        }
+        return spacing + " " + unit + "/pixel";
     }
 }

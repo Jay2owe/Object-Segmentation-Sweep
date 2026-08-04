@@ -45,28 +45,29 @@ public final class KneeDetector {
                 points.add(new Point(i, parameterValues[i], counts[i]));
             }
         }
-        if (points.size() < 4) {
-            return KneeOutcome.of(KneeOutcome.Kind.TOO_FEW_POINTS,
-                    displayRangeMin, displayRangeMax, displayStep,
-                    "Knee detection needs at least four finite points.");
-        }
         Collections.sort(points, new Comparator<Point>() {
             @Override
             public int compare(Point a, Point b) {
                 return Double.compare(a.x, b.x);
             }
         });
+        double[] sampledValues = sampledValues(points);
+        if (points.size() < 4) {
+            return KneeOutcome.of(KneeOutcome.Kind.TOO_FEW_POINTS,
+                    displayRangeMin, displayRangeMax, displayStep, sampledValues,
+                    "Knee detection needs at least four finite points.");
+        }
 
         Range xRange = range(points, true);
         if (xRange.span() <= 0.0d) {
             return KneeOutcome.of(KneeOutcome.Kind.DEGENERATE_RANGE,
-                    displayRangeMin, displayRangeMax, displayStep,
+                    displayRangeMin, displayRangeMax, displayStep, sampledValues,
                     "All finite parameter values collapse to one value.");
         }
         Range yRange = range(points, false);
         if (yRange.span() <= 0.0d) {
             return KneeOutcome.of(KneeOutcome.Kind.ALL_PLATEAU,
-                    displayRangeMin, displayRangeMax, displayStep,
+                    displayRangeMin, displayRangeMax, displayStep, sampledValues,
                     "The finite object-count curve is flat.");
         }
 
@@ -93,7 +94,7 @@ public final class KneeDetector {
         }
         if (maxIndex < 0 || maxDifference - minDifference < FLAT_DIFFERENCE_RANGE) {
             return KneeOutcome.of(KneeOutcome.Kind.NO_BEND,
-                    displayRangeMin, displayRangeMax, displayStep,
+                    displayRangeMin, displayRangeMax, displayStep, sampledValues,
                     "No bend exceeded the flat-curve tolerance.");
         }
 
@@ -111,8 +112,14 @@ public final class KneeDetector {
         }
         Point knee = points.get(kneeIndex);
         return KneeOutcome.kneeAt(knee.originalIndex, knee.x,
-                displayRangeMin, displayRangeMax, displayStep,
+                displayRangeMin, displayRangeMax, displayStep, sampledValues,
                 "Maximum bend in the finite object-count curve.");
+    }
+
+    private static double[] sampledValues(List<Point> points) {
+        double[] values = new double[points.size()];
+        for (int i = 0; i < points.size(); i++) values[i] = points.get(i).x;
+        return values;
     }
 
     static int[] findPlateauRange(double[] xs, double[] ys) {

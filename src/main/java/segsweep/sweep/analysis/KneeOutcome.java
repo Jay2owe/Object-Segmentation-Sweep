@@ -8,6 +8,8 @@
  */
 package segsweep.sweep.analysis;
 
+import java.util.Arrays;
+
 /**
  * Typed result of object-count knee detection.
  *
@@ -35,6 +37,7 @@ public final class KneeOutcome {
     private final double rangeMin;
     private final double rangeMax;
     private final double step;
+    private final double[] sampledValues;
     private final String explanation;
 
     private KneeOutcome(Kind kind,
@@ -43,6 +46,7 @@ public final class KneeOutcome {
                         double rangeMin,
                         double rangeMax,
                         double step,
+                        double[] sampledValues,
                         String explanation) {
         if (kind == null) {
             throw new IllegalArgumentException("kind must not be null");
@@ -53,6 +57,8 @@ public final class KneeOutcome {
         this.rangeMin = rangeMin;
         this.rangeMax = rangeMax;
         this.step = step;
+        this.sampledValues = sampledValues == null
+                ? new double[0] : Arrays.copyOf(sampledValues, sampledValues.length);
         this.explanation = explanation == null ? "" : explanation;
     }
 
@@ -62,11 +68,22 @@ public final class KneeOutcome {
                                      double rangeMax,
                                      double step,
                                      String explanation) {
+        return kneeAt(index, parameterValue, rangeMin, rangeMax, step,
+                new double[0], explanation);
+    }
+
+    public static KneeOutcome kneeAt(int index,
+                                     double parameterValue,
+                                     double rangeMin,
+                                     double rangeMax,
+                                     double step,
+                                     double[] sampledValues,
+                                     String explanation) {
         if (index < 0) {
             throw new IllegalArgumentException("index must be non-negative");
         }
         return new KneeOutcome(Kind.KNEE_AT, index, parameterValue,
-                rangeMin, rangeMax, step, explanation);
+                rangeMin, rangeMax, step, sampledValues, explanation);
     }
 
     public static KneeOutcome of(Kind kind,
@@ -74,11 +91,20 @@ public final class KneeOutcome {
                                  double rangeMax,
                                  double step,
                                  String explanation) {
+        return of(kind, rangeMin, rangeMax, step, new double[0], explanation);
+    }
+
+    public static KneeOutcome of(Kind kind,
+                                 double rangeMin,
+                                 double rangeMax,
+                                 double step,
+                                 double[] sampledValues,
+                                 String explanation) {
         if (kind == Kind.KNEE_AT) {
             throw new IllegalArgumentException("use kneeAt for KNEE_AT outcomes");
         }
         return new KneeOutcome(kind, -1, Double.NaN, rangeMin, rangeMax,
-                step, explanation);
+                step, sampledValues, explanation);
     }
 
     public Kind kind() {
@@ -105,6 +131,11 @@ public final class KneeOutcome {
         return step;
     }
 
+    /** Exact, sorted finite parameter coordinates used by the knee calculation. */
+    public double[] sampledValues() {
+        return Arrays.copyOf(sampledValues, sampledValues.length);
+    }
+
     public String explanation() {
         return explanation;
     }
@@ -120,7 +151,8 @@ public final class KneeOutcome {
         return kind == other.kind
                 && same(rangeMin, other.rangeMin)
                 && same(rangeMax, other.rangeMax)
-                && same(step, other.step);
+                && same(step, other.step)
+                && sameSamples(sampledValues, other.sampledValues);
     }
 
     private static boolean same(double a, double b) {
@@ -128,5 +160,13 @@ public final class KneeOutcome {
             return true;
         }
         return Double.compare(a, b) == 0;
+    }
+
+    private static boolean sameSamples(double[] a, double[] b) {
+        if (a.length != b.length) return false;
+        for (int i = 0; i < a.length; i++) {
+            if (!same(a[i], b[i])) return false;
+        }
+        return true;
     }
 }

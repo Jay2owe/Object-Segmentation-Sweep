@@ -1,7 +1,9 @@
 package segsweep.ui;
 
 import ij.ImagePlus;
+import ij.ImageStack;
 import ij.io.FileSaver;
+import ij.measure.Calibration;
 import ij.process.ByteProcessor;
 import org.junit.Rule;
 import org.junit.Test;
@@ -15,6 +17,7 @@ import java.io.File;
 import java.util.Arrays;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class SegSweepThemeTest {
@@ -60,5 +63,37 @@ public class SegSweepThemeTest {
         } finally {
             state.disposeBrowsedImage();
         }
+    }
+
+    @Test
+    public void inputMetadataHidesSingleChannelAndShowsCalibration() {
+        ImagePlus image = new ImagePlus("single-channel", new ByteProcessor(4, 4));
+        Calibration calibration = new Calibration();
+        calibration.pixelWidth = 0.25d;
+        calibration.pixelHeight = 0.5d;
+        calibration.setUnit("micron");
+        image.setCalibration(calibration);
+
+        SegSweepDialog.DialogState state = SegSweepDialog.inputStateForTest(image);
+
+        assertFalse(state.channelRow.isVisible());
+        assertFalse(state.channelField.isEnabled());
+        assertTrue(state.calibrationLabel.getText().contains("0.25 x 0.5"));
+        assertTrue(state.calibrationLabel.getText().contains("micron"));
+    }
+
+    @Test
+    public void inputMetadataShowsChannelOnlyForMultichannelImage() {
+        ImageStack stack = new ImageStack(4, 4);
+        stack.addSlice(new ByteProcessor(4, 4));
+        stack.addSlice(new ByteProcessor(4, 4));
+        ImagePlus image = new ImagePlus("two-channel", stack);
+        image.setDimensions(2, 1, 1);
+
+        SegSweepDialog.DialogState state = SegSweepDialog.inputStateForTest(image);
+
+        assertTrue(state.channelRow.isVisible());
+        assertTrue(state.channelField.isEnabled());
+        assertTrue(state.calibrationLabel.getText().contains("uncalibrated"));
     }
 }

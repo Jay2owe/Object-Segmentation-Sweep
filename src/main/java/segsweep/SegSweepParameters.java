@@ -160,6 +160,7 @@ public final class SegSweepParameters {
             throw new ValidationException(ValidationFailure.EMPTY_AXIS,
                     "Sweep axes must have a parameter id and at least one value.");
         }
+        double[] seen = new double[values.size()];
         for (int i = 0; i < values.size(); i++) {
             Object value = values.get(i);
             if (!(value instanceof Number)) {
@@ -182,6 +183,15 @@ public final class SegSweepParameters {
                                     + Integer.MAX_VALUE + ".");
                 }
             }
+            for (int previous = 0; previous < i; previous++) {
+                if (numeric == seen[previous]) {
+                    throw new ValidationException(ValidationFailure.INVALID_AXIS_VALUE,
+                            "Axis " + id.stableKey() + " contains duplicate numeric coordinate "
+                                    + numeric + " at values " + (previous + 1) + " and " + (i + 1)
+                                    + ". Every grid coordinate must be unique.");
+                }
+            }
+            seen[i] = numeric;
         }
     }
 
@@ -316,6 +326,7 @@ public final class SegSweepParameters {
         UNSUPPORTED_AXIS_COMBINATION,
         INVALID_CHANNEL,
         UNSUPPORTED_BIT_DEPTH,
+        UNSUPPORTED_TIME_SERIES,
         INVALID_AXIS_VALUE,
         INVALID_CROP_FRACTION,
         INVALID_STABILITY_BUDGET

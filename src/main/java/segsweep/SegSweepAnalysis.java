@@ -152,6 +152,12 @@ public final class SegSweepAnalysis {
                     "SegSweep supports only 8-bit, 16-bit, or 32-bit grayscale images; received "
                             + bitDepth + "-bit input.");
         }
+        if (image.getNFrames() > 1) {
+            throw new SegSweepParameters.ValidationException(
+                    SegSweepParameters.ValidationFailure.UNSUPPORTED_TIME_SERIES,
+                    "SegSweep v0.1.0 does not process time-series images; received "
+                            + image.getNFrames() + " frames. Split the timepoints and run each frame separately.");
+        }
         int channels = Math.max(1, image.getNChannels());
         if (params.channel() < 1 || params.channel() > channels) {
             throw new SegSweepParameters.ValidationException(
@@ -221,14 +227,20 @@ public final class SegSweepAnalysis {
         double pixelWidth = 1.0d;
         double pixelHeight = 1.0d;
         double pixelDepth = 1.0d;
-        if (calibration != null
-                && Double.isFinite(calibration.pixelWidth) && calibration.pixelWidth > 0.0d
-                && Double.isFinite(calibration.pixelHeight) && calibration.pixelHeight > 0.0d) {
-            pixelWidth = calibration.pixelWidth;
-            pixelHeight = calibration.pixelHeight;
-            if (Double.isFinite(calibration.pixelDepth) && calibration.pixelDepth > 0.0d) {
-                pixelDepth = calibration.pixelDepth;
-            }
+        boolean validWidth = calibration != null
+                && Double.isFinite(calibration.pixelWidth) && calibration.pixelWidth > 0.0d;
+        boolean validHeight = calibration != null
+                && Double.isFinite(calibration.pixelHeight) && calibration.pixelHeight > 0.0d;
+        boolean validDepth = calibration != null
+                && Double.isFinite(calibration.pixelDepth) && calibration.pixelDepth > 0.0d;
+        if (validWidth) pixelWidth = calibration.pixelWidth;
+        if (validHeight) pixelHeight = calibration.pixelHeight;
+        if (validDepth) pixelDepth = calibration.pixelDepth;
+        int fullDepth = Math.max(1, params.image().getNSlices());
+        if (!validWidth || !validHeight || (fullDepth > 1 && !validDepth)) {
+            // SweepProvenance requires positive numeric spacing. Clearing the unit
+            // retains safe pixel-unit fallbacks without claiming a physical density.
+            unit = "";
         }
         LinkedHashMap<ParameterId, ParameterValueList> ranges =
                 new LinkedHashMap<ParameterId, ParameterValueList>();
@@ -236,7 +248,7 @@ public final class SegSweepAnalysis {
             ranges.put(entry.getKey(), entry.getValue());
         }
         return new SweepProvenance(params.crop(), params.image().getWidth(),
-                params.image().getHeight(), Math.max(1, params.image().getNSlices()),
+                params.image().getHeight(), fullDepth,
                 ranges, unit, pixelWidth, pixelHeight, pixelDepth,
                 params.connectivity().name());
     }
@@ -373,6 +385,11 @@ public final class SegSweepAnalysis {
         ParameterId rangeAxis = axis == null ? firstAxis(params) : axis;
         ParameterValueList displayedValues = params.axes().get(rangeAxis);
         double[] displayStats = rangeStats(displayedValues);
+        double[] displayedCoordinates = numericValues(displayedValues, rangeAxis);
+        double[] computationValues = axis == ParameterId.THRESHOLD
+                && fullThresholdValues != null && fullThresholdValues.length > 0
+                ? Arrays.copyOf(fullThresholdValues, fullThresholdValues.length)
+                : displayedCoordinates;
         double[] computationStats = axis == ParameterId.THRESHOLD
                 && fullThresholdValues != null && fullThresholdValues.length > 0
                 ? rangeStats(fullThresholdValues) : displayStats;
@@ -380,6 +397,7 @@ public final class SegSweepAnalysis {
             return new KneeAssembly(KneeOutcome.of(
                     KneeOutcome.Kind.MULTI_AXIS_UNSUPPORTED,
                     computationStats[0], computationStats[1], computationStats[2],
+                    computationValues,
                     "Knee scoring is one-dimensional; it is not defined for two varying sweep axes."),
                     null, null);
         }
@@ -387,6 +405,7 @@ public final class SegSweepAnalysis {
             return new KneeAssembly(KneeOutcome.of(
                     KneeOutcome.Kind.TOO_FEW_POINTS,
                     computationStats[0], computationStats[1], computationStats[2],
+                    computationValues,
                     "Knee scoring requires one varying sweep axis; every displayed axis is fixed."),
                     null, null);
         }
@@ -402,11 +421,12 @@ public final class SegSweepAnalysis {
                         return new KneeAssembly(KneeOutcome.of(
                                 KneeOutcome.Kind.TOO_MANY_OBJECTS,
                                 computationStats[0], computationStats[1], computationStats[2],
+                                computationValues,
                                 "At least one displayed combination exceeds the 16-bit object limit; knee scoring was refused."),
                                 null, null);
                     }
                     if (isOrdinaryFailure(displayedResults.get(i))) {
-                        return failedKnee(computationStats,
+                        return failedKnee(computationStats, computationValues,
                                 "At least one displayed combination failed; knee scoring was refused.");
                     }
                 }
@@ -417,7 +437,7 @@ public final class SegSweepAnalysis {
                 } catch (CancellationException ex) {
                     throw ex;
                 } catch (RuntimeException ex) {
-                    return failedKnee(computationStats,
+                    return failedKnee(computationStats, computationValues,
                             "Full-axis knee scoring failed: " + readableMessage(ex));
                 }
                 for (int i = 0; i < objectCounts.length; i++) {
@@ -425,6 +445,7 @@ public final class SegSweepAnalysis {
                         return new KneeAssembly(KneeOutcome.of(
                                 KneeOutcome.Kind.TOO_MANY_OBJECTS,
                                 computationStats[0], computationStats[1], computationStats[2],
+                                computationValues,
                                 "At least one threshold exceeds the 16-bit object limit; knee scoring was refused."),
                                 null, null);
                     }
@@ -452,11 +473,12 @@ public final class SegSweepAnalysis {
                 return new KneeAssembly(KneeOutcome.of(
                         KneeOutcome.Kind.TOO_MANY_OBJECTS,
                         computationStats[0], computationStats[1], computationStats[2],
+                        computationValues,
                         "At least one displayed combination exceeds the 16-bit object limit; knee scoring was refused."),
                         null, null);
             }
             if (isOrdinaryFailure(displayedResults.get(i))) {
-                return failedKnee(computationStats,
+                return failedKnee(computationStats, computationValues,
                         "At least one displayed combination failed; knee scoring was refused.");
             }
             xs[i] = numericValue(displayedResults.get(i).combo().get(axis), axis);
@@ -472,10 +494,13 @@ public final class SegSweepAnalysis {
         return new KneeAssembly(outcome, null, null);
     }
 
-    private static KneeAssembly failedKnee(double[] computationStats, String explanation) {
+    private static KneeAssembly failedKnee(double[] computationStats,
+                                           double[] computationValues,
+                                           String explanation) {
         return new KneeAssembly(KneeOutcome.of(
                 KneeOutcome.Kind.FAILED_COMBINATIONS,
                 computationStats[0], computationStats[1], computationStats[2],
+                computationValues,
                 explanation), null, null);
     }
 
@@ -629,11 +654,18 @@ public final class SegSweepAnalysis {
         if (knee != null) {
             table.setValue(SegSweepResult.PICK_KNEE_RANGE_MIN, row, knee.rangeMin());
             table.setValue(SegSweepResult.PICK_KNEE_RANGE_MAX, row, knee.rangeMax());
-            table.setValue(SegSweepResult.PICK_KNEE_RANGE_STEP, row, knee.step());
+            if (Double.isFinite(knee.step())) {
+                table.setValue(SegSweepResult.PICK_KNEE_RANGE_STEP, row, knee.step());
+            } else {
+                table.setValue(SegSweepResult.PICK_KNEE_RANGE_STEP, row, "");
+            }
+            table.setValue(SegSweepResult.PICK_KNEE_RANGE_VALUES, row,
+                    canonicalValues(knee.sampledValues()));
         } else {
             table.setValue(SegSweepResult.PICK_KNEE_RANGE_MIN, row, "");
             table.setValue(SegSweepResult.PICK_KNEE_RANGE_MAX, row, "");
             table.setValue(SegSweepResult.PICK_KNEE_RANGE_STEP, row, "");
+            table.setValue(SegSweepResult.PICK_KNEE_RANGE_VALUES, row, "");
         }
         if (stability != null && Double.isFinite(stability.meanNeighbourIou())) {
             table.setValue(SegSweepResult.PICK_STABILITY_SCORE, row,
@@ -864,7 +896,27 @@ public final class SegSweepAnalysis {
                 ? Math.abs(numericValue(values.get(1), ParameterId.THRESHOLD)
                 - numericValue(values.get(0), ParameterId.THRESHOLD))
                 : Double.NaN;
-        return new double[] { min, max, step };
+        boolean regular = Double.isFinite(step);
+        for (int i = 2; i < values.size(); i++) {
+            double gap = Math.abs(numericValue(values.get(i), ParameterId.THRESHOLD)
+                    - numericValue(values.get(i - 1), ParameterId.THRESHOLD));
+            if (Math.abs(gap - step) > 1.0e-9d) regular = false;
+        }
+        return new double[] { min, max, regular ? step : Double.NaN };
+    }
+
+    private static double[] numericValues(ParameterValueList values, ParameterId axis) {
+        if (values == null) return new double[0];
+        double[] out = new double[values.size()];
+        for (int i = 0; i < values.size(); i++) {
+            out[i] = numericValue(values.get(i), axis);
+        }
+        return out;
+    }
+
+    private static String canonicalValues(double[] values) {
+        return values == null || values.length == 0
+                ? "" : ParameterValueList.ofDoubles(values).toCanonicalJson();
     }
 
     private static double[] rangeStats(double[] values) {
@@ -1003,10 +1055,12 @@ public final class SegSweepAnalysis {
         String suffix = "; computation_range=["
                 + CanonicalScale.formatNumber(Double.valueOf(knee.rangeMin())) + ","
                 + CanonicalScale.formatNumber(Double.valueOf(knee.rangeMax())) + "]";
-        return Double.isFinite(knee.step())
+        suffix = Double.isFinite(knee.step())
                 ? suffix + "; computation_step="
                 + CanonicalScale.formatNumber(Double.valueOf(knee.step()))
                 : suffix + "; computation_step=irregular";
+        String values = canonicalValues(knee.sampledValues());
+        return values.isEmpty() ? suffix : suffix + "; computation_values=" + values;
     }
 
     private static ImagePlus selectChannel(ImagePlus source, int channel) {

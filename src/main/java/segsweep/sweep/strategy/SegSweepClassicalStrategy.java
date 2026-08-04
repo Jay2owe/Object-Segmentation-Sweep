@@ -214,17 +214,19 @@ public final class SegSweepClassicalStrategy implements VariationStrategy {
         double pixelWidth = 1.0d;
         double pixelHeight = 1.0d;
         double pixelDepth = 1.0d;
-        if (calibration != null
-                && Double.isFinite(calibration.pixelWidth) && calibration.pixelWidth > 0.0d
-                && Double.isFinite(calibration.pixelHeight) && calibration.pixelHeight > 0.0d) {
-            pixelWidth = calibration.pixelWidth;
-            pixelHeight = calibration.pixelHeight;
-            if (Double.isFinite(calibration.pixelDepth) && calibration.pixelDepth > 0.0d) {
-                pixelDepth = calibration.pixelDepth;
-            }
-        }
+        boolean validWidth = calibration != null
+                && Double.isFinite(calibration.pixelWidth) && calibration.pixelWidth > 0.0d;
+        boolean validHeight = calibration != null
+                && Double.isFinite(calibration.pixelHeight) && calibration.pixelHeight > 0.0d;
+        boolean validDepth = calibration != null
+                && Double.isFinite(calibration.pixelDepth) && calibration.pixelDepth > 0.0d;
+        if (validWidth) pixelWidth = calibration.pixelWidth;
+        if (validHeight) pixelHeight = calibration.pixelHeight;
+        if (validDepth) pixelDepth = calibration.pixelDepth;
+        int fullDepth = Math.max(1, source.getStackSize());
+        if (!validWidth || !validHeight || (fullDepth > 1 && !validDepth)) unit = "";
         return new SweepProvenance(crop, source.getWidth(), source.getHeight(),
-                Math.max(1, source.getStackSize()), displayedRanges(displayWindow),
+                fullDepth, displayedRanges(displayWindow),
                 unit, pixelWidth, pixelHeight, pixelDepth, connectivity.name());
     }
 

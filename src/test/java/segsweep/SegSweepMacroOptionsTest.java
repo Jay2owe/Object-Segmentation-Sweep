@@ -117,6 +117,20 @@ public class SegSweepMacroOptionsTest {
     }
 
     @Test
+    public void duplicateExplicitAxisCoordinatesAreRejected() {
+        try {
+            SegSweepMacroOptionsParser.parse(
+                    "sweep=threshold values=[10,10.0,20]");
+        } catch (SegSweepParameters.ValidationException expected) {
+            assertEquals(SegSweepParameters.ValidationFailure.INVALID_AXIS_VALUE,
+                    expected.failure());
+            assertTrue(expected.getMessage().contains("duplicate"));
+            return;
+        }
+        throw new AssertionError("Expected duplicate axis coordinate failure.");
+    }
+
+    @Test
     public void duplicatePrimaryAndSecondaryAxesAreRejected() {
         try {
             SegSweepMacroOptionsParser.parse(

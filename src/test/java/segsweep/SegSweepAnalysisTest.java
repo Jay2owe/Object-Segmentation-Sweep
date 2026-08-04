@@ -13,6 +13,7 @@ import ij.ImageStack;
 import ij.measure.Calibration;
 import ij.measure.ResultsTable;
 import ij.process.ImageProcessor;
+import ij.process.ByteProcessor;
 import ij.process.FloatProcessor;
 import ij.process.ColorProcessor;
 import ij.process.ShortProcessor;
@@ -155,6 +156,52 @@ public class SegSweepAnalysisTest {
     }
 
     @Test
+    public void invalidDepthSpacingLeavesThreeDimensionalDensityUncalibrated() {
+        ImageStack stack = new ImageStack(8, 8);
+        ShortProcessor first = new ShortProcessor(8, 8);
+        ShortProcessor second = new ShortProcessor(8, 8);
+        first.set(2, 2, 100);
+        second.set(2, 2, 100);
+        stack.addSlice(first);
+        stack.addSlice(second);
+        ImagePlus image = new ImagePlus("invalid-z-spacing", stack);
+        image.setDimensions(1, 2, 1);
+        Calibration calibration = new Calibration();
+        calibration.pixelWidth = 0.5d;
+        calibration.pixelHeight = 0.5d;
+        calibration.pixelDepth = 0.0d;
+        calibration.setUnit("micron");
+        image.setCalibration(calibration);
+
+        SegSweepResult result = SegSweep.run(SegSweepParameters.builder()
+                .image(image)
+                .axis(ParameterId.THRESHOLD, ParameterValueList.ofInts(10))
+                .pickCriterion(SegSweepParameters.PickCriterion.NONE)
+                .build());
+
+        assertEquals("", result.sweepTable().getStringValue(
+                SegSweepResult.COL_OBJECTS_PER_MM3, 0));
+        assertTrue(result.results().get(0).hasFlag(VariationResult.Flag.UNCALIBRATED));
+        assertContains(result.warnings(), "uncalibrated");
+    }
+
+    @Test
+    public void twoDimensionalDensityRequiresOnlyValidXySpacing() {
+        ImagePlus image = designedKneeStack(true);
+        image.getCalibration().pixelDepth = Double.NaN;
+
+        SegSweepResult result = SegSweep.run(SegSweepParameters.builder()
+                .image(image)
+                .axis(ParameterId.THRESHOLD, ParameterValueList.ofInts(10))
+                .pickCriterion(SegSweepParameters.PickCriterion.NONE)
+                .build());
+
+        assertTrue(Double.isFinite(result.sweepTable().getValue(
+                SegSweepResult.COL_OBJECTS_PER_MM2, 0)));
+        assertTrue(!result.results().get(0).hasFlag(VariationResult.Flag.UNCALIBRATED));
+    }
+
+    @Test
     public void smallCropCompletesAndReportsFractionWarning() {
         SegSweepResult result = SegSweep.run(SegSweepParameters.builder()
                 .image(designedKneeStack(true))
@@ -266,6 +313,32 @@ public class SegSweepAnalysisTest {
                                 .image(new ImagePlus("rgb", new ColorProcessor(8, 8)))
                                 .axis(ParameterId.THRESHOLD, 1, 3, 1)
                                 .build());
+                    }
+                });
+        expectFailure(SegSweepParameters.ValidationFailure.UNSUPPORTED_TIME_SERIES,
+                new Runnable() {
+                    @Override public void run() {
+                        ImageStack stack = new ImageStack(8, 8);
+                        stack.addSlice(new ByteProcessor(8, 8));
+                        stack.addSlice(new ByteProcessor(8, 8));
+                        ImagePlus timeSeries = new ImagePlus("time-series", stack);
+                        timeSeries.setDimensions(1, 1, 2);
+                        timeSeries.setOpenAsHyperStack(true);
+                        SegSweep.run(SegSweepParameters.builder()
+                                .image(timeSeries)
+                                .axis(ParameterId.THRESHOLD, 1, 3, 1)
+                                .build());
+                    }
+                });
+        expectFailure(SegSweepParameters.ValidationFailure.INVALID_AXIS_VALUE,
+                new Runnable() {
+                    @Override public void run() {
+                        SegSweepParameters.builder()
+                                .image(designedKneeStack(true))
+                                .axis(ParameterId.THRESHOLD,
+                                        ParameterValueList.of(Arrays.<Object>asList(
+                                                Integer.valueOf(10), Double.valueOf(10.0d),
+                                                Integer.valueOf(20))));
                     }
                 });
     }
@@ -444,6 +517,23 @@ public class SegSweepAnalysisTest {
         assertEquals(1.0d, result.pick().knee().rangeMin(), 0.0d);
         assertEquals(4.0d, result.pick().knee().rangeMax(), 0.0d);
         assertEquals(1.0d, result.pick().knee().step(), 0.0d);
+    }
+
+    @Test
+    public void irregularExplicitKneeAxisReportsNoFalseStepAndExactSamples() {
+        ParameterValueList values = ParameterValueList.ofDoubles(1, 2, 10, 50);
+        SegSweepResult result = SegSweep.run(SegSweepParameters.builder()
+                .image(designedKneeStack(true))
+                .axis(ParameterId.MIN_SIZE, values)
+                .pickCriterion(SegSweepParameters.PickCriterion.KNEE)
+                .build());
+
+        KneeOutcome knee = result.pick().knee();
+        assertTrue(Double.isNaN(knee.step()));
+        assertEquals(values.toCanonicalJson(), result.pickTable().getStringValue(
+                SegSweepResult.PICK_KNEE_RANGE_VALUES, 0));
+        assertTrue(Double.isNaN(result.pickTable().getValue(
+                SegSweepResult.PICK_KNEE_RANGE_STEP, 0)));
     }
 
     @Test
