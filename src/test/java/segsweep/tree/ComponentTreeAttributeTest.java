@@ -9,6 +9,7 @@
 package segsweep.tree;
 
 import ij.ImagePlus;
+import ij.process.ByteProcessor;
 import org.junit.Test;
 import segsweep.SegSweepLabeller;
 import segsweep.SegSweepLabellerFixtures;
@@ -84,6 +85,17 @@ public class ComponentTreeAttributeTest {
     }
 
     @Test
+    public void elongationIsInvariantToLargeCoordinateTranslation() {
+        ComponentTreeResult atOrigin = translatedSquare(0);
+        ComponentTreeResult atLargeX = translatedSquare(46341);
+
+        assertEquals(1, atOrigin.objectCount());
+        assertEquals(1, atLargeX.objectCount());
+        assertEquals(atOrigin.selectedNodes().get(0).elongation(),
+                atLargeX.selectedNodes().get(0).elongation(), 1.0e-12);
+    }
+
+    @Test
     public void floatThresholdLevelsAreSortedAndUnique() {
         ImagePlus image = new ImagePlus("float-levels",
                 new ij.process.FloatProcessor(4, 1,
@@ -111,5 +123,18 @@ public class ComponentTreeAttributeTest {
 
     private static double expectedCompactness(double volume, double surface) {
         return (36.0 * Math.PI * volume * volume) / (surface * surface * surface);
+    }
+
+    private static ComponentTreeResult translatedSquare(int x0) {
+        ByteProcessor pixels = new ByteProcessor(46343, 2);
+        for (int y = 0; y < 2; y++) {
+            for (int x = x0; x < x0 + 2; x++) pixels.set(x, y, 20);
+        }
+        return ComponentTree.build(new ImagePlus("translated-square", pixels),
+                SegSweepLabeller.Connectivity.SIX)
+                .query(ComponentTreeQuery.builder()
+                        .threshold(10)
+                        .predicate(MorphologyAttribute.ELONGATION, ">=", 0.5d)
+                        .build());
     }
 }

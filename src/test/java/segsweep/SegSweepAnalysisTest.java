@@ -40,6 +40,7 @@ import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
@@ -222,6 +223,35 @@ public class SegSweepAnalysisTest {
         assertEquals(combos.size(), completed.size());
         assertEquals(expectedWorkers, maximum.get());
         assertEquals(0, active.get());
+    }
+
+    @Test
+    public void completedResultsPublishBeforeReturnWithMiddleCombinationFirst() {
+        ByteProcessor pixels = new ByteProcessor(2, 2);
+        pixels.setValue(100);
+        pixels.fill();
+        final AtomicBoolean returned = new AtomicBoolean(false);
+        final List<VariationResult> published = new ArrayList<VariationResult>();
+
+        SegSweepResult result = SegSweepAnalysis.run(SegSweepParameters.builder()
+                        .image(new ImagePlus("incremental-results", pixels))
+                        .axis(ParameterId.THRESHOLD, 0, 40, 10)
+                        .parallelism(1)
+                        .pickCriterion(SegSweepParameters.PickCriterion.NONE)
+                        .build(),
+                null, null, new Consumer<VariationResult>() {
+                    @Override public void accept(VariationResult completed) {
+                        assertTrue("Result callback must run before analysis returns", !returned.get());
+                        published.add(completed);
+                    }
+                });
+        returned.set(true);
+
+        assertEquals(5, published.size());
+        assertEquals(20.0d, ((Number) published.get(0).combo().get(
+                ParameterId.THRESHOLD)).doubleValue(), 0.0d);
+        assertEquals(0.0d, ((Number) result.results().get(0).combo().get(
+                ParameterId.THRESHOLD)).doubleValue(), 0.0d);
     }
 
     @Test

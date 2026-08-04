@@ -406,12 +406,12 @@ public final class ComponentTreeBuilder {
             xSum[index] = x;
             ySum[index] = y;
             zSum[index] = z;
-            xxSum[index] = x * x;
-            yySum[index] = y * y;
-            zzSum[index] = z * z;
-            xySum[index] = x * y;
-            xzSum[index] = x * z;
-            yzSum[index] = y * z;
+            xxSum[index] = (double) x * (double) x;
+            yySum[index] = (double) y * (double) y;
+            zzSum[index] = (double) z * (double) z;
+            xySum[index] = (double) x * (double) y;
+            xzSum[index] = (double) x * (double) z;
+            yzSum[index] = (double) y * (double) z;
         }
 
         void merge(int into, int from) {

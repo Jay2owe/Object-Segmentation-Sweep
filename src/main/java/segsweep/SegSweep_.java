@@ -187,6 +187,14 @@ public class SegSweep_ implements PlugIn {
                                 @Override public boolean getAsBoolean() {
                                     return cancelled.get();
                                 }
+                            }, new Consumer<VariationResult>() {
+                                @Override public void accept(final VariationResult result) {
+                                    SwingUtilities.invokeLater(new Runnable() {
+                                        @Override public void run() {
+                                            if (!cancelled.get()) progressGrid.setResult(result);
+                                        }
+                                    });
+                                }
                             });
                     if (cancelled.get()) throw new CancellationException("Sweep cancelled.");
                     final SegSweepResult completed = result;

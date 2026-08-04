@@ -76,6 +76,18 @@ public final class SegSweepAnalysis {
     public static SegSweepResult run(SegSweepParameters params,
                                      Consumer<SweepProgress> progress,
                                      BooleanSupplier cancelCheck) {
+        return run(params, progress, cancelCheck, null);
+    }
+
+    /**
+     * Runs a sweep and publishes each displayed result as soon as its query
+     * completes. Completion order follows actual dispatch/completion order;
+     * the returned result remains canonical and fully scored.
+     */
+    public static SegSweepResult run(SegSweepParameters params,
+                                     Consumer<SweepProgress> progress,
+                                     BooleanSupplier cancelCheck,
+                                     Consumer<VariationResult> resultComplete) {
         validate(params);
         checkCancelled(cancelCheck);
 
@@ -110,7 +122,7 @@ public final class SegSweepAnalysis {
                     ? fullThresholdAxis(tree) : new double[0];
             List<VariationResult> displayedResults =
                     queryDisplayedResults(tree, displayWindow, provenance,
-                            params.parallelism(), progress, cancelCheck);
+                            params.parallelism(), progress, cancelCheck, resultComplete);
             PickAssembly pickAssembly = scoreAndPick(tree, displayWindow,
                     displayedResults, provenance, params, warnings, fullThresholdValues,
                     progress, cancelCheck);
@@ -265,11 +277,12 @@ public final class SegSweepAnalysis {
     }
 
     private static List<VariationResult> queryDisplayedResults(ComponentTree tree,
-                                                               ParameterSweep displayWindow,
-                                                               SweepProvenance provenance,
-                                                               int parallelism,
-                                                               Consumer<SweepProgress> progress,
-                                                               BooleanSupplier cancelCheck) {
+                                                                ParameterSweep displayWindow,
+                                                                SweepProvenance provenance,
+                                                                int parallelism,
+                                                                Consumer<SweepProgress> progress,
+                                                                BooleanSupplier cancelCheck,
+                                                                Consumer<VariationResult> resultComplete) {
         final List<ParameterCombo> ordered = SweepDispatchOrder.order(displayWindow);
         final ComponentTree activeTree = tree;
         final SweepProvenance activeProvenance = provenance;
@@ -285,7 +298,7 @@ public final class SegSweepAnalysis {
                         emit(progress, completed.intValue(), ordered.size(), "querying",
                                 "Querying component tree.");
                     }
-                });
+                }, resultComplete);
         return canonicalResultOrder(displayWindow, results);
     }
 
@@ -324,6 +337,15 @@ public final class SegSweepAnalysis {
                                       final QueryTask<T> task,
                                       final BooleanSupplier cancelCheck,
                                       Consumer<Integer> onComplete) {
+        return executeQueries(ordered, parallelism, task, cancelCheck, onComplete, null);
+    }
+
+    static <T> List<T> executeQueries(List<ParameterCombo> ordered,
+                                      int parallelism,
+                                      final QueryTask<T> task,
+                                      final BooleanSupplier cancelCheck,
+                                      Consumer<Integer> onComplete,
+                                      Consumer<T> resultComplete) {
         if (ordered == null || task == null) {
             throw new IllegalArgumentException("ordered combinations and query task are required");
         }
@@ -333,7 +355,9 @@ public final class SegSweepAnalysis {
         if (workers == 1) {
             for (int i = 0; i < ordered.size(); i++) {
                 checkCancelled(cancelCheck);
-                results.add(task.query(ordered.get(i)));
+                T result = task.query(ordered.get(i));
+                results.add(result);
+                if (resultComplete != null) resultComplete.accept(result);
                 if (onComplete != null) onComplete.accept(Integer.valueOf(i + 1));
             }
             return results;
@@ -364,7 +388,9 @@ public final class SegSweepAnalysis {
                     checkCancelled(cancelCheck);
                 }
                 try {
-                    results.add(future.get());
+                    T result = future.get();
+                    results.add(result);
+                    if (resultComplete != null) resultComplete.accept(result);
                 } catch (InterruptedException ex) {
                     Thread.currentThread().interrupt();
                     throw cancelled("Parameter sweep query was interrupted.", ex);
