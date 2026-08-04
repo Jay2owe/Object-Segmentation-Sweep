@@ -40,7 +40,6 @@ import java.util.function.LongSupplier;
  */
 public final class IouStability {
 
-    static final double COUNT_RATIO_FLOOR = 0.8d;
     private static final int UI_AXIS_CAP = 2;
 
     private IouStability() {
@@ -96,7 +95,6 @@ public final class IouStability {
         double[] means = emptyMeans(combos.size());
         Map<Long, Double> pairCache = new HashMap<Long, Double>();
         int eligibleCount = 0;
-        int topologicallyEligibleCount = 0;
         int bestIndex = -1;
         double bestMean = Double.NEGATIVE_INFINITY;
         LongSupplier safeClock = clock == null ? new LongSupplier() {
@@ -116,14 +114,12 @@ public final class IouStability {
             if (neighbours.isEmpty()) {
                 continue;
             }
-            topologicallyEligibleCount++;
             IouSource source = sources.get(i);
-            if (source == null || source.objectCount() <= 0) {
+            if (source == null) {
                 continue;
             }
             double total = 0.0d;
             int compared = 0;
-            boolean countGateFailed = false;
             for (int n = 0; n < neighbours.size(); n++) {
                 abortReason = guard.abortReason();
                 if (abortReason != null) {
@@ -133,13 +129,7 @@ public final class IouStability {
                 }
                 int neighbourIndex = neighbours.get(n).intValue();
                 IouSource neighbour = sources.get(neighbourIndex);
-                if (neighbour == null || neighbour.objectCount() <= 0) {
-                    countGateFailed = true;
-                    break;
-                }
-                double ratio = countRatio(source.objectCount(), neighbour.objectCount());
-                if (Double.isNaN(ratio) || ratio < COUNT_RATIO_FLOOR) {
-                    countGateFailed = true;
+                if (neighbour == null) {
                     break;
                 }
                 Double cached = pairCache.get(pairKey(i, neighbourIndex));
@@ -158,7 +148,7 @@ public final class IouStability {
                 total += value;
                 compared++;
             }
-            if (countGateFailed || compared != neighbours.size()) {
+            if (compared != neighbours.size()) {
                 continue;
             }
             eligible[i] = true;
@@ -172,14 +162,10 @@ public final class IouStability {
             }
         }
 
-        if (eligibleCount == 0 || bestIndex < 0 || bestMean <= 0.0d) {
+        if (eligibleCount == 0 || bestIndex < 0) {
             return StabilityOutcome.of(StabilityOutcome.Kind.NO_ELIGIBLE_COMBINATIONS,
                     eligibleCount, eligible, means,
-                    topologicallyEligibleCount == 0
-                            ? "No combination has a full neighbour complement."
-                            : eligibleCount == 0
-                            ? "No topologically interior combination passed the non-empty and object-count-ratio gates."
-                            : "No eligible combination had positive neighbour agreement.");
+                    "No combination has a full neighbour complement with successful neighbour results.");
         }
         return StabilityOutcome.stableAt(bestIndex, bestMean, eligibleCount,
                 eligible, means,

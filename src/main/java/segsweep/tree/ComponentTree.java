@@ -238,11 +238,11 @@ public final class ComponentTree {
         return connectivity;
     }
 
-    public int feretComputationCount() {
+    public synchronized int feretComputationCount() {
         return feretComputationCount;
     }
 
-    public void resetFeretComputationCount() {
+    public synchronized void resetFeretComputationCount() {
         feretComputationCount = 0;
     }
 
@@ -347,7 +347,7 @@ public final class ComponentTree {
         return feretDiameterMax(data, null);
     }
 
-    double feretDiameterMax(NodeData data, BooleanSupplier cancelCheck) {
+    synchronized double feretDiameterMax(NodeData data, BooleanSupplier cancelCheck) {
         if (Double.isNaN(data.feretDiameterMax)) {
             if (data.voxelCount > MAX_EXACT_FERET_VOXELS) {
                 throw new SweepRefusedException("Exact Feret diameter for a "

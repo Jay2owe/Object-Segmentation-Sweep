@@ -108,6 +108,40 @@ public class ResourceGuardTest {
 
         assertTrue(feasibility.isOk());
         assertEquals(0L, feasibility.estimate().previewBytes());
+        assertEquals(101L * 512L, feasibility.estimate().combinationBytes());
+    }
+
+    @Test
+    public void computeFeasibilityRefusesPathologicalCellCountBeforeEnumeration() {
+        Map<ParameterId, ParameterValueList> values =
+                new LinkedHashMap<ParameterId, ParameterValueList>();
+        values.put(ParameterId.THRESHOLD, ParameterValueList.fromRange(
+                0, ResourceGuard.MAX_COMPUTE_CELLS, 1));
+        ParameterSweep sweep = new ParameterSweep(ParameterSweep.Method.CLASSICAL,
+                values, CropSpec.full(), "DAPI");
+
+        ResourceGuard.Feasibility feasibility = ResourceGuard.assessComputeFeasibility(
+                sweep, stack("tiny-pathological", 2, 2, 1));
+
+        assertFalse(feasibility.isOk());
+        assertTrue(feasibility.getMessage().contains(
+                Long.toString(ResourceGuard.MAX_COMPUTE_CELLS + 1L)));
+        assertTrue(feasibility.getMessage().contains("compute limit"));
+    }
+
+    @Test
+    public void computeFeasibilityAccountsForCombinationVoxelQueryCost() {
+        Map<ParameterId, ParameterValueList> values =
+                new LinkedHashMap<ParameterId, ParameterValueList>();
+        values.put(ParameterId.THRESHOLD, ParameterValueList.fromRange(0, 999, 1));
+        ParameterSweep sweep = new ParameterSweep(ParameterSweep.Method.CLASSICAL,
+                values, CropSpec.full(), "DAPI");
+
+        ResourceGuard.Feasibility feasibility = ResourceGuard.assessComputeFeasibility(
+                sweep, stack("large-query-product", 512, 512, 1));
+
+        assertFalse(feasibility.isOk());
+        assertTrue(feasibility.getMessage().contains("combination-voxel queries"));
     }
 
     @Test

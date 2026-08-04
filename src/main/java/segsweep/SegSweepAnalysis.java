@@ -49,6 +49,14 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CompletionService;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorCompletionService;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
@@ -104,7 +112,8 @@ public final class SegSweepAnalysis {
                     && soleVaryingAxis(params) == ParameterId.THRESHOLD
                     ? fullThresholdAxis(tree) : new double[0];
             List<VariationResult> displayedResults =
-                    queryDisplayedResults(tree, displayWindow, provenance, progress, cancelCheck);
+                    queryDisplayedResults(tree, displayWindow, provenance,
+                            params.parallelism(), progress, cancelCheck);
             PickAssembly pickAssembly = scoreAndPick(tree, displayWindow,
                     displayedResults, provenance, params, warnings, fullThresholdValues,
                     progress, cancelCheck);
@@ -271,40 +280,132 @@ public final class SegSweepAnalysis {
     private static List<VariationResult> queryDisplayedResults(ComponentTree tree,
                                                                ParameterSweep displayWindow,
                                                                SweepProvenance provenance,
+                                                               int parallelism,
                                                                Consumer<SweepProgress> progress,
                                                                BooleanSupplier cancelCheck) {
-        List<ParameterCombo> ordered = SweepDispatchOrder.order(displayWindow);
-        List<VariationResult> results = new ArrayList<VariationResult>(ordered.size());
-        for (int i = 0; i < ordered.size(); i++) {
-            checkCancelled(cancelCheck);
-            ParameterCombo combo = ordered.get(i);
-            long started = System.currentTimeMillis();
-            EnumSet<VariationResult.Flag> flags = EnumSet.noneOf(VariationResult.Flag.class);
-            try {
-                ComponentTreeResult treeResult = tree.query(
-                        toTreeQuery(combo), cancelCheck);
-                long durationMs = Math.max(0L, System.currentTimeMillis() - started);
-                if (treeResult.status() == ComponentTreeResult.Status.TOO_MANY_LABELS) {
-                    flags.add(VariationResult.Flag.TOO_MANY_LABELS);
-                    results.add(VariationResult.failure(combo,
-                            new IllegalStateException(treeResult.reason()), provenance,
-                            flags, treeResult.objectCount(), durationMs));
-                } else {
-                    results.add(VariationResult.success(combo, treeResult.labelMap(),
-                            treeResult.objectCount(), durationMs, null, provenance, flags,
-                            IouStability.IouSource.fromTreeResult(treeResult)));
-                }
-            } catch (CancellationException ex) {
-                throw ex;
-            } catch (RuntimeException ex) {
-                long durationMs = Math.max(0L, System.currentTimeMillis() - started);
-                results.add(VariationResult.failure(combo, ex, provenance,
-                        flags, 0, durationMs));
-            }
-            emit(progress, i + 1, ordered.size(), "querying",
-                    "Querying component tree.");
-        }
+        final List<ParameterCombo> ordered = SweepDispatchOrder.order(displayWindow);
+        final ComponentTree activeTree = tree;
+        final SweepProvenance activeProvenance = provenance;
+        final BooleanSupplier activeCancelCheck = cancelCheck;
+        List<VariationResult> results = executeQueries(ordered, parallelism,
+                new QueryTask<VariationResult>() {
+                    @Override public VariationResult query(ParameterCombo combo) {
+                        return queryDisplayedResult(activeTree, combo,
+                                activeProvenance, activeCancelCheck);
+                    }
+                }, cancelCheck, new Consumer<Integer>() {
+                    @Override public void accept(Integer completed) {
+                        emit(progress, completed.intValue(), ordered.size(), "querying",
+                                "Querying component tree.");
+                    }
+                });
         return canonicalResultOrder(displayWindow, results);
+    }
+
+    private static VariationResult queryDisplayedResult(ComponentTree tree,
+                                                         ParameterCombo combo,
+                                                         SweepProvenance provenance,
+                                                         BooleanSupplier cancelCheck) {
+        checkCancelled(cancelCheck);
+        long started = System.currentTimeMillis();
+        EnumSet<VariationResult.Flag> flags = EnumSet.noneOf(VariationResult.Flag.class);
+        try {
+            ComponentTreeResult treeResult = tree.query(toTreeQuery(combo), cancelCheck);
+            long durationMs = Math.max(0L, System.currentTimeMillis() - started);
+            if (treeResult.status() == ComponentTreeResult.Status.TOO_MANY_LABELS) {
+                flags.add(VariationResult.Flag.TOO_MANY_LABELS);
+                return VariationResult.failure(combo,
+                        new IllegalStateException(treeResult.reason()), provenance,
+                        flags, treeResult.objectCount(), durationMs);
+            }
+            return VariationResult.success(combo, treeResult.labelMap(),
+                    treeResult.objectCount(), durationMs, null, provenance, flags,
+                    IouStability.IouSource.fromTreeResult(treeResult));
+        } catch (CancellationException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            long durationMs = Math.max(0L, System.currentTimeMillis() - started);
+            return VariationResult.failure(combo, ex, provenance, flags, 0, durationMs);
+        }
+    }
+
+    static <T> List<T> executeQueries(List<ParameterCombo> ordered,
+                                      int parallelism,
+                                      final QueryTask<T> task,
+                                      final BooleanSupplier cancelCheck,
+                                      Consumer<Integer> onComplete) {
+        if (ordered == null || task == null) {
+            throw new IllegalArgumentException("ordered combinations and query task are required");
+        }
+        List<T> results = new ArrayList<T>(ordered.size());
+        if (ordered.isEmpty()) return results;
+        int workers = queryWorkerCount(parallelism, ordered.size());
+        if (workers == 1) {
+            for (int i = 0; i < ordered.size(); i++) {
+                checkCancelled(cancelCheck);
+                results.add(task.query(ordered.get(i)));
+                if (onComplete != null) onComplete.accept(Integer.valueOf(i + 1));
+            }
+            return results;
+        }
+
+        ExecutorService executor = Executors.newFixedThreadPool(workers);
+        CompletionService<T> completion = new ExecutorCompletionService<T>(executor);
+        try {
+            for (final ParameterCombo combo : ordered) {
+                checkCancelled(cancelCheck);
+                completion.submit(new Callable<T>() {
+                    @Override public T call() {
+                        checkCancelled(cancelCheck);
+                        return task.query(combo);
+                    }
+                });
+            }
+            for (int completed = 1; completed <= ordered.size(); completed++) {
+                checkCancelled(cancelCheck);
+                Future<T> future = null;
+                while (future == null) {
+                    try {
+                        future = completion.poll(50L, TimeUnit.MILLISECONDS);
+                    } catch (InterruptedException ex) {
+                        Thread.currentThread().interrupt();
+                        throw cancelled("Parameter sweep query was interrupted.", ex);
+                    }
+                    checkCancelled(cancelCheck);
+                }
+                try {
+                    results.add(future.get());
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                    throw cancelled("Parameter sweep query was interrupted.", ex);
+                } catch (ExecutionException ex) {
+                    rethrowQueryFailure(ex.getCause());
+                }
+                if (onComplete != null) onComplete.accept(Integer.valueOf(completed));
+            }
+            return results;
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private static CancellationException cancelled(String message, Throwable cause) {
+        CancellationException cancelled = new CancellationException(message);
+        if (cause != null) cancelled.initCause(cause);
+        return cancelled;
+    }
+
+    static int queryWorkerCount(int requested, int combinationCount) {
+        int coreBound = Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
+        return Math.min(Math.min(Math.max(1, requested), coreBound),
+                Math.max(1, combinationCount));
+    }
+
+    private static void rethrowQueryFailure(Throwable failure) {
+        if (failure instanceof CancellationException) throw (CancellationException) failure;
+        if (failure instanceof RuntimeException) throw (RuntimeException) failure;
+        if (failure instanceof Error) throw (Error) failure;
+        throw new IllegalStateException("Parameter sweep query failed.", failure);
     }
 
     private static PickAssembly scoreAndPick(ComponentTree tree,
@@ -359,7 +460,7 @@ public final class SegSweepAnalysis {
         for (int i = 0; i < results.size(); i++) {
             VariationResult result = results.get(i);
             combos.add(result.combo());
-            sources.add(result.iouSource());
+            sources.add(result.hasError() ? null : result.iouSource());
         }
         return IouStability.score(combos, sources, cancelCheck, budgetMs);
     }
@@ -870,19 +971,24 @@ public final class SegSweepAnalysis {
             ParameterSweep displayWindow,
             List<VariationResult> dispatched) {
         List<VariationResult> canonical = new ArrayList<VariationResult>(dispatched.size());
+        Map<ParameterCombo, VariationResult> byCoordinate =
+                new LinkedHashMap<ParameterCombo, VariationResult>();
+        for (VariationResult result : dispatched) {
+            if (byCoordinate.put(result.combo(), result) != null) {
+                throw new IllegalStateException(
+                        "A parameter combination was dispatched more than once: " + result.combo());
+            }
+        }
         List<ParameterCombo> expected = displayWindow.combos();
         for (int i = 0; i < expected.size(); i++) {
-            VariationResult match = null;
-            for (int j = 0; j < dispatched.size(); j++) {
-                if (expected.get(i).hasSameCoordinates(dispatched.get(j).combo())) {
-                    match = dispatched.get(j);
-                    break;
-                }
-            }
+            VariationResult match = byCoordinate.remove(expected.get(i));
             if (match == null) {
                 throw new IllegalStateException("A dispatched result is missing from the display grid.");
             }
             canonical.add(match);
+        }
+        if (!byCoordinate.isEmpty()) {
+            throw new IllegalStateException("A dispatched result is outside the display grid.");
         }
         return canonical;
     }
@@ -1100,6 +1206,10 @@ public final class SegSweepAnalysis {
         image.changes = false;
         image.close();
         image.flush();
+    }
+
+    interface QueryTask<T> {
+        T query(ParameterCombo combo);
     }
 
     private static final class PickAssembly {

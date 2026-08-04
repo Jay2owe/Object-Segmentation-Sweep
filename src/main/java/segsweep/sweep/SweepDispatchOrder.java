@@ -11,6 +11,7 @@ package segsweep.sweep;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -35,10 +36,12 @@ public final class SweepDispatchOrder {
         if (source.size() <= 1) {
             return source;
         }
+        Map<ParameterKey, Map<Object, Integer>> valueIndexes = valueIndexes(sweep);
         List<OrderedCombo> ordered = new ArrayList<OrderedCombo>(source.size());
         for (int i = 0; i < source.size(); i++) {
             ParameterCombo combo = source.get(i);
-            ordered.add(new OrderedCombo(combo, chebyshevDistance(sweep, combo), i));
+            ordered.add(new OrderedCombo(combo,
+                    chebyshevDistance(sweep, valueIndexes, combo), i));
         }
         Collections.sort(ordered, new Comparator<OrderedCombo>() {
             @Override public int compare(OrderedCombo a, OrderedCombo b) {
@@ -56,7 +59,26 @@ public final class SweepDispatchOrder {
         return out;
     }
 
-    private static int chebyshevDistance(ParameterSweep sweep, ParameterCombo combo) {
+    private static Map<ParameterKey, Map<Object, Integer>> valueIndexes(ParameterSweep sweep) {
+        Map<ParameterKey, Map<Object, Integer>> indexes =
+                new LinkedHashMap<ParameterKey, Map<Object, Integer>>();
+        for (Map.Entry<ParameterKey, ParameterValueList> entry : sweep.valueLists().entrySet()) {
+            Map<Object, Integer> axis = new LinkedHashMap<Object, Integer>();
+            ParameterValueList values = entry.getValue();
+            for (int i = 0; i < values.size(); i++) {
+                if (!axis.containsKey(values.get(i))) {
+                    axis.put(values.get(i), Integer.valueOf(i));
+                }
+            }
+            indexes.put(entry.getKey(), axis);
+        }
+        return indexes;
+    }
+
+    private static int chebyshevDistance(
+            ParameterSweep sweep,
+            Map<ParameterKey, Map<Object, Integer>> valueIndexes,
+            ParameterCombo combo) {
         int distance = 0;
         for (Map.Entry<ParameterKey, ParameterValueList> entry : sweep.valueLists().entrySet()) {
             ParameterValueList values = entry.getValue();
@@ -64,10 +86,8 @@ public final class SweepDispatchOrder {
                 continue;
             }
             int medianIndex = (values.size() - 1) / 2;
-            int valueIndex = values.values().indexOf(combo.get(entry.getKey()));
-            if (valueIndex < 0) {
-                valueIndex = 0;
-            }
+            Integer indexed = valueIndexes.get(entry.getKey()).get(combo.get(entry.getKey()));
+            int valueIndex = indexed == null ? 0 : indexed.intValue();
             distance = Math.max(distance, Math.abs(valueIndex - medianIndex));
         }
         return distance;

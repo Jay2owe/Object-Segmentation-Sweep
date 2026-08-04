@@ -38,6 +38,9 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
@@ -127,6 +130,59 @@ public class SegSweepAnalysisTest {
         assertTrue(shortResult.pickedSettingsToken().contains("thresh=30"));
         assertTrue(floatResult.pickedSettingsToken().contains("thresh=30"));
         assertTrue(floatResult.pickedSettingsToken().contains("KNEE_AT=32"));
+    }
+
+    @Test(timeout = 10000L)
+    public void moderateComputeOnlySweepCompletesInCanonicalOrder() {
+        SegSweepResult result = SegSweep.run(SegSweepParameters.builder()
+                .image(new ImagePlus("tiny-moderate-sweep", new ByteProcessor(2, 2)))
+                .axis(ParameterId.THRESHOLD, 0, 999, 1)
+                .parallelism(4)
+                .pickCriterion(SegSweepParameters.PickCriterion.NONE)
+                .build());
+
+        ResultsTable sweep = result.sweepTable();
+        assertEquals(1000, sweep.size());
+        assertEquals(0.0d, sweep.getValue(ParameterId.THRESHOLD.displayLabel(), 0), 0.0d);
+        assertEquals(999.0d, sweep.getValue(
+                ParameterId.THRESHOLD.displayLabel(), sweep.size() - 1), 0.0d);
+    }
+
+    @Test(timeout = 5000L)
+    public void parallelQueryHelperHonoursConfiguredWorkerBound() {
+        LinkedHashMap<ParameterId, ParameterValueList> axes =
+                new LinkedHashMap<ParameterId, ParameterValueList>();
+        axes.put(ParameterId.THRESHOLD, ParameterValueList.ofInts(0, 1, 2, 3, 4, 5));
+        List<ParameterCombo> combos = new segsweep.sweep.ParameterSweep(
+                segsweep.sweep.ParameterSweep.Method.CLASSICAL, axes).combos();
+        final int expectedWorkers = SegSweepAnalysis.queryWorkerCount(3, combos.size());
+        final AtomicInteger active = new AtomicInteger();
+        final AtomicInteger maximum = new AtomicInteger();
+        final CountDownLatch firstWave = new CountDownLatch(expectedWorkers);
+
+        List<ParameterCombo> completed = SegSweepAnalysis.executeQueries(
+                combos, 3, new SegSweepAnalysis.QueryTask<ParameterCombo>() {
+                    @Override public ParameterCombo query(ParameterCombo combo) {
+                        int current = active.incrementAndGet();
+                        updateMaximum(maximum, current);
+                        firstWave.countDown();
+                        try {
+                            if (!firstWave.await(2L, TimeUnit.SECONDS)) {
+                                throw new AssertionError("Configured workers did not run concurrently.");
+                            }
+                            return combo;
+                        } catch (InterruptedException ex) {
+                            Thread.currentThread().interrupt();
+                            throw new AssertionError("Parallel query test was interrupted.");
+                        } finally {
+                            active.decrementAndGet();
+                        }
+                    }
+                }, null, null);
+
+        assertEquals(combos.size(), completed.size());
+        assertEquals(expectedWorkers, maximum.get());
+        assertEquals(0, active.get());
     }
 
     @Test
@@ -735,6 +791,15 @@ public class SegSweepAnalysisTest {
             }
         }
         throw new AssertionError("Expected warning containing " + needle);
+    }
+
+    private static void updateMaximum(AtomicInteger maximum, int candidate) {
+        for (;;) {
+            int previous = maximum.get();
+            if (candidate <= previous || maximum.compareAndSet(previous, candidate)) {
+                return;
+            }
+        }
     }
 
     static ImagePlus designedKneeStack(boolean calibrated) {

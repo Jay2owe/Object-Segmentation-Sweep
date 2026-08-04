@@ -166,8 +166,9 @@ For sweeping preprocessing filter chains rather than segmentation settings, see
 - Knee scoring is one-dimensional and is explicitly refused for two varying axes.
 - Exact Feret evaluation is bounded to 4096 voxels per candidate; affected combinations are
   reported as failed rows and remain available for manual diagnosis.
-- Interactive grids and synthetic autosave montages are limited to 100 cells; compute-only Java
-  API runs may return larger result tables when no grid output is requested.
+- Interactive grids and synthetic autosave montages are limited to 100 cells. Compute-only Java
+  API runs may return larger result tables, but are refused above 10,000 combinations or 250
+  million combination-voxel queries so pathological ranges fail before dispatch.
 - Results are conditional on the recorded crop, displayed values, and knee computation domain.
 - `Duration_ms` is wall-clock telemetry and can vary across otherwise identical runs.
 

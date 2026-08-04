@@ -74,7 +74,7 @@ public class IouStabilityEligibilityTest {
     }
 
     @Test
-    public void countGateFailureIsNotReportedAsStabilityEligible() {
+    public void interiorScoreIsReportedDespiteLargeObjectCountChanges() {
         StabilityOutcome outcome = IouStability.score(
                 TestCombos.oneAxis(Arrays.asList(
                         Integer.valueOf(0), Integer.valueOf(1), Integer.valueOf(2))),
@@ -83,10 +83,26 @@ public class IouStabilityEligibilityTest {
                         TestCombos.ids(1),
                         TestCombos.ids(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)));
 
-        assertEquals(StabilityOutcome.Kind.NO_ELIGIBLE_COMBINATIONS, outcome.kind());
-        assertEquals(0, outcome.eligibleCount());
-        assertFalse(outcome.isEligible(1));
-        assertTrue(outcome.explanation().contains("object-count-ratio gates"));
+        assertEquals(StabilityOutcome.Kind.STABLE_AT, outcome.kind());
+        assertEquals(1, outcome.eligibleCount());
+        assertTrue(outcome.isEligible(1));
+        assertEquals(0.1d, outcome.meanNeighbourIou(1), 0.000001d);
+    }
+
+    @Test
+    public void zeroIouStillReturnsDeterministicInteriorPick() {
+        StabilityOutcome outcome = IouStability.score(
+                TestCombos.oneAxis(Arrays.asList(
+                        Integer.valueOf(0), Integer.valueOf(1), Integer.valueOf(2),
+                        Integer.valueOf(3), Integer.valueOf(4))),
+                TestCombos.sources(
+                        TestCombos.ids(1), TestCombos.ids(2), TestCombos.ids(3),
+                        TestCombos.ids(4), TestCombos.ids(5)));
+
+        assertEquals(StabilityOutcome.Kind.STABLE_AT, outcome.kind());
+        assertEquals(3, outcome.eligibleCount());
+        assertEquals(1, outcome.index());
+        assertEquals(0.0d, outcome.meanNeighbourIou(), 0.0d);
     }
 
     @Test

@@ -48,8 +48,9 @@ public class SegSweepDialogTest {
         ByteProcessor processor = new ByteProcessor(7000, 7000);
         ImagePlus huge = new ImagePlus("huge", processor);
         String text = SegSweepDialog.costEstimateText(huge, SegSweepMacroOptions.defaults());
-        assertTrue(text.toLowerCase(Locale.ROOT).contains("above the limit"));
-        assertTrue(text.toLowerCase(Locale.ROOT).contains("crop"));
+        String lower = text.toLowerCase(Locale.ROOT);
+        assertTrue(lower.contains("above") && lower.contains("limit"));
+        assertTrue(lower.contains("crop"));
     }
 
     @Test
