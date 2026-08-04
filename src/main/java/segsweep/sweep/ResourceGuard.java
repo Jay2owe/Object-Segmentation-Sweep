@@ -33,17 +33,22 @@ public final class ResourceGuard {
      * retain Swing cells or preview montages and must not inherit UI limits.
      */
     public static Feasibility assessComputeFeasibility(ParameterSweep sweep, ImagePlus source) {
-        return assessFeasibility(sweep, source, false);
+        return assessFeasibility(sweep, source, OutputMode.COMPUTE_ONLY);
+    }
+
+    /** Assesses compute plus the deterministic PNG montage written by autosave. */
+    public static Feasibility assessMontageFeasibility(ParameterSweep sweep, ImagePlus source) {
+        return assessFeasibility(sweep, source, OutputMode.MONTAGE);
     }
 
     /** Assesses compute plus the retained preview/Swing grid working set. */
     public static Feasibility assessFeasibility(ParameterSweep sweep, ImagePlus source) {
-        return assessFeasibility(sweep, source, true);
+        return assessFeasibility(sweep, source, OutputMode.DISPLAY);
     }
 
     private static Feasibility assessFeasibility(ParameterSweep sweep,
                                                   ImagePlus source,
-                                                  boolean includeDisplay) {
+                                                  OutputMode outputMode) {
         if (sweep == null) {
             return Feasibility.refused(null, availableBytes(),
                     "No parameter sweep was provided.");
@@ -61,22 +66,32 @@ public final class ResourceGuard {
         Rectangle crop = sweep.cropSpec().boundsFor(source);
         Estimate estimate = estimateTreeMemory(source, crop);
         long available = availableBytes();
-        if (includeDisplay) {
+        if (outputMode != OutputMode.COMPUTE_ONLY) {
             long cropPreviewBytes = multiply(multiply(crop.width, crop.height),
                     RGB_PREVIEW_BYTES_PER_PIXEL);
-            long retainedBytesPerCell = saturatingAdd(
-                    Math.max(cropPreviewBytes, MONTAGE_CELL_BYTES), SWING_BYTES_PER_CELL);
+            long retainedBytesPerCell = outputMode == OutputMode.DISPLAY
+                    ? saturatingAdd(Math.max(cropPreviewBytes, MONTAGE_CELL_BYTES),
+                    SWING_BYTES_PER_CELL)
+                    : MONTAGE_CELL_BYTES;
             long previewBytes = multiply(sweep.cellCount(), retainedBytesPerCell);
             estimate = estimate.withPreviewBytes(previewBytes);
             if (sweep.cellCount() > MAX_DISPLAY_CELLS) {
                 return Feasibility.refused(estimate, available,
-                        "The display grid contains " + sweep.cellCount()
+                        "The " + (outputMode == OutputMode.DISPLAY
+                                ? "display grid" : "autosave montage")
+                                + " contains " + sweep.cellCount()
                                 + " cells, above the practical limit of "
                                 + MAX_DISPLAY_CELLS
-                                + ". Narrow the ranges or step sizes before opening the grid.");
+                                + ". Narrow the ranges or step sizes before creating this output.");
             }
         }
         return decide(estimate, available, (long) Math.floor(available * DEFAULT_AVAILABLE_FRACTION));
+    }
+
+    private enum OutputMode {
+        COMPUTE_ONLY,
+        MONTAGE,
+        DISPLAY
     }
 
     public static Decision checkTreeMemory(ImagePlus source, CropSpec cropSpec, long maxBytes) {

@@ -53,10 +53,10 @@ public class SegSweepDialogTest {
     }
 
     @Test
-    public void disabledGridDoesNotApplySwingCellLimit() {
+    public void disabledGridUsesMontageRatherThanSwingFeasibility() {
         SegSweepMacroOptions options = SegSweepMacroOptions.defaults();
         options.setPrimaryAxis(SegSweepMacroOptions.AxisSpec.range(
-                ParameterId.THRESHOLD, 0, 100, 1));
+                ParameterId.THRESHOLD, 0, 99, 1));
         options.setShowGrid(false);
 
         assertTrue(SegSweepDialog.feasibility(

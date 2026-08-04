@@ -13,6 +13,9 @@ import ij.io.FileSaver;
 import ij.measure.ResultsTable;
 import ij.process.ImageProcessor;
 import segsweep.sweep.ParameterId;
+import segsweep.sweep.ParameterSweep;
+import segsweep.sweep.ParameterValueList;
+import segsweep.sweep.ResourceGuard;
 import segsweep.sweep.VariationResult;
 import segsweep.tree.LazyLabelMap;
 import segsweep.ui.render.LabelMapStyler;
@@ -30,6 +33,7 @@ import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
 import java.util.List;
 
 /**
@@ -85,6 +89,7 @@ public final class AutoSaveWriter {
                                  SegSweepResult result,
                                  BufferedImage reviewedGrid) throws IOException {
         validate(outputDir, inputFile, result);
+        if (reviewedGrid == null) ensureSyntheticGridFeasible(result);
         mkdirs(outputDir);
         File labelsDir = new File(outputDir, "labels");
         mkdirs(labelsDir);
@@ -136,6 +141,18 @@ public final class AutoSaveWriter {
             throw new IllegalArgumentException("result must not be null.");
         }
         ensurePathReasonable(outputDir.getAbsoluteFile());
+    }
+
+    private static void ensureSyntheticGridFeasible(SegSweepResult result) throws IOException {
+        SegSweepParameters parameters = result.parameters();
+        ParameterSweep sweep = new ParameterSweep(ParameterSweep.Method.CLASSICAL,
+                new LinkedHashMap<ParameterId, ParameterValueList>(parameters.axes()),
+                parameters.crop(), "C" + parameters.channel());
+        ResourceGuard.Feasibility feasibility = ResourceGuard.assessMontageFeasibility(
+                sweep, parameters.image());
+        if (!feasibility.isOk()) {
+            throw new IOException(feasibility.getMessage());
+        }
     }
 
     private static void mkdirs(File dir) throws IOException {

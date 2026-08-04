@@ -35,6 +35,30 @@ public class StepsModeSweepBuildTest {
     }
 
     @Test
+    public void tinyMagnitudeRangeHasScaleIndependentCount() {
+        ParameterValueList values = ParameterValueList.fromRange(0.0d, 1.0e-12d, 1.0e-13d);
+
+        assertEquals(11, values.size());
+        assertEquals(0.0d, ((Number) values.get(0)).doubleValue(), 0.0d);
+        assertEquals(1.0e-12d, ((Number) values.get(10)).doubleValue(), 0.0d);
+    }
+
+    @Test
+    public void largeMagnitudeRangeRetainsBoundedDistinctSteps() {
+        ParameterValueList values = ParameterValueList.fromRange(
+                1.0e12d, 1.0e12d + 1.0d, 0.25d);
+
+        assertEquals(5, values.size());
+        assertEquals(1.0e12d + 1.0d,
+                ((Number) values.get(values.size() - 1)).doubleValue(), 0.0d);
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void stepTooSmallForDoubleScaleIsRejected() {
+        ParameterValueList.fromRange(1.0e16d, 1.0e16d + 4.0d, 0.25d);
+    }
+
+    @Test
     public void threeByFourSweepHasDocumentedStableOrder() {
         Map<ParameterId, ParameterValueList> axes =
                 new LinkedHashMap<ParameterId, ParameterValueList>();

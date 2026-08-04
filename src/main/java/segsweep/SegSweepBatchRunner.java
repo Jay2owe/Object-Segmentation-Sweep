@@ -11,6 +11,10 @@ package segsweep;
 import ij.IJ;
 import ij.ImagePlus;
 import ij.measure.ResultsTable;
+import segsweep.sweep.ParameterId;
+import segsweep.sweep.ParameterSweep;
+import segsweep.sweep.ParameterValueList;
+import segsweep.sweep.ResourceGuard;
 
 import java.io.File;
 import java.io.IOException;
@@ -82,6 +86,14 @@ public final class SegSweepBatchRunner {
                         if (image == null) {
                             throw new IOException("Could not open image.");
                         }
+                        if (parameters.autoSave()) {
+                            ResourceGuard.Feasibility feasibility =
+                                    ResourceGuard.assessMontageFeasibility(
+                                            displayWindow(parameters.analysisOptions()), image);
+                            if (!feasibility.isOk()) {
+                                throw new SweepRefusedException(feasibility.getMessage());
+                            }
+                        }
                         SegSweepResult result = SegSweep.run(
                                 parameters.analysisOptions().toParameters(image));
                         File imageOutputDir = null;
@@ -113,6 +125,17 @@ public final class SegSweepBatchRunner {
             writeBatchRollup(outputRoot, result);
         }
         return result;
+    }
+
+    private static ParameterSweep displayWindow(SegSweepMacroOptions options) {
+        Map<ParameterId, ParameterValueList> axes =
+                new java.util.LinkedHashMap<ParameterId, ParameterValueList>();
+        axes.put(options.primaryAxis().id(), options.primaryAxis().valueList());
+        if (options.secondaryAxis() != null) {
+            axes.put(options.secondaryAxis().id(), options.secondaryAxis().valueList());
+        }
+        return new ParameterSweep(ParameterSweep.Method.CLASSICAL, axes,
+                options.crop(), "C" + options.channel());
     }
 
     private static void writeBatchRollup(File outputRoot, SegSweepBatchResult result) {

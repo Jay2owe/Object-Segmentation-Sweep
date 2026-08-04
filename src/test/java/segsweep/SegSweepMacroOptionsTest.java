@@ -185,11 +185,11 @@ public class SegSweepMacroOptionsTest {
     }
 
     @Test
-    public void visibleGridDefersAutosaveUntilManualReview() {
+    public void visibleGridAutosavesRenderedReviewForDefaultOrExplicitDestination() {
         SegSweepMacroOptions options = SegSweepMacroOptions.defaults();
         options.setAutosave("output");
         assertFalse(SegSweep_.shouldAutoSaveImmediately(options, false));
-        assertFalse(SegSweep_.shouldAutoSaveRenderedGrid(options));
+        assertTrue(SegSweep_.shouldAutoSaveRenderedGrid(options));
         options.setShowGrid(false);
         assertTrue(SegSweep_.shouldAutoSaveImmediately(options, false));
         options.setShowGrid(true);

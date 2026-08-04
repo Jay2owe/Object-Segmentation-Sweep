@@ -177,7 +177,7 @@ public final class SegSweepDialog {
         ParameterSweep sweep = new ParameterSweep(ParameterSweep.Method.CLASSICAL,
                 axes, safe.crop(), "C" + safe.channel());
         return safe.hideDisplay() || !safe.showGrid()
-                ? ResourceGuard.assessComputeFeasibility(sweep, image)
+                ? ResourceGuard.assessMontageFeasibility(sweep, image)
                 : ResourceGuard.assessFeasibility(sweep, image);
     }
 

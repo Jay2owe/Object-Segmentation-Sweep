@@ -10,6 +10,7 @@ package segsweep;
 
 import ij.ImagePlus;
 import ij.io.FileSaver;
+import ij.process.ByteProcessor;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -20,6 +21,7 @@ import segsweep.token.SegmentationTokenParser;
 import segsweep.tree.LazyLabelMap;
 
 import java.io.File;
+import java.io.IOException;
 import java.awt.image.BufferedImage;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -125,6 +127,29 @@ public class AutoSaveWriterTest {
                 new File(output, "pick_summary.csv").toPath()), StandardCharsets.UTF_8);
         assertTrue(pickSummary.contains("NOT_REQUESTED"));
         assertTrue(pickSummary.contains("none"));
+    }
+
+    @Test
+    public void syntheticMontageRefusesMoreThanOneHundredCellsBeforeAllocation() throws Exception {
+        File input = tmp.newFile("many-cells.tif");
+        File output = new File(tmp.getRoot(), "many-cells-output");
+        ByteProcessor pixels = new ByteProcessor(2, 2);
+        pixels.set(0, 0, 100);
+        SegSweepResult result = SegSweep.run(SegSweepParameters.builder()
+                .image(new ImagePlus("many-cells", pixels))
+                .axis(ParameterId.THRESHOLD, 0, 100, 1)
+                .pickCriterion(SegSweepParameters.PickCriterion.NONE)
+                .build());
+
+        try {
+            AutoSaveWriter.writeTo(output, input, result);
+        } catch (IOException expected) {
+            assertTrue(expected.getMessage().contains("autosave montage"));
+            assertTrue(expected.getMessage().contains("101 cells"));
+            assertFalse(output.exists());
+            return;
+        }
+        throw new AssertionError("Expected oversized synthetic montage refusal.");
     }
 
     @Test

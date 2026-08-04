@@ -8,13 +8,15 @@
  */
 package segsweep.sweep;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
 public final class ParameterValueList {
 
-    private static final double RANGE_EPSILON = 1.0e-9d;
+    private static final int MAX_RANGE_VALUES = 1000000;
 
     private final List<Object> values;
     private final String note;
@@ -55,16 +57,30 @@ public final class ParameterValueList {
         if ((to > from && step < 0.0d) || (to < from && step > 0.0d)) {
             throw new IllegalArgumentException("step direction must reach the end value");
         }
-        List<Object> out = new ArrayList<Object>();
-        double value = from;
-        int guard = 0;
-        while (step > 0.0d ? value <= to + RANGE_EPSILON : value >= to - RANGE_EPSILON) {
-            out.add(Double.valueOf(value));
-            value += step;
-            guard++;
-            if (guard > 1000000) {
-                throw new IllegalArgumentException("range produces too many values");
+        BigDecimal start = BigDecimal.valueOf(from);
+        BigDecimal end = BigDecimal.valueOf(to);
+        BigDecimal increment = BigDecimal.valueOf(step);
+        BigDecimal distance = end.subtract(start).abs();
+        BigDecimal stepMagnitude = increment.abs();
+        BigInteger intervals = distance.divideToIntegralValue(stepMagnitude).toBigIntegerExact();
+        BigInteger countValue = intervals.add(BigInteger.ONE);
+        if (countValue.compareTo(BigInteger.valueOf(MAX_RANGE_VALUES)) > 0) {
+            throw new IllegalArgumentException("range produces too many values");
+        }
+        int count = countValue.intValue();
+        List<Object> out = new ArrayList<Object>(count);
+        double previous = Double.NaN;
+        for (int i = 0; i < count; i++) {
+            double value = start.add(increment.multiply(BigDecimal.valueOf(i))).doubleValue();
+            if (!Double.isFinite(value)) {
+                throw new IllegalArgumentException("range value is outside the finite double domain");
             }
+            if (i > 0 && (step > 0.0d ? value <= previous : value >= previous)) {
+                throw new IllegalArgumentException(
+                        "step is too small to produce distinct values at this numeric scale");
+            }
+            out.add(Double.valueOf(value));
+            previous = value;
         }
         return new ParameterValueList(out);
     }

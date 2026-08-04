@@ -110,6 +110,22 @@ public class ResourceGuardTest {
         assertEquals(0L, feasibility.estimate().previewBytes());
     }
 
+    @Test
+    public void montageFeasibilityRejectsOversizedHeadlessOutput() {
+        Map<ParameterId, ParameterValueList> values =
+                new LinkedHashMap<ParameterId, ParameterValueList>();
+        values.put(ParameterId.THRESHOLD, ParameterValueList.fromRange(0, 100, 1));
+        ParameterSweep sweep = new ParameterSweep(ParameterSweep.Method.CLASSICAL,
+                values, CropSpec.full(), "DAPI");
+
+        ResourceGuard.Feasibility feasibility = ResourceGuard.assessMontageFeasibility(
+                sweep, stack("tiny-montage", 2, 2, 1));
+
+        assertFalse(feasibility.isOk());
+        assertTrue(feasibility.getMessage().contains("autosave montage"));
+        assertTrue(feasibility.getMessage().contains("101 cells"));
+    }
+
     private static ImagePlus stack(String title, int width, int height, int slices) {
         ImageStack stack = new ImageStack(width, height);
         for (int i = 0; i < slices; i++) {

@@ -20,6 +20,7 @@ import segsweep.sweep.ParameterCombo;
 import segsweep.sweep.ParameterId;
 import segsweep.sweep.ParameterValueList;
 import segsweep.sweep.ParameterSweep;
+import segsweep.sweep.ResourceGuard;
 import segsweep.sweep.SourceImageView;
 import segsweep.sweep.SweepProgress;
 import segsweep.sweep.VariationResult;
@@ -78,6 +79,12 @@ public class SegSweep_ implements PlugIn {
             ImagePlus image = lease == null ? null : lease.image();
             if (image == null) {
                 throw new IllegalArgumentException("No source image was found. Provide image=[path or title] or open an image.");
+            }
+            ResourceGuard.Feasibility outputFeasibility = shouldAutoSaveImmediately(options)
+                    ? ResourceGuard.assessMontageFeasibility(displayWindow(options), image)
+                    : ResourceGuard.assessFeasibility(displayWindow(options), image);
+            if (!outputFeasibility.isOk()) {
+                throw new SweepRefusedException(outputFeasibility.getMessage());
             }
             SegSweepResult result = SegSweep.run(options.toParameters(image));
             if (shouldAutoSaveImmediately(options)) {
@@ -409,7 +416,7 @@ public class SegSweep_ implements PlugIn {
     }
 
     static boolean shouldAutoSaveRenderedGrid(SegSweepMacroOptions options) {
-        return options != null && options.showGrid() && !hasText(options.autosave());
+        return options != null && options.showGrid() && !options.hideDisplay();
     }
 
     private static void applyDisplaySettings(VariationGridWindow grid,
