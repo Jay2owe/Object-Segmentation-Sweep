@@ -180,6 +180,32 @@ public class ResourceGuardTest {
         assertTrue(feasibility.getMessage().contains("101 cells"));
     }
 
+    @Test
+    public void postAnalysisMontageGuardChargesOnlyTheOutputAllocation() {
+        Map<ParameterId, ParameterValueList> values =
+                new LinkedHashMap<ParameterId, ParameterValueList>();
+        values.put(ParameterId.THRESHOLD, ParameterValueList.fromRange(0, 9, 1));
+        ParameterSweep sweep = new ParameterSweep(ParameterSweep.Method.CLASSICAL,
+                values, CropSpec.full(), "DAPI");
+        ImagePlus source = stack("output-only", 256, 256, 1);
+        long available = 10L * 1024L * 1024L;
+
+        ResourceGuard.Feasibility combined =
+                ResourceGuard.assessComputeFeasibilityForBudget(
+                        sweep, source, 1, available);
+        ResourceGuard.Feasibility outputOnly =
+                ResourceGuard.assessMontageOutputFeasibilityForBudget(
+                        sweep, source, available);
+
+        assertFalse(combined.isOk());
+        assertTrue(outputOnly.isOk());
+        assertEquals(0L, outputOnly.estimate().combinationBytes());
+        assertEquals(10L * 220L * 210L * 4L + 256L * 256L * 12L,
+                outputOnly.estimate().previewBytes());
+        assertEquals(outputOnly.estimate().previewBytes(),
+                outputOnly.estimate().totalBytes());
+    }
+
     private static ImagePlus stack(String title, int width, int height, int slices) {
         ImageStack stack = new ImageStack(width, height);
         for (int i = 0; i < slices; i++) {

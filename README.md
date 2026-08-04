@@ -93,7 +93,9 @@ Object Segmentation Sweep/
 `sweep_results.csv` has one row per displayed combination, including object count, calibrated
 `Objects_Per_mm3` (blank for 2D), optional `Objects_Per_mm2`, neighbour IoU, eligibility, duration,
 crop fraction, and flags. A supported per-cell refusal becomes a `FAILED` row rather than aborting
-the other combinations.
+the other combinations. `SATURATED` means the selected foreground covers the analysed crop.
+`TIMED_OUT` is retained in the result schema for execution strategies that define a deadline;
+the v0.1 Classical engine has no per-combination timeout setting.
 
 `picked_settings.txt` is the reproducible methods artifact. It contains the classical settings
 token, source identity/channel, crop, calibration, displayed axes, both picker reports, and the

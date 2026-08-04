@@ -33,6 +33,9 @@ import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 
@@ -41,6 +44,7 @@ import java.util.List;
  */
 public final class AutoSaveWriter {
     public static final String OUTPUT_FOLDER = "Object Segmentation Sweep";
+    private static final String RESERVATION_FILE = ".segsweep-reservation";
 
     private AutoSaveWriter() {
     }
@@ -58,9 +62,13 @@ public final class AutoSaveWriter {
         if (parent == null) {
             parent = new File(".").getAbsoluteFile();
         }
-        File outputDir = uniqueDirectory(new File(parent, OUTPUT_FOLDER));
-        writeToDirectory(outputDir, inputFile, result, reviewedGrid);
-        return outputDir;
+        DirectoryReservation reservation = reserveDirectory(new File(parent, OUTPUT_FOLDER));
+        try {
+            writeToDirectory(reservation.directory, inputFile, result, reviewedGrid);
+            return reservation.directory;
+        } finally {
+            reservation.release();
+        }
     }
 
     /** Writes to an explicitly requested directory, versioning it rather than overwriting. */
@@ -75,9 +83,13 @@ public final class AutoSaveWriter {
         if (desiredOutputDir == null) {
             throw new IllegalArgumentException("desiredOutputDir must not be null.");
         }
-        File outputDir = uniqueDirectory(desiredOutputDir);
-        writeToDirectory(outputDir, inputFile, result, reviewedGrid);
-        return outputDir;
+        DirectoryReservation reservation = reserveDirectory(desiredOutputDir);
+        try {
+            writeToDirectory(reservation.directory, inputFile, result, reviewedGrid);
+            return reservation.directory;
+        } finally {
+            reservation.release();
+        }
     }
 
     static void writeToDirectory(File outputDir, File inputFile,
@@ -111,22 +123,72 @@ public final class AutoSaveWriter {
         writeText(new File(labelsDir, "README.txt"), labelsReadmeText());
     }
 
-    static File uniqueDirectory(File desired) throws IOException {
+    static DirectoryReservation reserveDirectory(File desired) throws IOException {
         File absolute = desired.getAbsoluteFile();
-        if (!absolute.exists() || isEmptyDirectory(absolute)) {
-            ensurePathReasonable(absolute);
-            return absolute;
-        }
-        for (int i = 2; i < 1000; i++) {
-            File candidate = new File(absolute.getParentFile(),
+        ensurePathReasonable(absolute);
+        File parent = absolute.getParentFile();
+        if (parent == null) parent = new File(".").getAbsoluteFile();
+        mkdirs(parent);
+        for (int i = 1; i < 1000; i++) {
+            File candidate = i == 1 ? absolute : new File(parent,
                     absolute.getName() + " " + i);
-            if (!candidate.exists() || isEmptyDirectory(candidate)) {
-                ensurePathReasonable(candidate);
-                return candidate;
+            ensurePathReasonable(candidate);
+            Path directory = candidate.toPath();
+            boolean created = false;
+            try {
+                Files.createDirectory(directory);
+                created = true;
+            } catch (FileAlreadyExistsException ex) {
+                if (!Files.isDirectory(directory) || !isEmptyDirectory(candidate)) {
+                    continue;
+                }
+            }
+            Path marker = directory.resolve(RESERVATION_FILE);
+            try {
+                Files.createFile(marker);
+                return new DirectoryReservation(candidate, marker, created);
+            } catch (FileAlreadyExistsException ex) {
+                // Another writer owns this directory; try the next version.
+            } catch (IOException ex) {
+                if (created && isEmptyDirectory(candidate)) {
+                    try {
+                        Files.deleteIfExists(directory);
+                    } catch (IOException ignored) {
+                        // Preserve an unexpected directory rather than risking data loss.
+                    }
+                }
+                throw ex;
             }
         }
         throw new IOException("Could not create a versioned output folder beside "
                 + absolute.getAbsolutePath());
+    }
+
+    static final class DirectoryReservation {
+        final File directory;
+        final Path marker;
+        final boolean created;
+
+        DirectoryReservation(File directory, Path marker, boolean created) {
+            this.directory = directory;
+            this.marker = marker;
+            this.created = created;
+        }
+
+        void release() {
+            try {
+                Files.deleteIfExists(marker);
+            } catch (IOException ignored) {
+                return;
+            }
+            if (created && isEmptyDirectory(directory)) {
+                try {
+                    Files.deleteIfExists(directory.toPath());
+                } catch (IOException ignored) {
+                    // Preserve an unexpected directory rather than risking data loss.
+                }
+            }
+        }
     }
 
     private static void validate(File outputDir, File inputFile,
@@ -148,7 +210,7 @@ public final class AutoSaveWriter {
         ParameterSweep sweep = new ParameterSweep(ParameterSweep.Method.CLASSICAL,
                 new LinkedHashMap<ParameterId, ParameterValueList>(parameters.axes()),
                 parameters.crop(), "C" + parameters.channel());
-        ResourceGuard.Feasibility feasibility = ResourceGuard.assessMontageFeasibility(
+        ResourceGuard.Feasibility feasibility = ResourceGuard.assessMontageOutputFeasibility(
                 sweep, parameters.image());
         if (!feasibility.isOk()) {
             throw new IOException(feasibility.getMessage());
@@ -156,10 +218,13 @@ public final class AutoSaveWriter {
     }
 
     private static void mkdirs(File dir) throws IOException {
-        if (dir.exists() && !dir.isDirectory()) {
-            throw new IOException("Output path is not a directory: " + dir.getAbsolutePath());
+        if (dir.exists()) {
+            if (!dir.isDirectory()) {
+                throw new IOException("Output path is not a directory: " + dir.getAbsolutePath());
+            }
+            return;
         }
-        if (!dir.exists() && !dir.mkdirs()) {
+        if (!dir.mkdirs() && !dir.isDirectory()) {
             throw new IOException("Could not create output directory: " + dir.getAbsolutePath());
         }
     }

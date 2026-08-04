@@ -15,6 +15,7 @@ import ij.process.ByteProcessor;
 import ij.process.FloatProcessor;
 import ij.process.ImageProcessor;
 import org.junit.Test;
+import segsweep.util.StackHistogram;
 
 import java.util.List;
 
@@ -94,6 +95,35 @@ public class RangeSuggesterTest {
         }
         assertTrue(sawFraction);
         assertTrue(sawNegative);
+    }
+
+    @Test
+    public void nonFiniteFloatSamplesDoNotChangeFiniteThresholdSuggestions() {
+        ImagePlus finite = new ImagePlus("finite", new FloatProcessor(
+                6, 1, new float[] { -2.5f, -1.0f, 0.25f, 1.5f, 3.0f, 8.0f }));
+        ImagePlus contaminated = new ImagePlus("contaminated", new FloatProcessor(
+                9, 1, new float[] { -2.5f, -1.0f, 0.25f, 1.5f, 3.0f, 8.0f,
+                Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY }));
+
+        ParameterValueList expected =
+                RangeSuggester.suggestThresholdDisplayWindow(finite, CropSpec.full());
+        ParameterValueList actual =
+                RangeSuggester.suggestThresholdDisplayWindow(contaminated, CropSpec.full());
+
+        assertEquals(expected.values(), actual.values());
+    }
+
+    @Test
+    public void allNonFiniteHistogramIsExplicitlyEmpty() {
+        StackHistogram histogram = StackHistogram.of(new FloatProcessor(
+                3, 1, new float[] {
+                Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY }));
+
+        int total = 0;
+        for (int count : histogram.counts()) total += count;
+        assertEquals(0, total);
+        assertEquals(0.0d, histogram.min(), 0.0d);
+        assertEquals(0.0d, histogram.max(), 0.0d);
     }
 
     private static void assertCloseToAny(List<Object> suggestions, int expected) {

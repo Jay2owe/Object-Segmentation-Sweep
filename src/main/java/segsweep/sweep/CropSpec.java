@@ -83,9 +83,11 @@ public final class CropSpec implements Serializable {
         ImageStack input = source.getStack();
         ImageStack output = new ImageStack(resolved.width, resolved.height);
         for (int i = 1; i <= input.getSize(); i++) {
-            ImageProcessor processor = input.getProcessor(i).duplicate();
-            processor.setRoi(resolved.x, resolved.y, resolved.width, resolved.height);
-            output.addSlice(input.getSliceLabel(i), processor.crop());
+            ImageProcessor sourcePlane = input.getProcessor(i);
+            ImageProcessor croppedPlane = sourcePlane.createProcessor(
+                    resolved.width, resolved.height);
+            croppedPlane.insert(sourcePlane, -resolved.x, -resolved.y);
+            output.addSlice(input.getSliceLabel(i), croppedPlane);
         }
         ImagePlus cropped = new ImagePlus(source.getTitle(), output);
         if (source.getCalibration() != null) {
@@ -112,9 +114,11 @@ public final class CropSpec implements Serializable {
         ImageStack input = source.getStack();
         ImageStack output = new ImageStack(resolved.width, resolved.height);
         for (int i = 1; i <= input.getSize(); i++) {
-            ImageProcessor processor = input.getProcessor(i).duplicate();
-            processor.setRoi(resolved.x, resolved.y, resolved.width, resolved.height);
-            output.addSlice(input.getSliceLabel(i), processor.crop());
+            ImageProcessor sourcePlane = input.getProcessor(i);
+            ImageProcessor croppedPlane = sourcePlane.createProcessor(
+                    resolved.width, resolved.height);
+            croppedPlane.insert(sourcePlane, -resolved.x, -resolved.y);
+            output.addSlice(input.getSliceLabel(i), croppedPlane);
         }
         ImagePlus cropped = new ImagePlus(source.getTitle(), output);
         if (source.getCalibration() != null) {

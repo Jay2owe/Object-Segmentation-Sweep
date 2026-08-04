@@ -55,6 +55,11 @@ public final class ComponentTreeResult {
         return reportedObjectCount;
     }
 
+    /** True when the selected components cover every voxel in the analysed crop. */
+    public boolean isSaturated() {
+        return status == Status.OK && selection.coversAllVoxels();
+    }
+
     public List<ComponentNode> selectedNodes() {
         return selection.selectedNodes();
     }

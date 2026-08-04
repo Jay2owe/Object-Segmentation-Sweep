@@ -26,23 +26,42 @@ public final class ComponentSelection {
     private final ComponentTree tree;
     private final BitSet nodeIds;
     private final int size;
+    private final Calibration detachedCalibration;
+    private final long selectedVoxelCount;
+    private final long totalVoxelCount;
 
     ComponentSelection(ComponentTree tree, List<ComponentTree.NodeData> selected) {
         if (tree == null) {
             throw new IllegalArgumentException("tree must not be null");
         }
-        this.tree = tree;
-        this.nodeIds = new BitSet();
+        BitSet ids = new BitSet();
+        long selectedVoxels = 0L;
         if (selected != null) {
             for (ComponentTree.NodeData node : selected) {
-                if (node != null) nodeIds.set(node.id);
+                if (node != null && !ids.get(node.id)) {
+                    ids.set(node.id);
+                    selectedVoxels += node.voxelCount;
+                }
             }
         }
-        this.size = nodeIds.cardinality();
+        this.nodeIds = ids;
+        this.size = ids.cardinality();
+        this.tree = size == 0 ? null : tree;
+        this.detachedCalibration = size == 0 ? tree.calibrationCopy() : null;
+        this.selectedVoxelCount = selectedVoxels;
+        this.totalVoxelCount = tree.totalVoxelCount();
     }
 
     public int size() {
         return size;
+    }
+
+    public long selectedVoxelCount() {
+        return selectedVoxelCount;
+    }
+
+    public boolean coversAllVoxels() {
+        return size > 0 && selectedVoxelCount == totalVoxelCount;
     }
 
     /** Materialises lightweight public node views on demand. */
@@ -92,7 +111,12 @@ public final class ComponentSelection {
     }
 
     Calibration calibrationCopy() {
-        return tree.calibrationCopy();
+        if (tree != null) return tree.calibrationCopy();
+        return detachedCalibration == null ? null : detachedCalibration.copy();
+    }
+
+    boolean retainsTree() {
+        return tree != null;
     }
 
     private int next(int current) {

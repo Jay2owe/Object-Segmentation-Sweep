@@ -22,6 +22,7 @@ public final class ResourceGuard {
     private static final long LABEL_MAP_BYTES_PER_VOXEL = 2L;
     private static final long RGB_PREVIEW_BYTES_PER_PIXEL = 4L;
     private static final long MONTAGE_CELL_BYTES = 220L * 210L * RGB_PREVIEW_BYTES_PER_PIXEL;
+    private static final long MONTAGE_SCRATCH_BYTES_PER_PIXEL = 12L;
     private static final long SWING_BYTES_PER_CELL = 16L * 1024L;
     private static final long RESULT_STATE_BYTES_PER_CELL = 512L;
     private static final long QUERY_SCRATCH_BYTES_PER_VOXEL_PER_WORKER = 24L;
@@ -61,6 +62,22 @@ public final class ResourceGuard {
     public static Feasibility assessMontageFeasibility(ParameterSweep sweep, ImagePlus source) {
         return assessFeasibility(sweep, source, OutputMode.MONTAGE,
                 availableBytes(), defaultQueryWorkers(sweep));
+    }
+
+    /**
+     * Assesses only the synthetic PNG allocation performed after analysis.
+     * The already-retained tree and result state are reflected in available
+     * heap and must not be charged a second time.
+     */
+    public static Feasibility assessMontageOutputFeasibility(ParameterSweep sweep,
+                                                              ImagePlus source) {
+        return assessMontageOutputFeasibility(sweep, source, availableBytes());
+    }
+
+    static Feasibility assessMontageOutputFeasibilityForBudget(ParameterSweep sweep,
+                                                                ImagePlus source,
+                                                                long available) {
+        return assessMontageOutputFeasibility(sweep, source, Math.max(0L, available));
     }
 
     /** Assesses compute plus the retained preview/Swing grid working set. */
@@ -121,6 +138,11 @@ public final class ResourceGuard {
                     SWING_BYTES_PER_CELL)
                     : MONTAGE_CELL_BYTES;
             long previewBytes = multiply(sweep.cellCount(), retainedBytesPerCell);
+            if (outputMode == OutputMode.MONTAGE) {
+                previewBytes = saturatingAdd(previewBytes,
+                        multiply(multiply(crop.width, crop.height),
+                                MONTAGE_SCRATCH_BYTES_PER_PIXEL));
+            }
             estimate = estimate.withPreviewBytes(previewBytes);
             if (sweep.cellCount() > MAX_DISPLAY_CELLS) {
                 return Feasibility.refused(estimate, available,
@@ -139,6 +161,43 @@ public final class ResourceGuard {
         COMPUTE_ONLY,
         MONTAGE,
         DISPLAY
+    }
+
+    private static Feasibility assessMontageOutputFeasibility(ParameterSweep sweep,
+                                                               ImagePlus source,
+                                                               long available) {
+        if (sweep == null) {
+            return Feasibility.refused(null, available,
+                    "No parameter sweep was provided.");
+        }
+        if (source == null) {
+            return Feasibility.refused(null, available,
+                    "No source image was provided.");
+        }
+        long cells = sweep.cellCount();
+        Rectangle crop = sweep.cropSpec().boundsFor(source);
+        long previewBytes = saturatingAdd(multiply(cells, MONTAGE_CELL_BYTES),
+                multiply(multiply(crop.width, crop.height),
+                        MONTAGE_SCRATCH_BYTES_PER_PIXEL));
+        long cropVoxels = multiply(multiply(crop.width, crop.height), stackDepth(source));
+        Estimate estimate = new Estimate(cropVoxels, 0L, 0L, 0L, 0L,
+                0L, 0L, 0L, 0L, previewBytes, previewBytes);
+        if (cells > MAX_DISPLAY_CELLS) {
+            return Feasibility.refused(estimate, available,
+                    "The autosave montage contains " + cells
+                            + " cells, above the practical limit of "
+                            + MAX_DISPLAY_CELLS
+                            + ". Narrow the ranges or step sizes before creating this output.");
+        }
+        long budget = (long) Math.floor(available * DEFAULT_AVAILABLE_FRACTION);
+        if (estimate.totalBytes() > budget) {
+            return Feasibility.refused(estimate, available,
+                    "Estimated autosave montage memory is ~" + formatGb(previewBytes)
+                            + " GB (" + previewBytes + " bytes), above the remaining output budget of ~"
+                            + formatGb(budget) + " GB (" + budget + " bytes).");
+        }
+        return new Feasibility(true, estimate, available,
+                "The autosave montage fits the current memory budget.");
     }
 
     public static Decision checkTreeMemory(ImagePlus source, CropSpec cropSpec, long maxBytes) {

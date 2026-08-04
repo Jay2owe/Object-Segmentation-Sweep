@@ -31,11 +31,15 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
@@ -179,7 +183,8 @@ public final class SegSweepBatch {
         Map<String, Map<String, List<File>>> result =
                 new LinkedHashMap<String, Map<String, List<File>>>();
         if (recursive) {
-            walkDirectories(rootFolder, rootFolder, "", pattern, varyingGroup, result);
+            walkDirectories(rootFolder, "", pattern, varyingGroup, result,
+                    new HashSet<Path>());
         } else {
             Map<String, List<File>> groups = findGroups(rootFolder, pattern, varyingGroup);
             if (!groups.isEmpty()) {
@@ -189,10 +194,18 @@ public final class SegSweepBatch {
         return result;
     }
 
-    private static void walkDirectories(File root, File current, String relativePath,
+    private static void walkDirectories(File current, String relativePath,
                                         Pattern pattern, int varyingGroup,
-                                        Map<String, Map<String, List<File>>> result) {
+                                        Map<String, Map<String, List<File>>> result,
+                                        Set<Path> visitedDirectories) {
         if (current == null || !current.isDirectory()) return;
+        final Path realPath;
+        try {
+            realPath = realDirectoryPath(current);
+        } catch (IOException ex) {
+            return;
+        }
+        if (!visitedDirectories.add(realPath)) return;
         Map<String, List<File>> groups = findGroups(current, pattern, varyingGroup);
         if (!groups.isEmpty()) {
             result.put(relativePath, groups);
@@ -207,8 +220,14 @@ public final class SegSweepBatch {
             String childPath = relativePath.length() == 0
                     ? subdirs[i].getName()
                     : relativePath + "/" + subdirs[i].getName();
-            walkDirectories(root, subdirs[i], childPath, pattern, varyingGroup, result);
+            walkDirectories(subdirs[i], childPath, pattern, varyingGroup, result,
+                    visitedDirectories);
         }
+    }
+
+    static Path realDirectoryPath(File directory) throws IOException {
+        if (directory == null) throw new IOException("Directory must not be null.");
+        return directory.toPath().toRealPath();
     }
 
     static boolean isGeneratedOutputDirectory(File directory) {

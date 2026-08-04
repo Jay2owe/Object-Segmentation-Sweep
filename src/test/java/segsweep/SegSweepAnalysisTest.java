@@ -148,6 +148,45 @@ public class SegSweepAnalysisTest {
                 ParameterId.THRESHOLD.displayLabel(), sweep.size() - 1), 0.0d);
     }
 
+    @Test
+    public void fullForegroundCombinationIsFlaggedAsSaturated() {
+        ByteProcessor pixels = new ByteProcessor(3, 2);
+        pixels.setValue(100);
+        pixels.fill();
+
+        SegSweepResult result = SegSweep.run(SegSweepParameters.builder()
+                .image(new ImagePlus("saturated", pixels))
+                .axis(ParameterId.THRESHOLD, 0, 0, 1)
+                .pickCriterion(SegSweepParameters.PickCriterion.NONE)
+                .build());
+
+        assertTrue(result.results().get(0).hasFlag(VariationResult.Flag.SATURATED));
+        assertTrue(result.sweepTable().getStringValue(
+                SegSweepResult.COL_FLAGS, 0).contains("SATURATED"));
+    }
+
+    @Test
+    public void computeGuardRunsBeforeSelectedChannelAllocation() {
+        ImageStack stack = new ImageStack(1, 1);
+        stack.addSlice(new DuplicateForbiddenProcessor(1, 1));
+        stack.addSlice(new DuplicateForbiddenProcessor(1, 1));
+        ImagePlus source = new ImagePlus("preflight-before-copy", stack);
+        source.setDimensions(2, 1, 1);
+
+        try {
+            SegSweep.run(SegSweepParameters.builder()
+                    .image(source)
+                    .channel(2)
+                    .axis(ParameterId.THRESHOLD, 0, 10000, 1)
+                    .pickCriterion(SegSweepParameters.PickCriterion.NONE)
+                    .build());
+        } catch (SweepRefusedException expected) {
+            assertTrue(expected.getMessage().contains("compute limit"));
+            return;
+        }
+        throw new AssertionError("Expected the pathological sweep to be refused before copying.");
+    }
+
     @Test(timeout = 5000L)
     public void parallelQueryHelperHonoursConfiguredWorkerBound() {
         LinkedHashMap<ParameterId, ParameterValueList> axes =
@@ -830,6 +869,17 @@ public class SegSweepAnalysisTest {
             for (int x = x0; x < x0 + width; x++) {
                 processor.set(x, y, value);
             }
+        }
+    }
+
+    private static final class DuplicateForbiddenProcessor extends ByteProcessor {
+        DuplicateForbiddenProcessor(int width, int height) {
+            super(width, height);
+        }
+
+        @Override
+        public ImageProcessor duplicate() {
+            throw new AssertionError("Source planes must not be copied before resource preflight.");
         }
     }
 }

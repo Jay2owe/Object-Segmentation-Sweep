@@ -203,6 +203,9 @@ public final class SegSweepClassicalStrategy implements VariationStrategy {
                     new IllegalStateException(treeResult.reason()), provenance,
                     flags, treeResult.objectCount());
         }
+        if (treeResult.isSaturated()) {
+            flags.add(VariationResult.Flag.SATURATED);
+        }
         return VariationResult.success(combo, treeResult.labelMap(),
                 treeResult.objectCount(), durationMs, null, provenance, flags,
                 IouStability.IouSource.fromTreeResult(treeResult));

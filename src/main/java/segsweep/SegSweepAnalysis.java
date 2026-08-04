@@ -9,11 +9,9 @@
 package segsweep;
 
 import ij.ImagePlus;
-import ij.ImageStack;
 import ij.io.FileInfo;
 import ij.measure.Calibration;
 import ij.measure.ResultsTable;
-import ij.process.ImageProcessor;
 import segsweep.sweep.CanonicalScale;
 import segsweep.sweep.CropSpec;
 import segsweep.sweep.ParameterCombo;
@@ -22,6 +20,7 @@ import segsweep.sweep.ParameterKey;
 import segsweep.sweep.ParameterSweep;
 import segsweep.sweep.ParameterValueList;
 import segsweep.sweep.ResourceGuard;
+import segsweep.sweep.SourceImageView;
 import segsweep.sweep.SweepDispatchOrder;
 import segsweep.sweep.SweepProgress;
 import segsweep.sweep.SweepProvenance;
@@ -81,23 +80,20 @@ public final class SegSweepAnalysis {
         checkCancelled(cancelCheck);
 
         ParameterSweep displayWindow = buildDisplayWindow(params);
-        ImagePlus channelImage = selectChannel(params.image(), params.channel());
-        boolean ownsChannelImage = channelImage != params.image();
+        ResourceGuard.Feasibility feasibility =
+                ResourceGuard.assessComputeFeasibility(
+                        displayWindow, params.image(), params.parallelism());
+        if (!feasibility.isOk()) {
+            throw new SweepRefusedException(feasibility.getMessage());
+        }
+
         ImagePlus cropped = null;
-        boolean ownsCrop = false;
         try {
             SweepProvenance provenance = provenance(params, displayWindow);
             List<String> warnings = initialWarnings(params, provenance);
-            cropped = params.crop().apply(channelImage);
-            ownsCrop = cropped != channelImage;
+            cropped = SourceImageView.selectedChannelAndCrop(
+                    params.image(), params.channel(), params.crop());
             checkCancelled(cancelCheck);
-
-            ResourceGuard.Feasibility feasibility =
-                    ResourceGuard.assessComputeFeasibility(
-                            croppedWindow(displayWindow), cropped, params.parallelism());
-            if (!feasibility.isOk()) {
-                throw new SweepRefusedException(feasibility.getMessage());
-            }
 
             final Consumer<SweepProgress> progressSink = progress;
             ComponentTree tree = ComponentTree.build(cropped, params.connectivity(), cancelCheck,
@@ -133,12 +129,7 @@ public final class SegSweepAnalysis {
                     pickAssembly.pickedCombo, pickAssembly.pickedLabelMap,
                     pickAssembly.scoredResults, provenance, token, warnings);
         } finally {
-            if (ownsCrop) {
-                close(cropped);
-            }
-            if (ownsChannelImage) {
-                close(channelImage);
-            }
+            close(cropped);
         }
     }
 
@@ -223,11 +214,6 @@ public final class SegSweepAnalysis {
                 new LinkedHashMap<ParameterId, ParameterValueList>(params.axes());
         return new ParameterSweep(ParameterSweep.Method.CLASSICAL, axes,
                 params.crop(), "C" + params.channel());
-    }
-
-    private static ParameterSweep croppedWindow(ParameterSweep displayWindow) {
-        return new ParameterSweep(displayWindow.method(), displayWindow.valueLists(),
-                CropSpec.full(), displayWindow.channelName());
     }
 
     private static SweepProvenance provenance(SegSweepParameters params,
@@ -318,6 +304,9 @@ public final class SegSweepAnalysis {
                 return VariationResult.failure(combo,
                         new IllegalStateException(treeResult.reason()), provenance,
                         flags, treeResult.objectCount(), durationMs);
+            }
+            if (treeResult.isSaturated()) {
+                flags.add(VariationResult.Flag.SATURATED);
             }
             return VariationResult.success(combo, treeResult.labelMap(),
                     treeResult.objectCount(), durationMs, null, provenance, flags,
@@ -1177,29 +1166,6 @@ public final class SegSweepAnalysis {
                 : suffix + "; computation_step=irregular";
         String values = canonicalValues(knee.sampledValues());
         return values.isEmpty() ? suffix : suffix + "; computation_values=" + values;
-    }
-
-    private static ImagePlus selectChannel(ImagePlus source, int channel) {
-        int channels = Math.max(1, source.getNChannels());
-        if (channels <= 1) {
-            return source;
-        }
-        int slices = Math.max(1, source.getNSlices());
-        ImageStack input = source.getStack();
-        ImageStack output = new ImageStack(source.getWidth(), source.getHeight());
-        for (int z = 1; z <= slices; z++) {
-            int index = source.getStackIndex(channel, z, 1);
-            ImageProcessor processor = input.getProcessor(index).duplicate();
-            output.addSlice(input.getSliceLabel(index), processor);
-        }
-        ImagePlus selected = new ImagePlus(source.getTitle() + " C" + channel, output);
-        Calibration calibration = source.getCalibration();
-        if (calibration != null) {
-            selected.setCalibration(calibration.copy());
-        }
-        selected.setDimensions(1, slices, 1);
-        selected.setOpenAsHyperStack(slices > 1);
-        return selected;
     }
 
     private static void close(ImagePlus image) {

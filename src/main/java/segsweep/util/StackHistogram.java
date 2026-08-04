@@ -61,14 +61,15 @@ public final class StackHistogram {
         for (int i = 0; i < values.length; i++) {
             range.accept(values[i]);
         }
+        if (range.seen == 0L) return empty();
         Layout layout = range.layout();
         int[] counts = new int[layout.bins];
         if (layout.degenerate) {
-            fillDegenerate(counts, layout, values.length);
+            fillDegenerate(counts, layout, range.seen);
             return new StackHistogram(counts, layout.min, layout.max, layout.direct);
         }
         for (int i = 0; i < values.length; i++) {
-            counts[layout.binFor(values[i])]++;
+            if (Double.isFinite(values[i])) counts[layout.binFor(values[i])]++;
         }
         return new StackHistogram(counts, layout.min, layout.max, layout.direct);
     }
@@ -112,6 +113,7 @@ public final class StackHistogram {
             }
         }
 
+        if (range.seen == 0L) return empty();
         Layout layout = range.layout();
         int[] counts = new int[layout.bins];
         if (layout.degenerate) {
@@ -125,7 +127,8 @@ public final class StackHistogram {
             }
             int pixels = processor.getWidth() * processor.getHeight();
             for (int p = 0; p < pixels; p++) {
-                counts[layout.binFor(processor.getf(p))]++;
+                double value = processor.getf(p);
+                if (Double.isFinite(value)) counts[layout.binFor(value)]++;
             }
         }
         return new StackHistogram(counts, layout.min, layout.max, layout.direct);
@@ -149,10 +152,10 @@ public final class StackHistogram {
         long seen;
 
         void accept(double value) {
-            double safe = Double.isNaN(value) ? 0.0d : value;
-            if (safe < min) min = safe;
-            if (safe > max) max = safe;
-            if (integral && Math.abs(safe - Math.rint(safe)) > 0.000001d) {
+            if (!Double.isFinite(value)) return;
+            if (value < min) min = value;
+            if (value > max) max = value;
+            if (integral && Math.abs(value - Math.rint(value)) > 0.000001d) {
                 integral = false;
             }
             seen++;

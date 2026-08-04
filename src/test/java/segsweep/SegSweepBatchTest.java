@@ -20,6 +20,7 @@ import segsweep.sweep.ParameterId;
 
 import java.awt.Rectangle;
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -100,6 +101,31 @@ public class SegSweepBatchTest {
         assertTrue(groups.containsKey("raw"));
         assertFalse(groups.containsKey("Object Segmentation Sweep"));
         assertFalse(groups.containsKey("Object Segmentation Sweep 2"));
+    }
+
+    @Test(timeout = 5000L)
+    public void recursiveScanDoesNotFollowAnAncestorDirectoryLinkForever() throws Exception {
+        File sub = tmp.newFolder("linked-subfolder");
+        saveImage(new File(tmp.getRoot(), "Exp1-A01_LH_CTX.tif"));
+        File ancestorLink = new File(sub, "ancestor-link");
+        try {
+            Files.createSymbolicLink(ancestorLink.toPath(), tmp.getRoot().toPath());
+        } catch (IOException | UnsupportedOperationException | SecurityException ex) {
+            assertEquals(SegSweepBatch.realDirectoryPath(tmp.getRoot()),
+                    SegSweepBatch.realDirectoryPath(new File(sub, "..")));
+            return;
+        }
+        try {
+            Map<String, Map<String, List<File>>> groups =
+                    SegSweepBatch.findGroupsRecursive(tmp.getRoot(),
+                            Pattern.compile("Exp1-(A\\d+)_(.+)_CTX\\.tif"), 1, true);
+
+            assertEquals(1, groups.size());
+            assertTrue(groups.containsKey(""));
+            assertFalse(groups.containsKey("linked-subfolder/ancestor-link"));
+        } finally {
+            Files.deleteIfExists(ancestorLink.toPath());
+        }
     }
 
     @Test

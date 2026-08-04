@@ -18,6 +18,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 
 public class ComponentTreeLazyLabelMapTest {
     @Test
@@ -48,6 +49,24 @@ public class ComponentTreeLazyLabelMapTest {
         assertEquals(2, distinctNonZero(labels));
         assertEquals(1, labels.getStack().getProcessor(1).get(0, 0));
         assertEquals(2, labels.getStack().getProcessor(1).get(4, 0));
+    }
+
+    @Test
+    public void emptySelectionDetachesFromTreeButKeepsBlankLabelMetadata() {
+        ImagePlus image = SegSweepLabellerFixtures.calibratedEmptyStack(5, 3, 2);
+        ComponentTreeResult result = ComponentTree.build(
+                image, SegSweepLabeller.Connectivity.SIX)
+                .query(ComponentTreeQuery.builder().threshold(1000).build());
+
+        assertEquals(ComponentTreeResult.Status.EMPTY, result.status());
+        assertFalse(result.selection().retainsTree());
+        ImagePlus labels = result.labelMap().get();
+        assertEquals(5, labels.getWidth());
+        assertEquals(3, labels.getHeight());
+        assertEquals(2, labels.getStackSize());
+        assertEquals(image.getCalibration().pixelWidth,
+                labels.getCalibration().pixelWidth, 0.0d);
+        assertEquals(0, distinctNonZero(labels));
     }
 
     private static int distinctNonZero(ImagePlus image) {

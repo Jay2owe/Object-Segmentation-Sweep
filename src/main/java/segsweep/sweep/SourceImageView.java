@@ -13,6 +13,8 @@ import ij.ImageStack;
 import ij.measure.Calibration;
 import ij.process.ImageProcessor;
 
+import java.awt.Rectangle;
+
 /** Creates an owned, single-channel, first-timepoint view of the analysed crop. */
 public final class SourceImageView {
     private SourceImageView() {
@@ -28,11 +30,15 @@ public final class SourceImageView {
         if (channel < 1 || channel > channels) {
             throw new IllegalArgumentException("channel must be in 1.." + channels);
         }
+        CropSpec safeCrop = crop == null ? CropSpec.full() : crop;
+        Rectangle bounds = safeCrop.boundsFor(source);
         int slices = Math.max(1, source.getNSlices());
-        ImageStack selectedStack = new ImageStack(source.getWidth(), source.getHeight());
+        ImageStack selectedStack = new ImageStack(bounds.width, bounds.height);
         for (int z = 1; z <= slices; z++) {
             int index = source.getStackIndex(channel, z, 1);
-            ImageProcessor plane = source.getStack().getProcessor(index).duplicate();
+            ImageProcessor input = source.getStack().getProcessor(index);
+            ImageProcessor plane = input.createProcessor(bounds.width, bounds.height);
+            plane.insert(input, -bounds.x, -bounds.y);
             selectedStack.addSlice(source.getStack().getSliceLabel(index), plane);
         }
         ImagePlus selected = new ImagePlus(source.getTitle() + " C" + channel, selectedStack);
@@ -41,13 +47,6 @@ public final class SourceImageView {
         selected.setDimensions(1, slices, 1);
         selected.setOpenAsHyperStack(slices > 1);
 
-        CropSpec safeCrop = crop == null ? CropSpec.full() : crop;
-        ImagePlus cropped = safeCrop.apply(selected);
-        if (cropped != selected) {
-            selected.changes = false;
-            selected.close();
-            selected.flush();
-        }
-        return cropped;
+        return selected;
     }
 }

@@ -255,6 +255,10 @@ public final class ComponentTree {
         return calibration == null ? null : calibration.copy();
     }
 
+    long totalVoxelCount() {
+        return (long) width * (long) height * (long) depth;
+    }
+
     public synchronized int feretComputationCount() {
         return feretComputationCount;
     }

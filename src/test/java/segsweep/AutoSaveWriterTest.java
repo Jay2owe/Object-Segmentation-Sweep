@@ -25,6 +25,12 @@ import java.io.IOException;
 import java.awt.image.BufferedImage;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import javax.imageio.ImageIO;
 
 import static org.junit.Assert.assertEquals;
@@ -101,6 +107,45 @@ public class AutoSaveWriterTest {
         assertNotEquals(first.getAbsolutePath(), output.getAbsolutePath());
         assertTrue(new File(first, "existing.txt").isFile());
         assertTrue(new File(output, "picked_settings.txt").isFile());
+    }
+
+    @Test(timeout = 5000L)
+    public void concurrentWritersAtomicallyReserveDifferentVersionDirectories() throws Exception {
+        final File desired = new File(tmp.getRoot(), "concurrent-output");
+        final CountDownLatch start = new CountDownLatch(1);
+        final CountDownLatch acquired = new CountDownLatch(2);
+        final CountDownLatch finish = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        Callable<AutoSaveWriter.DirectoryReservation> reserve =
+                new Callable<AutoSaveWriter.DirectoryReservation>() {
+                    @Override public AutoSaveWriter.DirectoryReservation call() throws Exception {
+                        start.await();
+                        AutoSaveWriter.DirectoryReservation reservation =
+                                AutoSaveWriter.reserveDirectory(desired);
+                        acquired.countDown();
+                        finish.await();
+                        return reservation;
+                    }
+                };
+        Future<AutoSaveWriter.DirectoryReservation> first = executor.submit(reserve);
+        Future<AutoSaveWriter.DirectoryReservation> second = executor.submit(reserve);
+        AutoSaveWriter.DirectoryReservation one = null;
+        AutoSaveWriter.DirectoryReservation two = null;
+        try {
+            start.countDown();
+            assertTrue(acquired.await(3L, TimeUnit.SECONDS));
+            finish.countDown();
+            one = first.get();
+            two = second.get();
+            assertNotEquals(one.directory.getCanonicalPath(), two.directory.getCanonicalPath());
+        } finally {
+            finish.countDown();
+            if (one != null) one.release();
+            if (two != null) two.release();
+            executor.shutdownNow();
+        }
+        assertFalse(one.directory.exists());
+        assertFalse(two.directory.exists());
     }
 
     @Test

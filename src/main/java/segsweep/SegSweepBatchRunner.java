@@ -50,21 +50,31 @@ public final class SegSweepBatchRunner {
         }
 
         File outputRoot = null;
+        AutoSaveWriter.DirectoryReservation outputReservation = null;
         if (parameters.autoSave()) {
             File root = parameters.saveDir() == null
                     ? parameters.inputFolder()
                     : parameters.saveDir();
             try {
-                outputRoot = AutoSaveWriter.uniqueDirectory(
+                outputReservation = AutoSaveWriter.reserveDirectory(
                         new File(root, AutoSaveWriter.OUTPUT_FOLDER));
-                if (!outputRoot.exists() && !outputRoot.mkdirs()) {
-                    throw new IOException("Could not create " + outputRoot.getAbsolutePath());
-                }
+                outputRoot = outputReservation.directory;
             } catch (IOException e) {
                 throw new IllegalArgumentException(e.getMessage(), e);
             }
         }
 
+        try {
+            return runGroups(parameters, groups, outputRoot);
+        } finally {
+            if (outputReservation != null) outputReservation.release();
+        }
+    }
+
+    private static SegSweepBatchResult runGroups(
+            SegSweepBatchParameters parameters,
+            Map<String, Map<String, List<File>>> groups,
+            File outputRoot) {
         List<SegSweepBatchResult.ImageResult> imageResults =
                 new ArrayList<SegSweepBatchResult.ImageResult>();
         List<SegSweepBatchResult.BatchFailure> failures =
@@ -98,9 +108,15 @@ public final class SegSweepBatchRunner {
                                 parameters.analysisOptions().toParameters(image));
                         File imageOutputDir = null;
                         if (parameters.autoSave()) {
-                            imageOutputDir = AutoSaveWriter.uniqueDirectory(
-                                    new File(outputRoot, safeFolderName(file)));
-                            AutoSaveWriter.writeToDirectory(imageOutputDir, file, result);
+                            AutoSaveWriter.DirectoryReservation imageReservation =
+                                    AutoSaveWriter.reserveDirectory(
+                                            new File(outputRoot, safeFolderName(file)));
+                            imageOutputDir = imageReservation.directory;
+                            try {
+                                AutoSaveWriter.writeToDirectory(imageOutputDir, file, result);
+                            } finally {
+                                imageReservation.release();
+                            }
                         }
                         imageResults.add(new SegSweepBatchResult.ImageResult(file,
                                 relativeFolder, groupKey, result.compactForBatch(), imageOutputDir));
