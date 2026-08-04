@@ -57,6 +57,8 @@ import java.util.function.Consumer;
  * Headless orchestration for one Object Segmentation Sweep run.
  */
 public final class SegSweepAnalysis {
+    private static final int MAX_DENSE_INTEGER_THRESHOLD = 0xFFFF;
+
     private SegSweepAnalysis() {
     }
 
@@ -100,7 +102,7 @@ public final class SegSweepAnalysis {
             double[] fullThresholdValues = params.pickCriterion()
                     != SegSweepParameters.PickCriterion.NONE
                     && soleVaryingAxis(params) == ParameterId.THRESHOLD
-                    ? fullThresholdAxis(cropped, tree) : new double[0];
+                    ? fullThresholdAxis(tree) : new double[0];
             List<VariationResult> displayedResults =
                     queryDisplayedResults(tree, displayWindow, provenance, progress, cancelCheck);
             PickAssembly pickAssembly = scoreAndPick(tree, displayWindow,
@@ -943,24 +945,27 @@ public final class SegSweepAnalysis {
         return new double[] { min, max, regular ? step : Double.NaN };
     }
 
-    private static double[] fullThresholdAxis(ImagePlus image, ComponentTree tree) {
-        if (image == null || image.getStack() == null) {
-            return new double[0];
+    private static double[] fullThresholdAxis(ComponentTree tree) {
+        if (tree == null) return new double[0];
+        double[] eventLevels = tree.thresholdLevels();
+        if (eventLevels.length == 0) return eventLevels;
+
+        // Sampling is a property of the observed value domain, not the image's
+        // storage type. Preserve the historical dense integer axis whenever it
+        // is bounded to the unsigned-16-bit domain; otherwise use the exact
+        // component-tree transition levels without risking a huge allocation.
+        double highest = eventLevels[eventLevels.length - 1];
+        if (highest < 0.0d || highest > MAX_DENSE_INTEGER_THRESHOLD
+                || highest != Math.rint(highest)) {
+            return eventLevels;
         }
-        if (image.getBitDepth() == 32) {
-            return tree == null ? new double[0] : tree.thresholdLevels();
-        }
-        int max = 0;
-        ImageStack stack = image.getStack();
-        for (int slice = 1; slice <= stack.getSize(); slice++) {
-            ImageProcessor processor = stack.getProcessor(slice);
-            for (int i = 0; i < processor.getPixelCount(); i++) {
-                float value = processor.getf(i);
-                if (Float.isFinite(value)) {
-                    max = Math.max(max, (int) Math.ceil(value));
-                }
+        for (double level : eventLevels) {
+            if (level < 0.0d || level != Math.rint(level)) {
+                return eventLevels;
             }
         }
+
+        int max = (int) highest;
         double[] values = new double[max + 1];
         for (int i = 0; i <= max; i++) {
             values[i] = i;

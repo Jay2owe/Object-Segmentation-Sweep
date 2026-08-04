@@ -41,6 +41,7 @@ import java.util.concurrent.CancellationException;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
@@ -85,6 +86,47 @@ public class SegSweepAnalysisTest {
         assertTrue(result.pickedSettingsToken().contains("thresh=30"));
         assertTrue(result.pickedSettingsToken().contains("KNEE_AT=32"));
         assertTrue(result.pickedSettingsToken().contains("computation_range=[0,60]"));
+    }
+
+    @Test
+    public void fullAxisKneeIsIndependentOfIntegerImageStorageDepth() {
+        ImagePlus shortImage = designedKneeStack(true);
+        ImageProcessor shortPixels = shortImage.getProcessor();
+        FloatProcessor floatPixels = new FloatProcessor(shortImage.getWidth(), shortImage.getHeight());
+        for (int i = 0; i < shortPixels.getPixelCount(); i++) {
+            floatPixels.setf(i, shortPixels.getf(i));
+        }
+        ImagePlus floatImage = new ImagePlus("stage-12-knee-float", floatPixels);
+        floatImage.setCalibration(shortImage.getCalibration().copy());
+
+        SegSweepResult shortResult = SegSweep.run(SegSweepParameters.builder()
+                .image(shortImage)
+                .engine(SegmentationMethod.Engine.CLASSICAL)
+                .axis(ParameterId.THRESHOLD, 10, 60, 5)
+                .connectivity(SegSweepLabeller.Connectivity.SIX)
+                .pickCriterion(SegSweepParameters.PickCriterion.KNEE)
+                .build());
+        SegSweepResult floatResult = SegSweep.run(SegSweepParameters.builder()
+                .image(floatImage)
+                .engine(SegmentationMethod.Engine.CLASSICAL)
+                .axis(ParameterId.THRESHOLD, 10, 60, 5)
+                .connectivity(SegSweepLabeller.Connectivity.SIX)
+                .pickCriterion(SegSweepParameters.PickCriterion.KNEE)
+                .build());
+
+        KneeOutcome shortKnee = shortResult.pick().knee();
+        KneeOutcome floatKnee = floatResult.pick().knee();
+        assertEquals(KneeOutcome.Kind.KNEE_AT, shortKnee.kind());
+        assertEquals(shortKnee.kind(), floatKnee.kind());
+        assertEquals(shortKnee.parameterValue(), floatKnee.parameterValue(), 0.0d);
+        assertEquals(shortKnee.rangeMin(), floatKnee.rangeMin(), 0.0d);
+        assertEquals(shortKnee.rangeMax(), floatKnee.rangeMax(), 0.0d);
+        assertEquals(shortKnee.step(), floatKnee.step(), 0.0d);
+        assertArrayEquals(shortKnee.sampledValues(), floatKnee.sampledValues(), 0.0d);
+        assertEquals(shortResult.pickedCombo(), floatResult.pickedCombo());
+        assertTrue(shortResult.pickedSettingsToken().contains("thresh=30"));
+        assertTrue(floatResult.pickedSettingsToken().contains("thresh=30"));
+        assertTrue(floatResult.pickedSettingsToken().contains("KNEE_AT=32"));
     }
 
     @Test
