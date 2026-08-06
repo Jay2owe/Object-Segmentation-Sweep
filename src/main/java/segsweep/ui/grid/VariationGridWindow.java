@@ -83,6 +83,13 @@ public final class VariationGridWindow extends JDialog {
     private final JButton brightnessButton = new JButton("Adjust Brightness/Contrast");
     private final JButton pickSelectedButton = new JButton("Pick selected");
     private final JButton cancelButton = new JButton("Cancel");
+    private final JLabel facetLabel = new JLabel("Page");
+    private final JComboBox<String> facetChoice = new JComboBox<String>();
+    /** Page labels in sweep order; a single entry means the grid is not paged. */
+    private final List<String> facetKeys = new ArrayList<String>();
+    /** Cells belonging to each page, keyed as {@link #facetKeys}. */
+    private final Map<String, List<VariationCellPanel>> facetCells =
+            new LinkedHashMap<String, List<VariationCellPanel>>();
     private final ZoomableGrid gridPanel;
     private final JScrollPane gridScroll;
     private final JSlider zSlider = new JSlider(1, 1, 1);
@@ -124,6 +131,7 @@ public final class VariationGridWindow extends JDialog {
                 : title.trim());
         this.baseTitle = getTitle();
         initialiseCells(sourceCells, displayWindow);
+        buildFacets(displayWindow);
 
         configureToolBar();
         configureSlider();
@@ -151,8 +159,9 @@ public final class VariationGridWindow extends JDialog {
         gridPanel.setBackground(CANVAS_BACKGROUND);
         gridPanel.setBorder(BorderFactory.createEmptyBorder(
                 GRID_BORDER, GRID_BORDER, GRID_BORDER, GRID_BORDER));
-        for (int i = 0; i < cells.size(); i++) {
-            gridPanel.add(cells.get(i));
+        List<VariationCellPanel> firstPage = cellsForFacet(0);
+        for (int i = 0; i < firstPage.size(); i++) {
+            gridPanel.add(firstPage.get(i));
         }
         padGrid();
         gridScroll = new JScrollPane(gridPanel,
@@ -510,6 +519,141 @@ public final class VariationGridWindow extends JDialog {
         }
     }
 
+    /**
+     * Splits the cells into pages when the sweep has more than two axes.
+     *
+     * <p>A grid is two-dimensional; a sweep need not be. The first two axes lay
+     * out the grid, and each remaining combination of the other axes becomes one
+     * page. Before this, {@link #gridDimensions(ParameterSweep)} sized the grid
+     * from the first two axes while every cell was added to it, so a three-axis
+     * sweep silently produced a grid with the wrong number of slots and cells
+     * landing under the wrong row and column headings.</p>
+     *
+     * <p>Every cell is built and retained whichever page it is on, so results
+     * continue to arrive, scoring still sees the whole sweep, and paging is
+     * purely which subset is currently attached to the layout.</p>
+     */
+    private void buildFacets(ParameterSweep displayWindow) {
+        facetKeys.clear();
+        facetCells.clear();
+        List<ParameterKey> facetAxes = facetAxes(displayWindow);
+        if (facetAxes.isEmpty() || cells.isEmpty()) {
+            facetKeys.add("");
+            facetCells.put("", new ArrayList<VariationCellPanel>(cells));
+            return;
+        }
+        for (int i = 0; i < cells.size(); i++) {
+            VariationCellPanel cell = cells.get(i);
+            String key = facetKeyFor(cell.combo(), facetAxes);
+            List<VariationCellPanel> page = facetCells.get(key);
+            if (page == null) {
+                page = new ArrayList<VariationCellPanel>();
+                facetCells.put(key, page);
+                facetKeys.add(key);
+            }
+            page.add(cell);
+        }
+    }
+
+    /** Axes beyond the two the grid can show; empty for one- and two-axis sweeps. */
+    static List<ParameterKey> facetAxes(ParameterSweep sweep) {
+        List<ParameterKey> out = new ArrayList<ParameterKey>();
+        if (sweep == null) {
+            return out;
+        }
+        List<ParameterKey> keys = sweep.parameterKeys();
+        for (int i = 2; i < keys.size(); i++) {
+            out.add(keys.get(i));
+        }
+        return out;
+    }
+
+    /** How many pages {@code sweep} needs. One when it fits a single grid. */
+    static int facetCount(ParameterSweep sweep) {
+        List<ParameterKey> facetAxes = facetAxes(sweep);
+        if (facetAxes.isEmpty()) {
+            return 1;
+        }
+        long count = 1L;
+        Map<ParameterKey, ParameterValueList> values = sweep.valueLists();
+        for (int i = 0; i < facetAxes.size(); i++) {
+            ParameterValueList list = values.get(facetAxes.get(i));
+            count *= list == null ? 1 : Math.max(1, list.size());
+            if (count > Integer.MAX_VALUE) {
+                return Integer.MAX_VALUE;
+            }
+        }
+        return (int) count;
+    }
+
+    static String facetKeyFor(ParameterCombo combo, List<ParameterKey> facetAxes) {
+        if (combo == null || facetAxes == null || facetAxes.isEmpty()) {
+            return "";
+        }
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < facetAxes.size(); i++) {
+            ParameterKey key = facetAxes.get(i);
+            if (out.length() > 0) {
+                out.append(", ");
+            }
+            out.append(ParameterLabels.shortKey(key))
+               .append(' ')
+               .append(formatNumber(combo.get(key)));
+        }
+        return out.toString();
+    }
+
+    /** Components currently attached to the layout, cells plus any padding. */
+    int gridComponentCountForTest() {
+        return gridPanel.getComponentCount();
+    }
+
+    /** Cells on the page currently shown. */
+    int visibleCellCountForTest() {
+        int count = 0;
+        for (int i = 0; i < gridPanel.getComponentCount(); i++) {
+            if (gridPanel.getComponent(i) instanceof VariationCellPanel) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    int facetPageCountForTest() {
+        return facetKeys.size();
+    }
+
+    void showFacetForTest(int index) {
+        facetChoice.setSelectedIndex(index);
+    }
+
+    private List<VariationCellPanel> cellsForFacet(int index) {
+        if (facetKeys.isEmpty()) {
+            return new ArrayList<VariationCellPanel>(cells);
+        }
+        int safe = Math.max(0, Math.min(index, facetKeys.size() - 1));
+        List<VariationCellPanel> page = facetCells.get(facetKeys.get(safe));
+        return page == null ? new ArrayList<VariationCellPanel>() : page;
+    }
+
+    /**
+     * Attaches one page's cells to the layout. Cells not on the page stay built
+     * and registered; only their membership of the container changes.
+     */
+    private void showFacet(int index) {
+        if (gridPanel == null || facetKeys.size() <= 1) {
+            return;
+        }
+        List<VariationCellPanel> page = cellsForFacet(index);
+        gridPanel.removeAll();
+        for (int i = 0; i < page.size(); i++) {
+            gridPanel.add(page.get(i));
+        }
+        padGrid();
+        gridPanel.revalidate();
+        gridPanel.repaint();
+    }
+
     private static List<VariationCellPanel> createCells(ParameterSweep sweep,
                                                         ImagePlus source) {
         if (sweep == null) {
@@ -590,10 +734,37 @@ public final class VariationGridWindow extends JDialog {
         toolBar.addSeparator();
         toolBar.add(lutToggleButton);
         toolBar.add(brightnessButton);
+        configureFacetChoice();
         toolBar.addSeparator();
         cancelButton.setToolTipText("Cancel the running sweep.");
         toolBar.add(cancelButton);
         toolBar.add(pickSelectedButton);
+    }
+
+    /**
+     * Adds the page selector, and only when there is more than one page. A
+     * one-page sweep — every sweep of one or two axes — sees no extra control.
+     */
+    private void configureFacetChoice() {
+        if (facetKeys.size() <= 1) {
+            return;
+        }
+        for (int i = 0; i < facetKeys.size(); i++) {
+            facetChoice.addItem(facetKeys.get(i));
+        }
+        facetChoice.setSelectedIndex(0);
+        facetChoice.setToolTipText(
+                "The grid shows two axes at a time. Choose the values of the others.");
+        facetChoice.setMaximumSize(facetChoice.getPreferredSize());
+        facetChoice.addActionListener(new ActionListener() {
+            @Override public void actionPerformed(java.awt.event.ActionEvent e) {
+                showFacet(facetChoice.getSelectedIndex());
+                refreshStatus();
+            }
+        });
+        toolBar.addSeparator();
+        toolBar.add(facetLabel);
+        toolBar.add(facetChoice);
     }
 
     private void configureSlider() {
@@ -721,9 +892,24 @@ public final class VariationGridWindow extends JDialog {
         statusLabel.setText("Slice " + controller.currentSlice()
                 + " / " + Math.max(1, controller.maxSlice())
                 + "  |  Variants: " + cells.size()
+                + facetStatusText()
                 + "  |  " + completed + "/" + total + " complete"
                 + (failed > 0 ? " (" + failed + " failed)" : ""));
         updateSliceLabel();
+    }
+
+    /**
+     * Says which page is showing when the sweep is paged, so the cell count in
+     * the status line cannot be mistaken for the number of cells on screen.
+     */
+    private String facetStatusText() {
+        if (facetKeys.size() <= 1) {
+            return "";
+        }
+        int index = Math.max(0, Math.min(facetChoice.getSelectedIndex(),
+                facetKeys.size() - 1));
+        return "  |  page " + (index + 1) + "/" + facetKeys.size()
+                + " (" + facetKeys.get(index) + ")";
     }
 
     private void setSliderState(int minimum, int maximum, int value) {
@@ -908,6 +1094,11 @@ public final class VariationGridWindow extends JDialog {
         return new int[] { rows, cols };
     }
 
+    /**
+     * Rows and columns of one page: the first axis down, the second across.
+     * Axes beyond the second do not enlarge the grid — they page it, so this
+     * stays the size of what is on screen at once. See {@link #buildFacets}.
+     */
     static int[] gridDimensions(ParameterSweep sweep) {
         if (sweep == null || sweep.valueLists().isEmpty()) {
             return new int[] { 1, 1 };
