@@ -16,6 +16,7 @@ import segsweep.SegSweepMacroOptions;
 import segsweep.SegSweepMacroOptionsParser;
 import segsweep.SegSweepParameters;
 import segsweep.SegSweepResult;
+import segsweep.SweepStateStore;
 import segsweep.sweep.CropSpec;
 import segsweep.sweep.ParameterId;
 import segsweep.sweep.ParameterSweep;
@@ -108,12 +109,10 @@ public final class SegSweepDialog {
                 try {
                     SegSweepMacroOptions options = state.optionsFromFields();
                     ImagePlus image = selectedImage(state);
-                    ResourceGuard.Feasibility feasibility = feasibility(image, options);
-                    if (!feasibility.isOk()) {
-                        JOptionPane.showMessageDialog(dialog, feasibility.getMessage(),
-                                "Object Segmentation Sweep", JOptionPane.ERROR_MESSAGE);
+                    if (!confirmFeasible(dialog, image, options)) {
                         return;
                     }
+                    SweepStateStore.save(options);
                     accepted[0] = options;
                     dialog.dispose();
                 } catch (RuntimeException ex) {
@@ -122,6 +121,8 @@ public final class SegSweepDialog {
                 }
             }
         });
+
+        applyRestoredOptions(state, SweepStateStore.restoreFor(selectedImage(state)));
 
         state.refreshCostLine();
         dialog.pack();
@@ -138,6 +139,121 @@ public final class SegSweepDialog {
 
     public static SegSweepMacroOptions defaults() {
         return SegSweepMacroOptions.defaults();
+    }
+
+    /**
+     * Decides whether Run may proceed, offering an override where one is honest.
+     *
+     * <p>Two different things used to arrive at the user as the same error box.
+     * A cell-count ceiling is a default about how long a wait is reasonable and
+     * how many previews a window should hold; someone sweeping a deliberately
+     * large grid on a big machine is entitled to overrule it. A memory-budget
+     * refusal is arithmetic about heap that is not there, and overruling it
+     * only converts a clear message into an OutOfMemoryError partway through.
+     * So only the first is offered as a choice, and taking it is logged.</p>
+     */
+    private static boolean confirmFeasible(JDialog parent,
+                                           ImagePlus image,
+                                           SegSweepMacroOptions options) {
+        ResourceGuard.Feasibility feasibility =
+                feasibility(image, options, options.limits());
+        if (feasibility.isOk()) {
+            return true;
+        }
+        if (!feasibility.overridable()) {
+            JOptionPane.showMessageDialog(parent, feasibility.getMessage(),
+                    "Object Segmentation Sweep", JOptionPane.ERROR_MESSAGE);
+            return false;
+        }
+        int choice = JOptionPane.showConfirmDialog(parent,
+                feasibility.getMessage() + "\n\nRun it anyway?",
+                "Object Segmentation Sweep",
+                JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        if (choice != JOptionPane.YES_OPTION) {
+            return false;
+        }
+        ResourceGuard.Feasibility lifted =
+                feasibility(image, options, ResourceGuard.Limits.withoutCountLimits());
+        if (!lifted.isOk()) {
+            // The count ceiling was hiding a memory shortfall behind it.
+            JOptionPane.showMessageDialog(parent, lifted.getMessage(),
+                    "Object Segmentation Sweep", JOptionPane.ERROR_MESSAGE);
+            return false;
+        }
+        // Recorded on the options so the analysis honours it and the macro
+        // string reproduces the run without stopping at the same refusal.
+        options.setAllowOversizedSweep(true);
+        IJ.log("Object Segmentation Sweep: proceeding past a default limit at the "
+                + "user's request. " + feasibility.getMessage());
+        return true;
+    }
+
+    /**
+     * Seeds the already-built widgets from remembered settings.
+     *
+     * <p>Runs after every section exists, so it is one place to look for what is
+     * and is not carried between sessions rather than a restore rule buried in
+     * each widget's construction. The image is never restored, and the ROI
+     * region is offered back only when the image in front of the user actually
+     * has an ROI — the sweep re-reads the live selection at run time, so
+     * selecting the region without one would only produce an error on Run.</p>
+     *
+     * <p>Package-visible and free of Swing look-ups beyond the state object so
+     * the restore rules can be tested without showing a dialog.</p>
+     */
+    static void applyRestoredOptions(DialogState state, SegSweepMacroOptions restored) {
+        if (state == null || restored == null) {
+            return;
+        }
+        SegSweepMacroOptions.AxisSpec primary = restored.primaryAxis();
+        if (primary != null && !primary.hasExplicitValues()) {
+            selectItem(state.axisChoice, primary.id().stableKey());
+            setText(state.fromField, format(primary.from()));
+            setText(state.toField, format(primary.to()));
+            setText(state.stepField, format(primary.step()));
+        }
+        SegSweepMacroOptions.AxisSpec secondary = restored.secondaryAxis();
+        if (secondary != null && !secondary.hasExplicitValues()) {
+            selectItem(state.axis2Choice, secondary.id().stableKey());
+            setText(state.from2Field, format(secondary.from()));
+            setText(state.to2Field, format(secondary.to()));
+            setText(state.step2Field, format(secondary.step()));
+        } else {
+            selectItem(state.axis2Choice, NONE);
+        }
+        setText(state.channelField, Integer.toString(Math.max(1, restored.channel())));
+        selectItem(state.pickChoice,
+                restored.pickCriterion().name().toLowerCase(Locale.ROOT));
+        if (state.showGrid != null) state.showGrid.setSelected(restored.showGrid());
+        if (state.showTables != null) state.showTables.setSelected(restored.showTables());
+        String autosave = restored.autosave();
+        setText(state.autosaveField, autosave == null || autosave.trim().isEmpty()
+                ? SegSweepMacroOptions.AUTOSAVE_ALONGSIDE_INPUT
+                : autosave.trim());
+        ImagePlus image = selectedImage(state);
+        boolean roiAvailable = image != null && image.getRoi() != null;
+        boolean wantsRoi = restored.crop() != null
+                && restored.crop().mode() == CropSpec.Mode.CUSTOM;
+        selectItem(state.cropChoice,
+                wantsRoi && roiAvailable ? "Sweep in ROI" : "Whole image");
+    }
+
+    private static void selectItem(JComboBox<String> choice, String value) {
+        if (choice == null || value == null) {
+            return;
+        }
+        for (int i = 0; i < choice.getItemCount(); i++) {
+            if (value.equals(choice.getItemAt(i))) {
+                choice.setSelectedIndex(i);
+                return;
+            }
+        }
+    }
+
+    private static void setText(JTextField field, String value) {
+        if (field != null && value != null) {
+            field.setText(value);
+        }
     }
 
     public static String costEstimateText(ImagePlus image, SegSweepMacroOptions options) {
@@ -160,8 +276,15 @@ public final class SegSweepDialog {
 
     public static ResourceGuard.Feasibility feasibility(ImagePlus image,
                                                         SegSweepMacroOptions options) {
+        return feasibility(image, options, ResourceGuard.Limits.defaults());
+    }
+
+    /** Feasibility under caller-supplied limits; see {@link ResourceGuard.Limits}. */
+    public static ResourceGuard.Feasibility feasibility(ImagePlus image,
+                                                        SegSweepMacroOptions options,
+                                                        ResourceGuard.Limits limits) {
         if (image == null) {
-            return ResourceGuard.assessFeasibility(null, null);
+            return ResourceGuard.assessFeasibility(null, null, limits);
         }
         SegSweepMacroOptions safe = options == null ? defaults() : options;
         Map<ParameterId, ParameterValueList> axes =
@@ -177,8 +300,8 @@ public final class SegSweepDialog {
         ParameterSweep sweep = new ParameterSweep(ParameterSweep.Method.CLASSICAL,
                 axes, safe.crop(), "C" + safe.channel());
         return safe.hideDisplay() || !safe.showGrid()
-                ? ResourceGuard.assessMontageFeasibility(sweep, image)
-                : ResourceGuard.assessFeasibility(sweep, image);
+                ? ResourceGuard.assessMontageFeasibility(sweep, image, limits)
+                : ResourceGuard.assessFeasibility(sweep, image, limits);
     }
 
     public static SegSweepMacroOptions applySuggestedRange(ImagePlus image,
