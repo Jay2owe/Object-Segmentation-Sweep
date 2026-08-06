@@ -36,6 +36,7 @@ public final class SegSweepParameters {
     private final double minimumCropFraction;
     private final long stabilityBudgetMs;
     private final int parallelism;
+    private final boolean allowOversizedSweep;
 
     private SegSweepParameters(Builder builder) {
         this.image = builder.image;
@@ -50,6 +51,30 @@ public final class SegSweepParameters {
         this.parallelism = builder.parallelism > 0
                 ? builder.parallelism
                 : Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
+        this.allowOversizedSweep = builder.allowOversizedSweep;
+    }
+
+    /**
+     * Whether the default cell-count ceilings are waived for this run.
+     *
+     * <p>Set only by a caller that has already told the user what they are
+     * asking for. It lifts {@link segsweep.sweep.ResourceGuard.Limits} counts,
+     * never the memory budget — an oversized sweep that does not fit heap is
+     * still refused, because the alternative is failing partway through.</p>
+     */
+    public boolean allowOversizedSweep() {
+        return allowOversizedSweep;
+    }
+
+    public boolean isAllowOversizedSweep() {
+        return allowOversizedSweep;
+    }
+
+    /** Limits this run should be assessed against. */
+    public segsweep.sweep.ResourceGuard.Limits limits() {
+        return allowOversizedSweep
+                ? segsweep.sweep.ResourceGuard.Limits.withoutCountLimits()
+                : segsweep.sweep.ResourceGuard.Limits.defaults();
     }
 
     public static Builder builder() {
@@ -152,6 +177,7 @@ public final class SegSweepParameters {
         builder.minimumCropFraction = minimumCropFraction;
         builder.stabilityBudgetMs = stabilityBudgetMs;
         builder.parallelism = parallelism;
+        builder.allowOversizedSweep = allowOversizedSweep;
         return new SegSweepParameters(builder);
     }
 
@@ -207,6 +233,7 @@ public final class SegSweepParameters {
         private double minimumCropFraction = 0.05d;
         private long stabilityBudgetMs;
         private int parallelism = Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
+        private boolean allowOversizedSweep;
 
         private Builder() {
         }
@@ -310,6 +337,15 @@ public final class SegSweepParameters {
 
         public Builder parallelism(int parallelism) {
             this.parallelism = parallelism;
+            return this;
+        }
+
+        /**
+         * Waives the default cell-count ceilings for this run. The memory budget
+         * still applies. See {@link SegSweepParameters#allowOversizedSweep()}.
+         */
+        public Builder allowOversizedSweep(boolean allowOversizedSweep) {
+            this.allowOversizedSweep = allowOversizedSweep;
             return this;
         }
 

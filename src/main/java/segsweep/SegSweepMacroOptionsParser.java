@@ -150,6 +150,8 @@ public final class SegSweepMacroOptionsParser {
             options.setShowTables(false);
         } else if ("show_tables".equals(flag)) {
             options.setShowTables(true);
+        } else if ("allow_oversized".equals(flag)) {
+            options.setAllowOversizedSweep(true);
         } else {
             throw new IllegalArgumentException("Unknown Object Segmentation Sweep macro flag: " + flag);
         }

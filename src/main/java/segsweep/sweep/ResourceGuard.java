@@ -26,11 +26,129 @@ public final class ResourceGuard {
     private static final long SWING_BYTES_PER_CELL = 16L * 1024L;
     private static final long RESULT_STATE_BYTES_PER_CELL = 512L;
     private static final long QUERY_SCRATCH_BYTES_PER_VOXEL_PER_WORKER = 24L;
-    static final long MAX_COMPUTE_CELLS = 10000L;
-    static final long MAX_COMPUTE_VOXEL_QUERIES = 250000000L;
-    static final long MAX_DISPLAY_CELLS = 100L;
+    /**
+     * Appended to every count-limit refusal. Kept out of memory-budget refusals,
+     * which are arithmetic rather than policy and must not read as negotiable.
+     */
+    private static final String OVERRIDE_HINT =
+            " This is a default limit rather than a memory shortfall, so it can be"
+                    + " overridden if you accept the wait.";
+
+    static final long MAX_COMPUTE_CELLS = Limits.DEFAULT_MAX_COMPUTE_CELLS;
+    static final long MAX_COMPUTE_VOXEL_QUERIES = Limits.DEFAULT_MAX_COMPUTE_VOXEL_QUERIES;
+    static final long MAX_DISPLAY_CELLS = Limits.DEFAULT_MAX_DISPLAY_CELLS;
 
     private ResourceGuard() {
+    }
+
+    /**
+     * Why an assessment refused.
+     *
+     * <p>The distinction matters at the call site: a {@link #COUNT_LIMIT}
+     * refusal is a default policy about how long a user should be made to wait
+     * and how many Swing components are reasonable, and a caller may offer to
+     * proceed past it. A {@link #MEMORY_BUDGET} refusal is arithmetic about
+     * heap that is not there, and is never overridable.</p>
+     */
+    public enum RefusalKind {
+        /** The assessment permitted the sweep. */
+        NONE,
+        /** No sweep, no image, or an unsupported bit depth. Not overridable. */
+        INVALID_INPUT,
+        /** A default cell-count or query-count ceiling. Overridable. */
+        COUNT_LIMIT,
+        /** The estimate does not fit the memory budget. Never overridable. */
+        MEMORY_BUDGET
+    }
+
+    /**
+     * Cell-count ceilings applied before the memory estimate.
+     *
+     * <p>These are defaults about practicality, not about correctness: 10,000
+     * queried combinations is a long wait, and 100 grid cells is as many
+     * previews as a screen and a Swing container handle well. They are separated
+     * from the memory model so a caller who has told the user what they are
+     * asking for can raise or drop them, while the memory budget — the part that
+     * actually predicts an OutOfMemoryError — stays in force either way.</p>
+     */
+    public static final class Limits {
+
+        public static final long DEFAULT_MAX_COMPUTE_CELLS = 10000L;
+        public static final long DEFAULT_MAX_COMPUTE_VOXEL_QUERIES = 250000000L;
+        public static final long DEFAULT_MAX_DISPLAY_CELLS = 100L;
+
+        private static final Limits DEFAULTS = new Limits(
+                DEFAULT_MAX_COMPUTE_CELLS,
+                DEFAULT_MAX_COMPUTE_VOXEL_QUERIES,
+                DEFAULT_MAX_DISPLAY_CELLS);
+
+        private static final Limits NO_COUNT_LIMITS = new Limits(
+                Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE);
+
+        private final long maxComputeCells;
+        private final long maxComputeVoxelQueries;
+        private final long maxDisplayCells;
+
+        private Limits(long maxComputeCells,
+                       long maxComputeVoxelQueries,
+                       long maxDisplayCells) {
+            this.maxComputeCells = Math.max(1L, maxComputeCells);
+            this.maxComputeVoxelQueries = Math.max(1L, maxComputeVoxelQueries);
+            this.maxDisplayCells = Math.max(1L, maxDisplayCells);
+        }
+
+        /** The shipped defaults. */
+        public static Limits defaults() {
+            return DEFAULTS;
+        }
+
+        /**
+         * Every count ceiling lifted; the memory budget still applies. This is
+         * what a "proceed anyway" path passes after the user has been shown the
+         * refusal it is overriding.
+         */
+        public static Limits withoutCountLimits() {
+            return NO_COUNT_LIMITS;
+        }
+
+        public Limits withMaxComputeCells(long value) {
+            return new Limits(value, maxComputeVoxelQueries, maxDisplayCells);
+        }
+
+        public Limits withMaxComputeVoxelQueries(long value) {
+            return new Limits(maxComputeCells, value, maxDisplayCells);
+        }
+
+        public Limits withMaxDisplayCells(long value) {
+            return new Limits(maxComputeCells, maxComputeVoxelQueries, value);
+        }
+
+        public long maxComputeCells() {
+            return maxComputeCells;
+        }
+
+        public long maxComputeVoxelQueries() {
+            return maxComputeVoxelQueries;
+        }
+
+        public long maxDisplayCells() {
+            return maxDisplayCells;
+        }
+
+        /** True when no count ceiling is in force. */
+        public boolean countLimitsLifted() {
+            return maxComputeCells == Long.MAX_VALUE
+                    && maxComputeVoxelQueries == Long.MAX_VALUE
+                    && maxDisplayCells == Long.MAX_VALUE;
+        }
+
+        private static Limits orDefaults(Limits limits) {
+            return limits == null ? DEFAULTS : limits;
+        }
+
+        private String describe(long limit) {
+            return limit == Long.MAX_VALUE ? "unlimited" : Long.toString(limit);
+        }
     }
 
     /**
@@ -38,16 +156,30 @@ public final class ResourceGuard {
      * retain Swing cells or preview montages and must not inherit UI limits.
      */
     public static Feasibility assessComputeFeasibility(ParameterSweep sweep, ImagePlus source) {
+        return assessComputeFeasibility(sweep, source, Limits.defaults());
+    }
+
+    /** Assesses the tree and query working set under caller-supplied limits. */
+    public static Feasibility assessComputeFeasibility(ParameterSweep sweep,
+                                                        ImagePlus source,
+                                                        Limits limits) {
         return assessFeasibility(sweep, source, OutputMode.COMPUTE_ONLY,
-                availableBytes(), defaultQueryWorkers(sweep));
+                availableBytes(), defaultQueryWorkers(sweep), limits);
     }
 
     /** Assesses compute using the same bounded worker count as the analysis API. */
     public static Feasibility assessComputeFeasibility(ParameterSweep sweep,
                                                         ImagePlus source,
                                                         int parallelism) {
+        return assessComputeFeasibility(sweep, source, parallelism, Limits.defaults());
+    }
+
+    public static Feasibility assessComputeFeasibility(ParameterSweep sweep,
+                                                        ImagePlus source,
+                                                        int parallelism,
+                                                        Limits limits) {
         return assessFeasibility(sweep, source, OutputMode.COMPUTE_ONLY,
-                availableBytes(), boundedQueryWorkers(sweep, parallelism));
+                availableBytes(), boundedQueryWorkers(sweep, parallelism), limits);
     }
 
     static Feasibility assessComputeFeasibilityForBudget(ParameterSweep sweep,
@@ -55,13 +187,20 @@ public final class ResourceGuard {
                                                           int parallelism,
                                                           long available) {
         return assessFeasibility(sweep, source, OutputMode.COMPUTE_ONLY,
-                Math.max(0L, available), boundedQueryWorkers(sweep, parallelism));
+                Math.max(0L, available), boundedQueryWorkers(sweep, parallelism),
+                Limits.defaults());
     }
 
     /** Assesses compute plus the deterministic PNG montage written by autosave. */
     public static Feasibility assessMontageFeasibility(ParameterSweep sweep, ImagePlus source) {
+        return assessMontageFeasibility(sweep, source, Limits.defaults());
+    }
+
+    public static Feasibility assessMontageFeasibility(ParameterSweep sweep,
+                                                        ImagePlus source,
+                                                        Limits limits) {
         return assessFeasibility(sweep, source, OutputMode.MONTAGE,
-                availableBytes(), defaultQueryWorkers(sweep));
+                availableBytes(), defaultQueryWorkers(sweep), limits);
     }
 
     /**
@@ -71,37 +210,54 @@ public final class ResourceGuard {
      */
     public static Feasibility assessMontageOutputFeasibility(ParameterSweep sweep,
                                                               ImagePlus source) {
-        return assessMontageOutputFeasibility(sweep, source, availableBytes());
+        return assessMontageOutputFeasibility(sweep, source, availableBytes(),
+                Limits.defaults());
+    }
+
+    public static Feasibility assessMontageOutputFeasibility(ParameterSweep sweep,
+                                                              ImagePlus source,
+                                                              Limits limits) {
+        return assessMontageOutputFeasibility(sweep, source, availableBytes(), limits);
     }
 
     static Feasibility assessMontageOutputFeasibilityForBudget(ParameterSweep sweep,
                                                                 ImagePlus source,
                                                                 long available) {
-        return assessMontageOutputFeasibility(sweep, source, Math.max(0L, available));
+        return assessMontageOutputFeasibility(sweep, source, Math.max(0L, available),
+                Limits.defaults());
     }
 
     /** Assesses compute plus the retained preview/Swing grid working set. */
     public static Feasibility assessFeasibility(ParameterSweep sweep, ImagePlus source) {
+        return assessFeasibility(sweep, source, Limits.defaults());
+    }
+
+    /** Assesses the display grid under caller-supplied limits. */
+    public static Feasibility assessFeasibility(ParameterSweep sweep,
+                                                 ImagePlus source,
+                                                 Limits limits) {
         return assessFeasibility(sweep, source, OutputMode.DISPLAY,
-                availableBytes(), defaultQueryWorkers(sweep));
+                availableBytes(), defaultQueryWorkers(sweep), limits);
     }
 
     private static Feasibility assessFeasibility(ParameterSweep sweep,
                                                   ImagePlus source,
                                                   OutputMode outputMode,
                                                   long available,
-                                                  int queryWorkers) {
+                                                  int queryWorkers,
+                                                  Limits requestedLimits) {
+        Limits limits = Limits.orDefaults(requestedLimits);
         if (sweep == null) {
-            return Feasibility.refused(null, available,
+            return Feasibility.refused(null, available, RefusalKind.INVALID_INPUT,
                     "No parameter sweep was provided.");
         }
         if (source == null) {
-            return Feasibility.refused(null, available,
+            return Feasibility.refused(null, available, RefusalKind.INVALID_INPUT,
                     "No source image was provided.");
         }
         int bitDepth = source.getBitDepth();
         if (bitDepth != 8 && bitDepth != 16 && bitDepth != 32) {
-            return Feasibility.refused(null, available,
+            return Feasibility.refused(null, available, RefusalKind.INVALID_INPUT,
                     "Only 8-bit, 16-bit, or 32-bit grayscale images are supported; received "
                             + bitDepth + "-bit input.");
         }
@@ -115,20 +271,22 @@ public final class ResourceGuard {
                 QUERY_SCRATCH_BYTES_PER_VOXEL_PER_WORKER);
         estimate = estimate.withQueryScratchBytes(multiply(
                 Math.min(cells, Math.max(1L, queryWorkers)), scratchPerWorker));
-        if (cells > MAX_COMPUTE_CELLS) {
-            return Feasibility.refused(estimate, available,
+        if (cells > limits.maxComputeCells()) {
+            return Feasibility.refused(estimate, available, RefusalKind.COUNT_LIMIT,
                     "The sweep contains " + cells
                             + " combinations, above the compute limit of "
-                            + MAX_COMPUTE_CELLS
-                            + ". Narrow the ranges or increase the step sizes before dispatch.");
+                            + limits.describe(limits.maxComputeCells())
+                            + ". Narrow the ranges or increase the step sizes before dispatch."
+                            + OVERRIDE_HINT);
         }
         long queryWork = multiply(cells, estimate.cropVoxels());
-        if (queryWork > MAX_COMPUTE_VOXEL_QUERIES) {
-            return Feasibility.refused(estimate, available,
+        if (queryWork > limits.maxComputeVoxelQueries()) {
+            return Feasibility.refused(estimate, available, RefusalKind.COUNT_LIMIT,
                     "The sweep requires up to " + queryWork
                             + " combination-voxel queries, above the practical compute limit of "
-                            + MAX_COMPUTE_VOXEL_QUERIES
-                            + ". Crop tighter or narrow the parameter ranges before dispatch.");
+                            + limits.describe(limits.maxComputeVoxelQueries())
+                            + ". Crop tighter or narrow the parameter ranges before dispatch."
+                            + OVERRIDE_HINT);
         }
         if (outputMode != OutputMode.COMPUTE_ONLY) {
             long cropPreviewBytes = multiply(multiply(crop.width, crop.height),
@@ -144,14 +302,15 @@ public final class ResourceGuard {
                                 MONTAGE_SCRATCH_BYTES_PER_PIXEL));
             }
             estimate = estimate.withPreviewBytes(previewBytes);
-            if (sweep.cellCount() > MAX_DISPLAY_CELLS) {
-                return Feasibility.refused(estimate, available,
+            if (sweep.cellCount() > limits.maxDisplayCells()) {
+                return Feasibility.refused(estimate, available, RefusalKind.COUNT_LIMIT,
                         "The " + (outputMode == OutputMode.DISPLAY
                                 ? "display grid" : "autosave montage")
                                 + " contains " + sweep.cellCount()
                                 + " cells, above the practical limit of "
-                                + MAX_DISPLAY_CELLS
-                                + ". Narrow the ranges or step sizes before creating this output.");
+                                + limits.describe(limits.maxDisplayCells())
+                                + ". Narrow the ranges or step sizes before creating this output."
+                                + OVERRIDE_HINT);
             }
         }
         return decide(estimate, available, (long) Math.floor(available * DEFAULT_AVAILABLE_FRACTION));
@@ -165,13 +324,15 @@ public final class ResourceGuard {
 
     private static Feasibility assessMontageOutputFeasibility(ParameterSweep sweep,
                                                                ImagePlus source,
-                                                               long available) {
+                                                               long available,
+                                                               Limits requestedLimits) {
+        Limits limits = Limits.orDefaults(requestedLimits);
         if (sweep == null) {
-            return Feasibility.refused(null, available,
+            return Feasibility.refused(null, available, RefusalKind.INVALID_INPUT,
                     "No parameter sweep was provided.");
         }
         if (source == null) {
-            return Feasibility.refused(null, available,
+            return Feasibility.refused(null, available, RefusalKind.INVALID_INPUT,
                     "No source image was provided.");
         }
         long cells = sweep.cellCount();
@@ -182,21 +343,22 @@ public final class ResourceGuard {
         long cropVoxels = multiply(multiply(crop.width, crop.height), stackDepth(source));
         Estimate estimate = new Estimate(cropVoxels, 0L, 0L, 0L, 0L,
                 0L, 0L, 0L, 0L, previewBytes, previewBytes);
-        if (cells > MAX_DISPLAY_CELLS) {
-            return Feasibility.refused(estimate, available,
+        if (cells > limits.maxDisplayCells()) {
+            return Feasibility.refused(estimate, available, RefusalKind.COUNT_LIMIT,
                     "The autosave montage contains " + cells
                             + " cells, above the practical limit of "
-                            + MAX_DISPLAY_CELLS
-                            + ". Narrow the ranges or step sizes before creating this output.");
+                            + limits.describe(limits.maxDisplayCells())
+                            + ". Narrow the ranges or step sizes before creating this output."
+                            + OVERRIDE_HINT);
         }
         long budget = (long) Math.floor(available * DEFAULT_AVAILABLE_FRACTION);
         if (estimate.totalBytes() > budget) {
-            return Feasibility.refused(estimate, available,
+            return Feasibility.refused(estimate, available, RefusalKind.MEMORY_BUDGET,
                     "Estimated autosave montage memory is ~" + formatGb(previewBytes)
                             + " GB (" + previewBytes + " bytes), above the remaining output budget of ~"
                             + formatGb(budget) + " GB (" + budget + " bytes).");
         }
-        return new Feasibility(true, estimate, available,
+        return new Feasibility(true, estimate, available, RefusalKind.NONE,
                 "The autosave montage fits the current memory budget.");
     }
 
@@ -241,9 +403,10 @@ public final class ResourceGuard {
 
     private static Feasibility decide(Estimate estimate, long available, long budget) {
         if (estimate.totalBytes() > budget) {
-            return new Feasibility(false, estimate, available, refusalMessage(estimate, budget));
+            return new Feasibility(false, estimate, available, RefusalKind.MEMORY_BUDGET,
+                    refusalMessage(estimate, budget));
         }
-        return new Feasibility(true, estimate, available,
+        return new Feasibility(true, estimate, available, RefusalKind.NONE,
                 "This component-tree sweep fits the current memory budget.");
     }
 
@@ -429,17 +592,39 @@ public final class ResourceGuard {
         public final long availableBytes;
         public final String message;
         private final Estimate estimate;
+        private final RefusalKind refusalKind;
 
-        private Feasibility(boolean ok, Estimate estimate, long availableBytes, String message) {
+        private Feasibility(boolean ok,
+                            Estimate estimate,
+                            long availableBytes,
+                            RefusalKind refusalKind,
+                            String message) {
             this.ok = ok;
             this.estimate = estimate;
             this.estimatedBytes = estimate == null ? 0L : estimate.totalBytes();
             this.availableBytes = availableBytes;
+            this.refusalKind = refusalKind == null ? RefusalKind.NONE : refusalKind;
             this.message = message == null ? "" : message;
         }
 
-        private static Feasibility refused(Estimate estimate, long availableBytes, String message) {
-            return new Feasibility(false, estimate, availableBytes, message);
+        private static Feasibility refused(Estimate estimate,
+                                           long availableBytes,
+                                           RefusalKind refusalKind,
+                                           String message) {
+            return new Feasibility(false, estimate, availableBytes, refusalKind, message);
+        }
+
+        /** Why this assessment refused; {@link RefusalKind#NONE} when it did not. */
+        public RefusalKind refusalKind() {
+            return refusalKind;
+        }
+
+        /**
+         * True when re-assessing with {@link Limits#withoutCountLimits()} could
+         * permit this sweep. A memory-budget refusal is never overridable.
+         */
+        public boolean overridable() {
+            return !ok && refusalKind == RefusalKind.COUNT_LIMIT;
         }
 
         public boolean isOk() {

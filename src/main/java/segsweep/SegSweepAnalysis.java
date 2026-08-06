@@ -94,7 +94,8 @@ public final class SegSweepAnalysis {
         ParameterSweep displayWindow = buildDisplayWindow(params);
         ResourceGuard.Feasibility feasibility =
                 ResourceGuard.assessComputeFeasibility(
-                        displayWindow, params.image(), params.parallelism());
+                        displayWindow, params.image(), params.parallelism(),
+                        params.limits());
         if (!feasibility.isOk()) {
             throw new SweepRefusedException(feasibility.getMessage());
         }

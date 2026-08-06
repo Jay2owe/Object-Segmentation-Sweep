@@ -40,6 +40,29 @@ public final class SegSweepMacroOptions {
     private boolean hideDisplay;
     private boolean showGrid = true;
     private boolean showTables = true;
+    private boolean allowOversizedSweep;
+
+    /**
+     * Whether this run waives the default cell-count ceilings.
+     *
+     * <p>Recorded as a macro option rather than left as a dialog-only decision:
+     * a macro that reproduces a run must reproduce the override too, or replay
+     * fails on the refusal the user already answered.</p>
+     */
+    public boolean allowOversizedSweep() {
+        return allowOversizedSweep;
+    }
+
+    public void setAllowOversizedSweep(boolean allowOversizedSweep) {
+        this.allowOversizedSweep = allowOversizedSweep;
+    }
+
+    /** Limits this run should be assessed against. */
+    public segsweep.sweep.ResourceGuard.Limits limits() {
+        return allowOversizedSweep
+                ? segsweep.sweep.ResourceGuard.Limits.withoutCountLimits()
+                : segsweep.sweep.ResourceGuard.Limits.defaults();
+    }
 
     public String image() {
         return image;
@@ -167,7 +190,8 @@ public final class SegSweepMacroOptions {
                 .crop(crop)
                 .pickCriterion(pickCriterion)
                 .minimumCropFraction(minimumCropFraction)
-                .stabilityBudgetMs(stabilityBudgetMs);
+                .stabilityBudgetMs(stabilityBudgetMs)
+                .allowOversizedSweep(allowOversizedSweep);
         addAxis(builder, primaryAxis);
         if (secondaryAxis != null) {
             addAxis(builder, secondaryAxis);
@@ -209,6 +233,9 @@ public final class SegSweepMacroOptions {
         tokens.add("min_crop_fraction=" + CanonicalScale.formatNumber(Double.valueOf(minimumCropFraction)));
         tokens.add("stability_budget_ms=" + stabilityBudgetMs);
         append(tokens, "autosave", autosave);
+        if (allowOversizedSweep) {
+            tokens.add("allow_oversized");
+        }
         if (hideDisplay) {
             tokens.add("hide_display");
         } else {
