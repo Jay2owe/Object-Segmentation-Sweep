@@ -503,7 +503,7 @@ public final class IouStability {
             if (axes.size() > UI_AXIS_CAP) {
                 return new TopologyBuild(null,
                         StabilityOutcome.Kind.TOO_MANY_AXES,
-                        "The v0.1 UI reports stability for at most two varying axes.");
+                        "The v0.2 UI reports stability for at most two varying axes.");
             }
 
             int[][] coordinates = new int[combos.size()][axes.size()];

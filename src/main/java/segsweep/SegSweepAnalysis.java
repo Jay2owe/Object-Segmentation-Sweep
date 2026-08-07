@@ -169,7 +169,7 @@ public final class SegSweepAnalysis {
         if (image.getNFrames() > 1) {
             throw new SegSweepParameters.ValidationException(
                     SegSweepParameters.ValidationFailure.UNSUPPORTED_TIME_SERIES,
-                    "SegSweep v0.1.0 does not process time-series images; received "
+                    "SegSweep v0.2.0 does not process time-series images; received "
                             + image.getNFrames() + " frames. Split the timepoints and run each frame separately.");
         }
         int channels = Math.max(1, image.getNChannels());
@@ -182,7 +182,7 @@ public final class SegSweepAnalysis {
         if (params.engine() != SegmentationMethod.Engine.CLASSICAL) {
             throw new SegSweepParameters.ValidationException(
                     SegSweepParameters.ValidationFailure.UNSUPPORTED_ENGINE,
-                    "Only the Classical engine is executable in v0.1.0.");
+                    "Only the Classical engine is executable in v0.2.0.");
         }
         if (params.axes().isEmpty()) {
             throw new SegSweepParameters.ValidationException(
@@ -192,7 +192,7 @@ public final class SegSweepAnalysis {
         if (params.axes().size() > 2) {
             throw new SegSweepParameters.ValidationException(
                     SegSweepParameters.ValidationFailure.UNSUPPORTED_AXIS_COMBINATION,
-                    "The v0.1.0 public API accepts at most two display axes.");
+                    "The v0.2.0 public API accepts at most two display axes.");
         }
         for (Map.Entry<ParameterId, ParameterValueList> entry : params.axes().entrySet()) {
             ParameterId id = entry.getKey();
@@ -206,7 +206,7 @@ public final class SegSweepAnalysis {
                 throw new SegSweepParameters.ValidationException(
                         SegSweepParameters.ValidationFailure.UNSUPPORTED_AXIS_COMBINATION,
                         "Axis " + id.stableKey()
-                                + " is not supported by the v0.1.0 Classical engine.");
+                                + " is not supported by the v0.2.0 Classical engine.");
             }
             SegSweepParameters.validateAxisValues(id, values);
         }

@@ -15,8 +15,8 @@ authors:
 repository-code: "https://github.com/Jay2owe/Object-Segmentation-Sweep"
 url: "https://github.com/Jay2owe/Object-Segmentation-Sweep"
 license: BSD-3-Clause
-version: "0.1.0"
-date-released: "2026-08-04"
+version: "0.2.0"
+date-released: "2026-08-07"
 keywords:
   - imagej
   - fiji

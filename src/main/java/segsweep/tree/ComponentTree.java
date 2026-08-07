@@ -401,7 +401,7 @@ public final class ComponentTree {
         if (Double.isNaN(data.feretDiameterMax)) {
             if (data.voxelCount > MAX_EXACT_FERET_VOXELS) {
                 throw new SweepRefusedException("Exact Feret diameter for a "
-                        + data.voxelCount + "-voxel object exceeds the bounded v0.1 limit of "
+                        + data.voxelCount + "-voxel object exceeds the bounded v0.2 limit of "
                         + MAX_EXACT_FERET_VOXELS
                         + ". Add a cheaper size/morphology filter or crop more tightly.");
             }

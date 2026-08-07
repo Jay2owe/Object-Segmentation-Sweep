@@ -21,7 +21,7 @@ import java.util.List;
  *
  * <p>This class is kept as an unexposed analysis primitive for future UI
  * evaluation. It assumes histograms are aligned, non-negative count arrays from
- * comparable images and crops. It is not used to pick v0.1 settings, and it has
+ * comparable images and crops. It is not used to pick v0.2 settings, and it has
  * no randomisation null model until v0.2.0.</p>
  */
 public final class HistogramShapeStability {

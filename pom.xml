@@ -14,7 +14,7 @@
 
 	<groupId>io.github.jay2owe</groupId>
 	<artifactId>Object-Segmentation-Sweep</artifactId>
-	<version>0.1.0</version>
+	<version>0.2.0</version>
 
 	<name>Object Segmentation Sweep</name>
 	<description>Sweep segmentation settings across a range, review every result side by side as label maps, and select a value from the object-count knee or parameter stability.</description>
@@ -83,6 +83,7 @@
 
 	<properties>
 		<package-name>segsweep</package-name>
+		<oc3d-core.version>0.1.0</oc3d-core.version>
 		<license.licenseName>bsd_3</license.licenseName>
 		<license.copyrightOwners>Jamie Malcolm</license.copyrightOwners>
 	</properties>
@@ -100,6 +101,17 @@
 			<artifactId>ij</artifactId>
 		</dependency>
 
+		<!--
+		  Shared regex grouping and cycle-safe recursive folder discovery. The
+		  core is bundled under segsweep.internal.core so Fiji users still
+		  install one JAR and consumers cannot collide in Fiji's classloader.
+		-->
+		<dependency>
+			<groupId>io.github.jay2owe</groupId>
+			<artifactId>oc3d-core</artifactId>
+			<version>${oc3d-core.version}</version>
+		</dependency>
+
 		<dependency>
 			<groupId>junit</groupId>
 			<artifactId>junit</artifactId>
@@ -108,7 +120,75 @@
 	</dependencies>
 
 	<build>
+		<resources>
+			<resource>
+				<directory>src/main/resources</directory>
+			</resource>
+			<resource>
+				<directory>${project.basedir}</directory>
+				<includes>
+					<include>LICENSE</include>
+				</includes>
+				<targetPath>META-INF</targetPath>
+			</resource>
+		</resources>
 		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-shade-plugin</artifactId>
+				<executions>
+					<execution>
+						<phase>package</phase>
+						<goals>
+							<goal>shade</goal>
+						</goals>
+						<configuration>
+							<createDependencyReducedPom>false</createDependencyReducedPom>
+							<artifactSet>
+								<includes>
+									<include>io.github.jay2owe:oc3d-core</include>
+								</includes>
+							</artifactSet>
+							<relocations>
+								<relocation>
+									<pattern>sc.fiji.oc3d.core</pattern>
+									<shadedPattern>segsweep.internal.core</shadedPattern>
+								</relocation>
+							</relocations>
+							<filters>
+								<filter>
+									<artifact>io.github.jay2owe:oc3d-core</artifact>
+									<excludes>
+										<exclude>META-INF/MANIFEST.MF</exclude>
+										<exclude>META-INF/maven/**</exclude>
+										<exclude>META-INF/*.SF</exclude>
+										<exclude>META-INF/*.DSA</exclude>
+										<exclude>META-INF/*.RSA</exclude>
+									</excludes>
+								</filter>
+							</filters>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-jar-plugin</artifactId>
+				<configuration>
+					<!-- SCM manifest values change even when classes do not. -->
+					<forceCreation>true</forceCreation>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-failsafe-plugin</artifactId>
+				<configuration>
+					<systemPropertyVariables>
+						<segsweep.project.basedir>${project.basedir}</segsweep.project.basedir>
+						<segsweep.project.jar>${project.build.directory}/${project.build.finalName}.jar</segsweep.project.jar>
+					</systemPropertyVariables>
+				</configuration>
+			</plugin>
 			<plugin>
 				<groupId>org.codehaus.mojo</groupId>
 				<artifactId>license-maven-plugin</artifactId>

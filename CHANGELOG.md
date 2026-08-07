@@ -6,6 +6,8 @@ All notable changes to Object Segmentation Sweep are documented here. The format
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-07
+
 ### Added
 
 - Dialog settings are remembered between sessions (`SweepStateStore`). Ranges, axes, channel, pick
@@ -20,6 +22,16 @@ All notable changes to Object Segmentation Sweep are documented here. The format
   `OutOfMemoryError` partway through.
 - `allow_oversized` macro option and `SegSweepParameters.allowOversizedSweep`, so an accepted
   override reproduces from a macro rather than stopping at the refusal the user already answered.
+- `oc3d-core` 0.1.0 now supplies regex grouping and cycle-safe recursive folder traversal. It is
+  privately relocated to `segsweep.internal.core` in the single installable plugin JAR.
+- Exact-core-tag CI bootstrapping and packaged-runtime checks verify the relocated core, plugin
+  descriptor, licence, build provenance, and absence of bundled ImageJ classes.
+
+### Changed
+
+- A filename whose selected optional capture group did not participate is now skipped during
+  discovery instead of aborting the entire batch preview. This is the shared core's explicit
+  behavior; other matching files continue in deterministic order.
 
 ### Notes
 
@@ -49,4 +61,6 @@ All notable changes to Object Segmentation Sweep are documented here. The format
 - StarDist, Cellpose, randomization/null-model claims, and multidimensional knee scoring are
   deferred.
 
+[Unreleased]: https://github.com/Jay2owe/Object-Segmentation-Sweep/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Jay2owe/Object-Segmentation-Sweep/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Jay2owe/Object-Segmentation-Sweep/releases/tag/v0.1.0

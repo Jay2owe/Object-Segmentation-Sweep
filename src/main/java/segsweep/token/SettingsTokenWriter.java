@@ -21,7 +21,7 @@ import java.util.List;
 import java.util.Map;
 
 public final class SettingsTokenWriter {
-    public static final String VERSION = "0.1.0";
+    public static final String VERSION = "0.2.0";
 
     private SettingsTokenWriter() {
     }

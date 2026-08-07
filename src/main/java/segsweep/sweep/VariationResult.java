@@ -19,7 +19,7 @@ public final class VariationResult {
     public enum Flag {
         EMPTY,
         SATURATED,
-        /** Stable strategy-facing flag; Classical v0.1 defines no per-combination deadline. */
+        /** Stable strategy-facing flag; Classical v0.2 defines no per-combination deadline. */
         TIMED_OUT,
         FAILED,
         TOO_MANY_LABELS,

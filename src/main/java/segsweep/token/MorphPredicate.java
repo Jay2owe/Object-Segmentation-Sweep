@@ -91,7 +91,7 @@ public final class MorphPredicate {
     public segsweep.tree.MorphologyPredicate toTreePredicate() {
         if (!supportedByTree()) {
             throw new IllegalArgumentException("Morphology feature '" + featureName
-                    + "' is not a v0.1 component-tree attribute.");
+                    + "' is not a v0.2 component-tree attribute.");
         }
         return new segsweep.tree.MorphologyPredicate(
                 MorphologyAttribute.fromToken(featureName), op.toTreeOperator(), value);

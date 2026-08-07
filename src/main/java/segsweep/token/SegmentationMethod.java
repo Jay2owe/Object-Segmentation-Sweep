@@ -113,7 +113,7 @@ public final class SegmentationMethod {
             return ExecutionDecision.supportedDecision();
         }
         return ExecutionDecision.declined(engine, "The " + engineName()
-                + " engine is recorded by settings tokens but is not executable in v0.1.0.");
+                + " engine is recorded by settings tokens but is not executable in v0.2.0.");
     }
 
     public String engineName() {

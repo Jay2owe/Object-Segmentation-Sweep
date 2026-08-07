@@ -3,26 +3,45 @@ name: build-main
 on:
   push:
     branches: [main]
+  pull_request:
+
+# oc3d-core is compiled into the plugin JAR, not installed beside it in Fiji.
+# Keep this immutable ref aligned with oc3d-core.version in pom.xml.
+env:
+  OC3D_CORE_REPO: Jay2owe/oc3d-core
+  OC3D_CORE_REF: v0.1.0
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out Object Segmentation Sweep
+        uses: actions/checkout@v4
+        with:
+          path: plugin
+
+      - name: Check out oc3d-core
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.OC3D_CORE_REPO }}
+          ref: ${{ env.OC3D_CORE_REF }}
+          path: oc3d-core
+
       - uses: actions/setup-java@v4
         with:
           java-version: '8'
           distribution: 'zulu'
-      - name: Cache Maven repo
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
-          restore-keys: ${{ runner.os }}-m2-
-      - name: Build
-        run: bash mvnw clean package
+          cache: maven
+
+      - name: Test and install the exact core release
+        run: mvn --batch-mode --no-transfer-progress -f oc3d-core/pom.xml clean install
+
+      - name: Build and verify the packaged plugin JAR
+        working-directory: plugin
+        run: bash mvnw --batch-mode --no-transfer-progress clean verify
+
       - name: Upload jar
         uses: actions/upload-artifact@v4
         with:
           name: Object-Segmentation-Sweep-jar
-          path: target/Object-Segmentation-Sweep-*.jar
+          path: plugin/target/Object-Segmentation-Sweep-*.jar

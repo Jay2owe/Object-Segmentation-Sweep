@@ -22,4 +22,9 @@ desktop.ini
 PUBLISHING_AUDIT.md
 docs/
 tools/
-src/test/
+src/test/*
+!src/test/java/
+src/test/java/*
+!src/test/java/segsweep/
+src/test/java/segsweep/*
+!src/test/java/segsweep/PackagingIT.java

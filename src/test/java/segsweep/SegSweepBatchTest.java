@@ -111,8 +111,6 @@ public class SegSweepBatchTest {
         try {
             Files.createSymbolicLink(ancestorLink.toPath(), tmp.getRoot().toPath());
         } catch (IOException | UnsupportedOperationException | SecurityException ex) {
-            assertEquals(SegSweepBatch.realDirectoryPath(tmp.getRoot()),
-                    SegSweepBatch.realDirectoryPath(new File(sub, "..")));
             return;
         }
         try {
@@ -142,19 +140,17 @@ public class SegSweepBatchTest {
     }
 
     @Test
-    public void unmatchedOptionalCaptureGroupHasReadableValidationFailure() throws Exception {
+    public void unmatchedOptionalCaptureIsSkippedWithoutAbortingOtherMatches() throws Exception {
         saveImage(new File(tmp.getRoot(), "A.tif"));
+        saveImage(new File(tmp.getRoot(), "A_1.tif"));
         Pattern pattern = Pattern.compile("A(?:_(\\d+))?\\.tif");
 
-        try {
-            SegSweepBatch.findGroups(tmp.getRoot(), pattern, 1);
-        } catch (IllegalArgumentException expected) {
-            assertTrue(expected.getMessage().contains("Capture group 1"));
-            assertTrue(expected.getMessage().contains("A.tif"));
-            assertTrue(expected.getMessage().contains("did not participate"));
-            return;
-        }
-        throw new AssertionError("Expected an unmatched optional capture-group failure.");
+        Map<String, List<File>> groups = SegSweepBatch.findGroups(
+                tmp.getRoot(), pattern, 1);
+
+        assertEquals(1, groups.size());
+        assertEquals(1, groups.get("A_*.tif").size());
+        assertEquals("A_1.tif", groups.get("A_*.tif").get(0).getName());
     }
 
     @Test

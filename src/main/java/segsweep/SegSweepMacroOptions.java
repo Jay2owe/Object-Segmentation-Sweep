@@ -214,7 +214,7 @@ public final class SegSweepMacroOptions {
             }
         }
         if (engine != SegmentationMethod.Engine.CLASSICAL) {
-            throw new IllegalArgumentException("engine must be classical in v0.1.0.");
+            throw new IllegalArgumentException("engine must be classical in v0.2.0.");
         }
     }
 

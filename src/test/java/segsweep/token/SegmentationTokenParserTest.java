@@ -54,14 +54,14 @@ public class SegmentationTokenParserTest {
     }
 
     @Test
-    public void v02EngineTokensParseButV01ExecutionDeclinesThem() {
+    public void futureEngineTokensParseButCurrentExecutionDeclinesThem() {
         SegmentationMethod starDist = SegmentationTokenParser.parse("stardist:0.5:0.4:model=my_stardist");
         SegmentationMethod cellpose = SegmentationTokenParser.parse("cellpose:30:0.4:0.0:model=cyto3");
 
         assertTrue(starDist.isStarDist());
         assertTrue(cellpose.isCellpose());
         assertTrue(starDist.v01ExecutionDecision().declined());
-        assertTrue(starDist.v01ExecutionDecision().reason().contains("not executable in v0.1.0"));
+        assertTrue(starDist.v01ExecutionDecision().reason().contains("not executable in v0.2.0"));
         assertTrue(cellpose.v01ExecutionDecision().declined());
     }
 
@@ -105,9 +105,9 @@ public class SegmentationTokenParserTest {
         assertTrue(unknown.matches(0.0));
         try {
             unknown.toTreePredicate();
-            fail("Expected unknown predicate to have no v0.1 tree mapping.");
+            fail("Expected unknown predicate to have no v0.2 tree mapping.");
         } catch (IllegalArgumentException expected) {
-            assertTrue(expected.getMessage().contains("not a v0.1"));
+            assertTrue(expected.getMessage().contains("not a v0.2"));
         }
     }
 

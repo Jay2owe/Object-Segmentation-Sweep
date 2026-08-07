@@ -18,7 +18,7 @@ import ij.process.ImageProcessor;
  * <p>Label identity is deliberately ignored: two maps with the same foreground
  * footprint score 1.0 even if one splits objects differently. This fallback is
  * useful for tests and non-tree engines that cannot expose object identities,
- * but classical v0.1 picker scoring should use tree membership instead. The
+ * but classical v0.2 picker scoring should use tree membership instead. The
  * measure is heuristic and has no randomisation null model until v0.2.0.</p>
  */
 public final class LabelIou {

@@ -19,7 +19,7 @@ public final class VariationStrategyChooser {
         }
         if (sweep.method() != ParameterSweep.Method.CLASSICAL) {
             throw new UnsupportedOperationException(
-                    sweep.method().label() + " variations are not implemented in v0.1.0.");
+                    sweep.method().label() + " variations are not implemented in v0.2.0.");
         }
         if (classicalStrategy == null) {
             throw new IllegalStateException(

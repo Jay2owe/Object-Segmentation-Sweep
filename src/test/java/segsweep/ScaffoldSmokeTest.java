@@ -34,7 +34,7 @@ public class ScaffoldSmokeTest {
                 new File(root, "pom.xml").toPath()), StandardCharsets.UTF_8);
         String citation = new String(Files.readAllBytes(
                 new File(root, "CITATION.cff").toPath()), StandardCharsets.UTF_8);
-        assertTrue(pom.contains("<version>0.1.0</version>"));
-        assertTrue(citation.contains("version: \"0.1.0\""));
+        assertTrue(pom.contains("<version>0.2.0</version>"));
+        assertTrue(citation.contains("version: \"0.2.0\""));
     }
 }

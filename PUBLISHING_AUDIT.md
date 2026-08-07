@@ -1,10 +1,10 @@
-# Publishing Audit — Object Segmentation Sweep 0.1.0
+# Publishing Audit — Object Segmentation Sweep 0.2.0
 
 Audit date: 2026-08-04
 
 ## Verdict
 
-The repository is ready as a source release for version 0.1.0. The README deliberately does not
+The repository is ready as a source release for version 0.2.0. The README deliberately does not
 claim a live ImageJ update site, wiki listing, archived DOI, or published GitHub release; those are
 separate distribution actions and are not prerequisites for the correctness of this source tree.
 
@@ -13,7 +13,7 @@ separate distribution actions and are not prerequisites for the correctness of t
 | Check | Status | Evidence |
 | --- | --- | --- |
 | License | PASS | Root BSD 3-Clause `LICENSE`, Maven metadata, and Java headers agree. |
-| Version | PASS | Maven, changelog, README, and citation metadata use `0.1.0`. |
+| Version | PASS | Maven, changelog, README, and citation metadata use `0.2.0`. |
 | Runtime dependencies | PASS | ImageJ (`net.imagej:ij`) is the only compile/runtime dependency. |
 | Build workflow | PASS | Maven wrapper and GitHub Actions Java 8 build are present. |
 | Plugin entry points | PASS | Single-image and batch commands are registered in `plugins.config`. |
@@ -22,7 +22,7 @@ separate distribution actions and are not prerequisites for the correctness of t
 | Changelog | PASS | The initial release and its deliberate deferrals are documented. |
 | Output documentation | PASS | Auto-save writes root and labels-folder README files. |
 | Secret/private-data scan | PASS | No credentials, private datasets, or user-specific paths are required by the source or documentation. |
-| Claims audit | PASS | README describes only the Classical v0.1.0 behavior implemented and tested in this tree. |
+| Claims audit | PASS | README describes only the Classical v0.2.0 behavior implemented and tested in this tree. |
 
 ## Reproducibility and safety decisions
 

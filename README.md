@@ -26,7 +26,8 @@ outputs.
   preview and recursive batch discovery.
 - Auto-save tables, a reviewed/deterministic grid image, an optional picked settings token, and an
   optional 16-bit picked label map with README files for both output folders.
-- Depend only on ImageJ at runtime.
+- Depend only on ImageJ externally at runtime; the shared batch-discovery core is private inside
+  the plugin JAR.
 
 Classical segmentation uses the same 26-connected default as 3D Objects Counter+. Thresholding is
 strictly `value > threshold`.
@@ -35,11 +36,14 @@ strictly `value > threshold`.
 
 ### Manual JAR
 
-Download `Object-Segmentation-Sweep-0.1.0.jar` from the project release and place it in Fiji's
+Download `Object-Segmentation-Sweep-0.2.0.jar` from the project release and place it in Fiji's
 `plugins/` directory, then restart Fiji. The commands appear as:
 
 - **Plugins → Object Segmentation Sweep**
 - **Plugins → Object Segmentation Sweep Batch**
+
+Install only that JAR. `oc3d-core` is bundled and relocated under
+`segsweep.internal.core`; it must not be copied into Fiji separately.
 
 An ImageJ update site is planned separately; this source release does not claim that it is already
 listed or live.
@@ -48,17 +52,28 @@ listed or live.
 
 Java 8 or newer is required.
 
+The build pins `io.github.jay2owe:oc3d-core:0.1.0`. Because the core is not read from a public
+Maven repository, first build its immutable `v0.1.0` tag into the same Maven repository, then
+verify the plugin:
+
 ```bash
+git clone --branch v0.1.0 --depth 1 https://github.com/Jay2owe/oc3d-core.git
+mvn -f oc3d-core/pom.xml clean install
 bash mvnw clean verify
 ```
 
 On Windows:
 
 ```powershell
+git clone --branch v0.1.0 --depth 1 https://github.com/Jay2owe/oc3d-core.git
+mvn -f oc3d-core/pom.xml clean install
 .\mvnw.cmd clean verify
 ```
 
-The main artifact is written to `target/Object-Segmentation-Sweep-0.1.0.jar`.
+The main artifact is written to `target/Object-Segmentation-Sweep-0.2.0.jar`. It contains the
+cycle-safe recursive traversal and regex grouping code under a private namespace while leaving
+ImageJ to Fiji. `verify` also exercises that packaged path in an isolated class loader. GitHub
+Actions performs the same exact-tag bootstrap from fresh checkouts.
 
 ## Usage
 
@@ -95,7 +110,7 @@ Object Segmentation Sweep/
 crop fraction, and flags. A supported per-cell refusal becomes a `FAILED` row rather than aborting
 the other combinations. `SATURATED` means the selected foreground covers the analysed crop.
 `TIMED_OUT` is retained in the result schema for execution strategies that define a deadline;
-the v0.1 Classical engine has no per-combination timeout setting.
+the v0.2 Classical engine has no per-combination timeout setting.
 
 `picked_settings.txt` is the reproducible methods artifact. It contains the classical settings
 token, source identity/channel, crop, calibration, displayed axes, both picker reports, and the
@@ -115,7 +130,7 @@ Key options:
 | --- | --- | --- |
 | `image` | active image | File path or open-window title |
 | `channel` | `1` | One-based channel |
-| `engine` | `classical` | The only executable v0.1.0 engine |
+| `engine` | `classical` | The only executable v0.2.0 engine |
 | `sweep`, `from`, `to`, `step` | threshold, 10, 60, 5 | Primary axis |
 | `values` | — | Explicit comma-separated primary values |
 | `sweep2`, `from2`, `to2`, `step2`, `values2` | — | Optional secondary axis |
@@ -162,9 +177,9 @@ For sweeping preprocessing filter chains rather than segmentation settings, see
 ## Known limitations
 
 - Knee and stability are heuristics, not proofs of an optimal segmentation.
-- v0.1.0 has no randomization null model and cannot claim that a knee differs from chance.
+- v0.2.0 has no randomization null model and cannot claim that a knee differs from chance.
 - The classical engine is the only executable engine; StarDist and Cellpose are deferred.
-- v0.1.0 rejects time-series inputs; split timepoints and analyse each frame separately.
+- v0.2.0 rejects time-series inputs; split timepoints and analyse each frame separately.
 - Knee scoring is one-dimensional and is explicitly refused for two varying axes.
 - Exact Feret evaluation is bounded to 4096 voxels per candidate; affected combinations are
   reported as failed rows and remain available for manual diagnosis.
@@ -178,12 +193,12 @@ For sweeping preprocessing filter chains rather than segmentation settings, see
 
 See [`CITATION.cff`](CITATION.cff). Until an archived DOI is minted, cite the version and source:
 
-> Malcolm, J. (2026). Object Segmentation Sweep (v0.1.0) [Software]. GitHub.
+> Malcolm, J. (2026). Object Segmentation Sweep (v0.2.0) [Software]. GitHub.
 > https://github.com/Jay2owe/Object-Segmentation-Sweep
 
 Suggested methods wording:
 
-> Segmentation thresholds were reviewed with Object Segmentation Sweep v0.1.0, recording the
+> Segmentation thresholds were reviewed with Object Segmentation Sweep v0.2.0, recording the
 > object-count knee and neighbour-IoU stability together with the crop and parameter range.
 
 ## License

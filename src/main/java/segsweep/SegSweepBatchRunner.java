@@ -19,8 +19,10 @@ import segsweep.sweep.ResourceGuard;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
@@ -33,17 +35,13 @@ public final class SegSweepBatchRunner {
 
     public static String preview(SegSweepBatchParameters parameters) {
         CompiledBatch compiled = compile(parameters);
-        Map<String, Map<String, List<File>>> groups = SegSweepBatch.findGroupsRecursive(
-                parameters.inputFolder(), compiled.pattern,
-                parameters.varyingGroup(), parameters.recursive());
+        Map<String, Map<String, List<File>>> groups = discover(parameters, compiled.pattern);
         return SegSweepBatch.previewNestedGroups(groups);
     }
 
     public static SegSweepBatchResult run(SegSweepBatchParameters parameters) {
         CompiledBatch compiled = compile(parameters);
-        Map<String, Map<String, List<File>>> groups = SegSweepBatch.findGroupsRecursive(
-                parameters.inputFolder(), compiled.pattern,
-                parameters.varyingGroup(), parameters.recursive());
+        Map<String, Map<String, List<File>>> groups = discover(parameters, compiled.pattern);
         if (groups.isEmpty()) {
             throw new IllegalArgumentException("No matching files found in: "
                     + parameters.inputFolder());
@@ -152,6 +150,36 @@ public final class SegSweepBatchRunner {
         }
         return new ParameterSweep(ParameterSweep.Method.CLASSICAL, axes,
                 options.crop(), "C" + options.channel());
+    }
+
+    private static Map<String, Map<String, List<File>>> discover(
+            SegSweepBatchParameters parameters, Pattern pattern) {
+        return SegSweepBatch.findGroupsRecursive(
+                parameters.inputFolder(), pattern,
+                parameters.varyingGroup(), parameters.recursive(),
+                outputExclusions(parameters));
+    }
+
+    /**
+     * Gives the shared traversal the exact output trees it can know about.
+     * The adapter also retains the plugin's name-based result filter for older
+     * versioned outputs found deeper in a recursively scanned input tree.
+     */
+    private static Set<File> outputExclusions(SegSweepBatchParameters parameters) {
+        HashSet<File> excluded = new HashSet<File>();
+        File base = parameters.saveDir() == null
+                ? parameters.inputFolder() : parameters.saveDir();
+        if (base == null) return excluded;
+        excluded.add(new File(base, AutoSaveWriter.OUTPUT_FOLDER));
+        File[] children = base.listFiles();
+        if (children != null) {
+            for (int i = 0; i < children.length; i++) {
+                if (SegSweepBatch.isGeneratedOutputDirectory(children[i])) {
+                    excluded.add(children[i]);
+                }
+            }
+        }
+        return excluded;
     }
 
     private static void writeBatchRollup(File outputRoot, SegSweepBatchResult result) {

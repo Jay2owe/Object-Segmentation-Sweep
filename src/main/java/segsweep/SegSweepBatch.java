@@ -9,6 +9,7 @@
 package segsweep;
 
 import ij.IJ;
+import sc.fiji.oc3d.core.io.RegexGroupDiscovery;
 import segsweep.ui.SegSweepDialog;
 
 import javax.swing.JButton;
@@ -31,16 +32,11 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.io.File;
-import java.io.IOException;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashSet;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
@@ -147,92 +143,56 @@ public final class SegSweepBatch {
 
     static Map<String, List<File>> findGroups(File folder, Pattern pattern,
                                               int varyingGroup) {
-        Map<String, List<File>> groups = new LinkedHashMap<String, List<File>>();
-        File[] files = folder == null ? null : folder.listFiles();
-        if (files == null) return groups;
-        Arrays.sort(files);
-        for (int i = 0; i < files.length; i++) {
-            File f = files[i];
-            if (!f.isFile()) continue;
-            Matcher m = pattern.matcher(f.getName());
-            if (!m.matches()) continue;
-            String key;
-            if (varyingGroup >= 1 && varyingGroup <= m.groupCount()) {
-                if (m.start(varyingGroup) < 0 || m.end(varyingGroup) < 0) {
-                    throw new IllegalArgumentException("Capture group " + varyingGroup
-                            + " did not participate when matching file " + f.getName()
-                            + ". Make that capture group mandatory or choose another group.");
-                }
-                key = f.getName().substring(0, m.start(varyingGroup))
-                        + "*" + f.getName().substring(m.end(varyingGroup));
-            } else {
-                key = "all";
-            }
-            List<File> list = groups.get(key);
-            if (list == null) {
-                list = new ArrayList<File>();
-                groups.put(key, list);
-            }
-            list.add(f);
-        }
-        return groups;
+        return RegexGroupDiscovery.findGroups(
+                folder, pattern, varyingGroup,
+                RegexGroupDiscovery.GroupOrder.FILENAME);
     }
 
     static Map<String, Map<String, List<File>>> findGroupsRecursive(
             File rootFolder, Pattern pattern, int varyingGroup, boolean recursive) {
-        Map<String, Map<String, List<File>>> result =
+        return findGroupsRecursive(rootFolder, pattern, varyingGroup, recursive,
+                Collections.<File>emptySet());
+    }
+
+    static Map<String, Map<String, List<File>>> findGroupsRecursive(
+            File rootFolder, Pattern pattern, int varyingGroup, boolean recursive,
+            Set<File> excludedDirectories) {
+        Map<String, Map<String, List<File>>> discovered =
+                RegexGroupDiscovery.findGroupsRecursive(
+                        rootFolder, pattern, varyingGroup, recursive,
+                        RegexGroupDiscovery.GroupOrder.FILENAME,
+                        excludedDirectories);
+        return withoutGeneratedOutputFolders(discovered);
+    }
+
+    private static Map<String, Map<String, List<File>>> withoutGeneratedOutputFolders(
+            Map<String, Map<String, List<File>>> discovered) {
+        Map<String, Map<String, List<File>>> filtered =
                 new LinkedHashMap<String, Map<String, List<File>>>();
-        if (recursive) {
-            walkDirectories(rootFolder, "", pattern, varyingGroup, result,
-                    new HashSet<Path>());
-        } else {
-            Map<String, List<File>> groups = findGroups(rootFolder, pattern, varyingGroup);
-            if (!groups.isEmpty()) {
-                result.put("", groups);
+        for (Map.Entry<String, Map<String, List<File>>> entry : discovered.entrySet()) {
+            if (!containsGeneratedOutputFolder(entry.getKey())) {
+                filtered.put(entry.getKey(), entry.getValue());
             }
         }
-        return result;
+        return filtered;
     }
 
-    private static void walkDirectories(File current, String relativePath,
-                                        Pattern pattern, int varyingGroup,
-                                        Map<String, Map<String, List<File>>> result,
-                                        Set<Path> visitedDirectories) {
-        if (current == null || !current.isDirectory()) return;
-        final Path realPath;
-        try {
-            realPath = realDirectoryPath(current);
-        } catch (IOException ex) {
-            return;
+    private static boolean containsGeneratedOutputFolder(String relativePath) {
+        if (relativePath == null || relativePath.length() == 0) return false;
+        String[] parts = relativePath.split("/");
+        for (int i = 0; i < parts.length; i++) {
+            if (isGeneratedOutputName(parts[i])) return true;
         }
-        if (!visitedDirectories.add(realPath)) return;
-        Map<String, List<File>> groups = findGroups(current, pattern, varyingGroup);
-        if (!groups.isEmpty()) {
-            result.put(relativePath, groups);
-        }
-        File[] subdirs = current.listFiles(File::isDirectory);
-        if (subdirs == null) return;
-        Arrays.sort(subdirs);
-        for (int i = 0; i < subdirs.length; i++) {
-            if (isGeneratedOutputDirectory(subdirs[i])) {
-                continue;
-            }
-            String childPath = relativePath.length() == 0
-                    ? subdirs[i].getName()
-                    : relativePath + "/" + subdirs[i].getName();
-            walkDirectories(subdirs[i], childPath, pattern, varyingGroup, result,
-                    visitedDirectories);
-        }
-    }
-
-    static Path realDirectoryPath(File directory) throws IOException {
-        if (directory == null) throw new IOException("Directory must not be null.");
-        return directory.toPath().toRealPath();
+        return false;
     }
 
     static boolean isGeneratedOutputDirectory(File directory) {
         if (directory == null || !directory.isDirectory()) return false;
-        return directory.getName().matches(
+        return isGeneratedOutputName(directory.getName());
+    }
+
+    private static boolean isGeneratedOutputName(String name) {
+        return name != null && name.matches(
                 "(?i)Object Segmentation Sweep(?: [0-9]+)?");
     }
 
