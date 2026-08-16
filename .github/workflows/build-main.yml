@@ -16,18 +16,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out Object Segmentation Sweep
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: plugin
 
       - name: Check out oc3d-core
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${{ env.OC3D_CORE_REPO }}
           ref: ${{ env.OC3D_CORE_REF }}
           path: oc3d-core
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           java-version: '8'
           distribution: 'zulu'
@@ -41,7 +41,7 @@ jobs:
         run: bash mvnw --batch-mode --no-transfer-progress clean verify
 
       - name: Upload jar
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Object-Segmentation-Sweep-jar
           path: plugin/target/Object-Segmentation-Sweep-*.jar
