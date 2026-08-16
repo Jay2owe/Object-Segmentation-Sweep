@@ -131,7 +131,7 @@ public class SegSweep_ implements PlugIn {
 Build command, matching FLASH's known-good JDK setup:
 
 ```bash
-export JAVA_HOME="/c/Users/Owner/OneDrive - Imperial College London/ImageJ/Experiments/First Experiment Round/Combined/Oracle_JDK-23"
+export JAVA_HOME="/path/to/your/jdk-23"   # any JDK 23; CI uses temurin/zulu
 bash mvnw clean package -Denforcer.skip=true
 ```
 
