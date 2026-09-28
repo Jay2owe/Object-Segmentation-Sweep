@@ -90,10 +90,16 @@ public final class ComponentSelection {
 
     /** Returns one reconstructed voxel-index array per selected object. */
     public int[][] objectVoxelIndices() {
+        return objectVoxelIndices(null);
+    }
+
+    /** As {@link #objectVoxelIndices()}, polling {@code cancelCheck} per object. */
+    public int[][] objectVoxelIndices(BooleanSupplier cancelCheck) {
         int[][] objects = new int[size][];
         int at = 0;
         for (int id = nodeIds.nextSetBit(0); id >= 0; id = next(id)) {
-            objects[at++] = tree.voxelsByNodeId(id, null);
+            checkCancelled(cancelCheck);
+            objects[at++] = tree.voxelsByNodeId(id, cancelCheck);
         }
         return objects;
     }
@@ -107,7 +113,11 @@ public final class ComponentSelection {
     }
 
     int[] voxelIndices(int nodeId) {
-        return tree.voxelsByNodeId(nodeId, null);
+        return voxelIndices(nodeId, null);
+    }
+
+    int[] voxelIndices(int nodeId, BooleanSupplier cancelCheck) {
+        return tree.voxelsByNodeId(nodeId, cancelCheck);
     }
 
     Calibration calibrationCopy() {

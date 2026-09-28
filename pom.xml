@@ -181,6 +181,24 @@
 			</plugin>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<!-- pom-scijava forks tests with -Xmx512m. The flat-level cancel
+				     test builds a 256x256x64 tree (~160 B/voxel up front), so the
+				     fork needs more; everything else still fits in 512m. -->
+				<configuration>
+					<argLine>@{argLine} -Xms512m -Xmx1536m -Dapple.awt.UIElement=true --add-opens=java.base/java.lang=ALL-UNNAMED</argLine>
+				</configuration>
+				<executions>
+					<execution>
+						<id>default-test</id>
+						<configuration>
+							<argLine>@{argLine} -Xms512m -Xmx1536m -Dapple.awt.UIElement=true --add-opens=java.base/java.lang=ALL-UNNAMED</argLine>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-failsafe-plugin</artifactId>
 				<configuration>
 					<systemPropertyVariables>

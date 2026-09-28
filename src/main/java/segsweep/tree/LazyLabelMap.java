@@ -13,12 +13,16 @@ import ij.ImageStack;
 import ij.measure.Calibration;
 import ij.process.ShortProcessor;
 
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BooleanSupplier;
+
 public final class LazyLabelMap {
     private final int width;
     private final int height;
     private final int depth;
     private final ComponentSelection selection;
-    private int materializationCount;
+    private final AtomicInteger materializationCount = new AtomicInteger();
 
     LazyLabelMap(int width,
                  int height,
@@ -34,7 +38,15 @@ public final class LazyLabelMap {
     }
 
     public ImagePlus get() {
-        materializationCount++;
+        return get(null);
+    }
+
+    /**
+     * Materialises the full label stack, polling {@code cancelCheck} (and the
+     * thread's interrupt flag) so a long autosave or batch write can stop.
+     */
+    public ImagePlus get(BooleanSupplier cancelCheck) {
+        materializationCount.incrementAndGet();
         ImageStack stack = new ImageStack(width, height);
         for (int z = 0; z < depth; z++) {
             stack.addSlice("z" + (z + 1), new ShortProcessor(width, height));
@@ -43,8 +55,10 @@ public final class LazyLabelMap {
         int label = 1;
         for (int nodeId = selection.firstNodeId(); nodeId >= 0;
              nodeId = selection.nextNodeId(nodeId)) {
-            int[] voxels = selection.voxelIndices(nodeId);
+            checkCancelled(cancelCheck);
+            int[] voxels = selection.voxelIndices(nodeId, cancelCheck);
             for (int i = 0; i < voxels.length; i++) {
+                if ((i & 0xFFFF) == 0xFFFF) checkCancelled(cancelCheck);
                 int voxel = voxels[i];
                 int z = voxel / plane;
                 int indexInPlane = voxel - z * plane;
@@ -62,14 +76,20 @@ public final class LazyLabelMap {
 
     /** Materialises one Z plane without allocating the full label stack. */
     public ImagePlus getSlice(int oneBasedZ) {
+        return getSlice(oneBasedZ, null);
+    }
+
+    /** As {@link #getSlice(int)}, polling {@code cancelCheck} between objects. */
+    public ImagePlus getSlice(int oneBasedZ, BooleanSupplier cancelCheck) {
         int z = Math.max(1, Math.min(depth, oneBasedZ)) - 1;
-        materializationCount++;
+        materializationCount.incrementAndGet();
         ShortProcessor processor = new ShortProcessor(width, height);
         int plane = width * height;
         int label = 1;
         for (int nodeId = selection.firstNodeId(); nodeId >= 0;
              nodeId = selection.nextNodeId(nodeId)) {
-            int[] voxels = selection.voxelIndices(nodeId);
+            checkCancelled(cancelCheck);
+            int[] voxels = selection.voxelIndices(nodeId, cancelCheck);
             for (int i = 0; i < voxels.length; i++) {
                 int voxel = voxels[i];
                 int voxelZ = voxel / plane;
@@ -90,6 +110,13 @@ public final class LazyLabelMap {
     }
 
     public int materializationCount() {
-        return materializationCount;
+        return materializationCount.get();
+    }
+
+    private static void checkCancelled(BooleanSupplier cancelCheck) {
+        if (Thread.currentThread().isInterrupted()
+                || (cancelCheck != null && cancelCheck.getAsBoolean())) {
+            throw new CancellationException("Label-map materialisation was cancelled.");
+        }
     }
 }

@@ -422,11 +422,17 @@ public final class ComponentTree {
         }
         int[] out = new int[data.voxelCount];
         int at = 0;
+        int pops = 0;
+        int copiedSinceCheck = 0;
         ArrayDeque<Integer> pending = new ArrayDeque<Integer>();
         pending.push(Integer.valueOf(data.id));
         while (!pending.isEmpty()) {
-            if ((at & 1023) == 0) {
+            // Bound the work between checks by nodes popped AND voxels copied.
+            // The old test `(at & 1023) == 0` keyed on `at`, which advances by
+            // whole node sizes and could step over every multiple of 1024.
+            if (pops++ == 0 || (pops & 63) == 0 || copiedSinceCheck >= 16384) {
                 checkCancelled(cancelCheck, "Component-tree query was cancelled.");
+                copiedSinceCheck = 0;
             }
             NodeData current = nodes.get(pending.pop().intValue());
             if (at + current.voxels.length > out.length) {
@@ -434,6 +440,7 @@ public final class ComponentTree {
             }
             System.arraycopy(current.voxels, 0, out, at, current.voxels.length);
             at += current.voxels.length;
+            copiedSinceCheck += current.voxels.length;
             for (int i = 0; i < current.childIds.size(); i++) {
                 pending.push(current.childIds.get(i));
             }

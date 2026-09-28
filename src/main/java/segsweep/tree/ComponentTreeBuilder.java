@@ -70,6 +70,7 @@ public final class ComponentTreeBuilder {
         private final IntList[] pendingChildren;
         private final BooleanSupplier cancelCheck;
         private final BiConsumer<Integer, Integer> progress;
+        private int work;
 
         BuilderState(ImagePlus source,
                      SegSweepLabeller.Connectivity connectivity,
@@ -139,6 +140,9 @@ public final class ComponentTreeBuilder {
                     end++;
                 }
                 for (int i = at; i < end; i++) {
+                    // One flat level (a mostly-zero stack, a constant image) can hold
+                    // millions of voxels; check for cancel inside it, not only between levels.
+                    pollCancel();
                     activate(order[i].intValue());
                 }
                 snapshotLevel(level, at, end);
@@ -152,8 +156,16 @@ public final class ComponentTreeBuilder {
         }
 
         private void checkCancelled() {
-            if (cancelCheck != null && cancelCheck.getAsBoolean()) {
+            if (Thread.currentThread().isInterrupted()
+                    || (cancelCheck != null && cancelCheck.getAsBoolean())) {
                 throw new CancellationException("Component-tree construction was cancelled.");
+            }
+        }
+
+        /** Cheap per-voxel cancel poll: one real check every 65536 calls. */
+        private void pollCancel() {
+            if ((++work & 0xFFFF) == 0) {
+                checkCancelled();
             }
         }
 
@@ -294,6 +306,7 @@ public final class ComponentTreeBuilder {
         private void snapshotLevel(float level, int start, int end) {
             Map<Integer, IntList> voxelsByRoot = new HashMap<Integer, IntList>();
             for (int at = start; at < end; at++) {
+                pollCancel();
                 int voxel = order[at].intValue();
                 int root = find(voxel);
                 IntList voxels = voxelsByRoot.get(Integer.valueOf(root));
@@ -305,6 +318,7 @@ public final class ComponentTreeBuilder {
             }
 
             for (Map.Entry<Integer, IntList> entry : voxelsByRoot.entrySet()) {
+                pollCancel();
                 int root = entry.getKey().intValue();
                 int[] voxels = entry.getValue().toArray();
                 ComponentTree.NodeData node = new ComponentTree.NodeData(nodes.size(),

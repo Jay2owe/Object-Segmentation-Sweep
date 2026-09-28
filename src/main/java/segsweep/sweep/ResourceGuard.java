@@ -18,7 +18,17 @@ public final class ResourceGuard {
     private static final long UNION_FIND_BYTES_PER_VOXEL = 13L;
     private static final long TREE_NODE_BYTES_PER_VOXEL = 64L;
     private static final long TREE_CHILD_BYTES_PER_VOXEL = 8L;
-    private static final long ATTRIBUTE_BYTES_PER_NODE = 160L;
+    /**
+     * Peak component-tree build heap per voxel, excluding the source copy and
+     * the label map, set to the measured minimum {@code -Xmx} x 1.25
+     * (2026-09-28, 96x96x32, fresh JVM per trial; see CHANGELOG). 8-bit uniform
+     * noise measured 191 B, 16-bit uniform noise 261 B (smoothed noise 197 B),
+     * 32-bit unique values 465 B. The union-find, node and child terms above are
+     * fixed; the attribute term carries the bit-depth-dependent remainder.
+     */
+    static final long BUILD_BYTES_PER_VOXEL_8_BIT = 239L;
+    static final long BUILD_BYTES_PER_VOXEL_16_BIT = 326L;
+    static final long BUILD_BYTES_PER_VOXEL_32_BIT = 581L;
     private static final long LABEL_MAP_BYTES_PER_VOXEL = 2L;
     private static final long RGB_PREVIEW_BYTES_PER_PIXEL = 4L;
     private static final long MONTAGE_CELL_BYTES = 220L * 210L * RGB_PREVIEW_BYTES_PER_PIXEL;
@@ -391,7 +401,7 @@ public final class ResourceGuard {
         long unionFindBytes = multiply(cropVoxels, UNION_FIND_BYTES_PER_VOXEL);
         long nodeArrayBytes = multiply(cropVoxels, TREE_NODE_BYTES_PER_VOXEL);
         long childArrayBytes = multiply(cropVoxels, TREE_CHILD_BYTES_PER_VOXEL);
-        long attributeBytes = multiply(cropVoxels, ATTRIBUTE_BYTES_PER_NODE);
+        long attributeBytes = multiply(cropVoxels, attributeBytesPerVoxel(bitDepth));
         long oneLazyLabelMapBytes = multiply(cropVoxels, LABEL_MAP_BYTES_PER_VOXEL);
         long treeBytes = saturatingAdd(saturatingAdd(unionFindBytes, nodeArrayBytes), childArrayBytes);
         long totalBytes = saturatingAdd(sourceBytes,
@@ -447,6 +457,17 @@ public final class ResourceGuard {
             return channelAware;
         }
         return stackSize;
+    }
+
+    static long buildBytesPerVoxel(int bitDepth) {
+        if (bitDepth <= 8) return BUILD_BYTES_PER_VOXEL_8_BIT;
+        if (bitDepth <= 16) return BUILD_BYTES_PER_VOXEL_16_BIT;
+        return BUILD_BYTES_PER_VOXEL_32_BIT;
+    }
+
+    private static long attributeBytesPerVoxel(int bitDepth) {
+        return buildBytesPerVoxel(bitDepth) - UNION_FIND_BYTES_PER_VOXEL
+                - TREE_NODE_BYTES_PER_VOXEL - TREE_CHILD_BYTES_PER_VOXEL;
     }
 
     private static long bytesPerSourceVoxel(int bitDepth) {

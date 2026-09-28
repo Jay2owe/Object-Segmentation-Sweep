@@ -38,6 +38,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.function.BooleanSupplier;
 
 /**
  * Writes the single-image Object Segmentation Sweep deliverable tree.
@@ -55,6 +56,13 @@ public final class AutoSaveWriter {
 
     public static File write(File inputFile, SegSweepResult result,
                              BufferedImage reviewedGrid) throws IOException {
+        return write(inputFile, result, reviewedGrid, null);
+    }
+
+    /** As {@link #write(File, SegSweepResult, BufferedImage)} with a cancel check. */
+    public static File write(File inputFile, SegSweepResult result,
+                             BufferedImage reviewedGrid,
+                             BooleanSupplier cancelCheck) throws IOException {
         if (inputFile == null) {
             throw new IllegalArgumentException("inputFile must not be null.");
         }
@@ -64,7 +72,8 @@ public final class AutoSaveWriter {
         }
         DirectoryReservation reservation = reserveDirectory(new File(parent, OUTPUT_FOLDER));
         try {
-            writeToDirectory(reservation.directory, inputFile, result, reviewedGrid);
+            writeToDirectory(reservation.directory, inputFile, result, reviewedGrid,
+                    cancelCheck);
             return reservation.directory;
         } finally {
             reservation.release();
@@ -80,12 +89,24 @@ public final class AutoSaveWriter {
     public static File writeTo(File desiredOutputDir, File inputFile,
                                SegSweepResult result,
                                BufferedImage reviewedGrid) throws IOException {
+        return writeTo(desiredOutputDir, inputFile, result, reviewedGrid, null);
+    }
+
+    /**
+     * As {@link #writeTo(File, File, SegSweepResult, BufferedImage)}, polling
+     * {@code cancelCheck} while the picked label stack is materialised.
+     */
+    public static File writeTo(File desiredOutputDir, File inputFile,
+                               SegSweepResult result,
+                               BufferedImage reviewedGrid,
+                               BooleanSupplier cancelCheck) throws IOException {
         if (desiredOutputDir == null) {
             throw new IllegalArgumentException("desiredOutputDir must not be null.");
         }
         DirectoryReservation reservation = reserveDirectory(desiredOutputDir);
         try {
-            writeToDirectory(reservation.directory, inputFile, result, reviewedGrid);
+            writeToDirectory(reservation.directory, inputFile, result, reviewedGrid,
+                    cancelCheck);
             return reservation.directory;
         } finally {
             reservation.release();
@@ -100,6 +121,13 @@ public final class AutoSaveWriter {
     static void writeToDirectory(File outputDir, File inputFile,
                                  SegSweepResult result,
                                  BufferedImage reviewedGrid) throws IOException {
+        writeToDirectory(outputDir, inputFile, result, reviewedGrid, null);
+    }
+
+    static void writeToDirectory(File outputDir, File inputFile,
+                                 SegSweepResult result,
+                                 BufferedImage reviewedGrid,
+                                 BooleanSupplier cancelCheck) throws IOException {
         validate(outputDir, inputFile, result);
         if (reviewedGrid == null) ensureSyntheticGridFeasible(result);
         mkdirs(outputDir);
@@ -118,7 +146,8 @@ public final class AutoSaveWriter {
             throw new IOException("No PNG writer was available for "
                     + gridFile.getAbsolutePath());
         }
-        writePickedLabels(new File(labelsDir, baseName(inputFile) + "_picked.tif"), result);
+        writePickedLabels(new File(labelsDir, baseName(inputFile) + "_picked.tif"), result,
+                cancelCheck);
         writeText(new File(outputDir, "README.txt"), readmeText());
         writeText(new File(labelsDir, "README.txt"), labelsReadmeText());
     }
@@ -256,12 +285,13 @@ public final class AutoSaveWriter {
         }
     }
 
-    private static void writePickedLabels(File file, SegSweepResult result) throws IOException {
+    private static void writePickedLabels(File file, SegSweepResult result,
+                                          BooleanSupplier cancelCheck) throws IOException {
         LazyLabelMap labelMap = result.pickedLabelMap();
         if (labelMap == null) {
             return;
         }
-        ImagePlus labels = labelMap.get();
+        ImagePlus labels = labelMap.get(cancelCheck);
         try {
             labels.setTitle(baseName(file));
             FileSaver saver = new FileSaver(labels);

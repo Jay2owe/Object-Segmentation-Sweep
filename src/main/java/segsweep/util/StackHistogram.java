@@ -128,10 +128,18 @@ public final class StackHistogram {
             int pixels = processor.getWidth() * processor.getHeight();
             for (int p = 0; p < pixels; p++) {
                 double value = processor.getf(p);
-                if (Double.isFinite(value)) counts[layout.binFor(value)]++;
+                if (Double.isFinite(value)) increment(counts, layout.binFor(value));
             }
         }
         return new StackHistogram(counts, layout.min, layout.max, layout.direct);
+    }
+
+    /**
+     * Adds one to a bin, saturating at {@link Integer#MAX_VALUE} rather than
+     * wrapping negative when a single bin holds more than 2^31 - 1 voxels.
+     */
+    static void increment(int[] counts, int bin) {
+        if (counts[bin] != Integer.MAX_VALUE) counts[bin]++;
     }
 
     private static void fillDegenerate(int[] counts, Layout layout, long total) {
