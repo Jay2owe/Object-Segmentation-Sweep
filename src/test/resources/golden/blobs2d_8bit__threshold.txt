@@ -1,0 +1,21 @@
+[sweep]
+Combination=1.000000000	threshold=10.00000000	Objects=4.000000000	Objects_Per_mm3=	Objects_Per_mm2=3906.250000	Mean_Neighbour_IoU=	Stability_Eligible=false	Crop_Fraction=1.000000000	Flags=	
+Combination=2.000000000	threshold=20.00000000	Objects=5.000000000	Objects_Per_mm3=	Objects_Per_mm2=4882.812500	Mean_Neighbour_IoU=0.8952349590	Stability_Eligible=true	Crop_Fraction=1.000000000	Flags=	
+Combination=3.000000000	threshold=30.00000000	Objects=5.000000000	Objects_Per_mm3=	Objects_Per_mm2=4882.812500	Mean_Neighbour_IoU=0.8819392245	Stability_Eligible=true	Crop_Fraction=1.000000000	Flags=	
+Combination=4.000000000	threshold=40.00000000	Objects=5.000000000	Objects_Per_mm3=	Objects_Per_mm2=4882.812500	Mean_Neighbour_IoU=0.8637053486	Stability_Eligible=true	Crop_Fraction=1.000000000	Flags=	
+Combination=5.000000000	threshold=50.00000000	Objects=7.000000000	Objects_Per_mm3=	Objects_Per_mm2=6835.937500	Mean_Neighbour_IoU=0.8499566157	Stability_Eligible=true	Crop_Fraction=1.000000000	Flags=	
+Combination=6.000000000	threshold=60.00000000	Objects=7.000000000	Objects_Per_mm3=	Objects_Per_mm2=6835.937500	Mean_Neighbour_IoU=	Stability_Eligible=false	Crop_Fraction=1.000000000	Flags=	
+[pick]
+criterion=both	chosen combination index=0.000000000	threshold=	knee outcome kind=KNEE_AT	knee value=3.000000000	knee computation range min=0.000000000	knee computation range max=209.0000000	knee computation range step=1.000000000	knee computation values=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124,125,126,127,128,129,130,131,132,133,134,135,136,137,138,139,140,141,142,143,144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,159,160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,177,178,179,180,181,182,183,184,185,186,187,188,189,190,191,192,193,194,195,196,197,198,199,200,201,202,203,204,205,206,207,208,209]	stability score=0.8952349590	stability outcome kind=STABLE_AT	knee recommended settings={"threshold":10}	stability recommended settings={"threshold":20}	eligible count=4.000000000	crop x=0.000000000	crop y=0.000000000	crop width=64.00000000	crop height=64.00000000	crop fraction=1.000000000	criteria agreed=false	
+[token]
+
+[warnings]
+[labels]
+none
+[result labels]
+1	78644461f305ed614b79a0812e872558631c4f96fea43c3ad76d229dd431325f
+2	a64ff4c727f9eac9f301ae42424488a83ed12b67cbd6acea2f7028719d5b01bd
+3	f6441a8a1bde0fbcb0dbd64b6ff6444cae55212b58aa3d37962b89cd3ebc70d0
+4	627372ae8ded8813515e430860d228b2461796e8cdb5da97747e3fc21f9ff1a0
+5	e3149d7d21ab01083ce77617f4f2c1a8a17f748622aba31c82c06232ea20cc13
+6	c515ea4e8fdc3f4d8d8320765311e932e0e4a39683239fe159cb662cb4f6cfc0

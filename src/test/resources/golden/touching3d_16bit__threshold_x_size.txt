@@ -1,0 +1,70 @@
+[sweep]
+Combination=1.000000000	threshold=100.0000000	minimum size=1.000000000	Objects=3.000000000	Objects_Per_mm3=54253.47222	Objects_Per_mm2=	Mean_Neighbour_IoU=	Stability_Eligible=false	Crop_Fraction=1.000000000	Flags=	
+Combination=2.000000000	threshold=100.0000000	minimum size=11.00000000	Objects=3.000000000	Objects_Per_mm3=54253.47222	Objects_Per_mm2=	Mean_Neighbour_IoU=	Stability_Eligible=false	Crop_Fraction=1.000000000	Flags=	
+Combination=3.000000000	threshold=100.0000000	minimum size=21.00000000	Objects=3.000000000	Objects_Per_mm3=54253.47222	Objects_Per_mm2=	Mean_Neighbour_IoU=	Stability_Eligible=false	Crop_Fraction=1.000000000	Flags=	
+Combination=4.000000000	threshold=100.0000000	minimum size=31.00000000	Objects=3.000000000	Objects_Per_mm3=54253.47222	Objects_Per_mm2=	Mean_Neighbour_IoU=	Stability_Eligible=false	Crop_Fraction=1.000000000	Flags=	
+Combination=5.000000000	threshold=100.0000000	minimum size=41.00000000	Objects=3.000000000	Objects_Per_mm3=54253.47222	Objects_Per_mm2=	Mean_Neighbour_IoU=	Stability_Eligible=false	Crop_Fraction=1.000000000	Flags=	
+Combination=6.000000000	threshold=300.0000000	minimum size=1.000000000	Objects=3.000000000	Objects_Per_mm3=54253.47222	Objects_Per_mm2=	Mean_Neighbour_IoU=	Stability_Eligible=false	Crop_Fraction=1.000000000	Flags=	
+Combination=7.000000000	threshold=300.0000000	minimum size=11.00000000	Objects=3.000000000	Objects_Per_mm3=54253.47222	Objects_Per_mm2=	Mean_Neighbour_IoU=0.7692568476	Stability_Eligible=true	Crop_Fraction=1.000000000	Flags=	
+Combination=8.000000000	threshold=300.0000000	minimum size=21.00000000	Objects=3.000000000	Objects_Per_mm3=54253.47222	Objects_Per_mm2=	Mean_Neighbour_IoU=0.7692568476	Stability_Eligible=true	Crop_Fraction=1.000000000	Flags=	
+Combination=9.000000000	threshold=300.0000000	minimum size=31.00000000	Objects=3.000000000	Objects_Per_mm3=54253.47222	Objects_Per_mm2=	Mean_Neighbour_IoU=0.7692568476	Stability_Eligible=true	Crop_Fraction=1.000000000	Flags=	
+Combination=10.00000000	threshold=300.0000000	minimum size=41.00000000	Objects=3.000000000	Objects_Per_mm3=54253.47222	Objects_Per_mm2=	Mean_Neighbour_IoU=	Stability_Eligible=false	Crop_Fraction=1.000000000	Flags=	
+Combination=11.00000000	threshold=500.0000000	minimum size=1.000000000	Objects=5.000000000	Objects_Per_mm3=90422.45370	Objects_Per_mm2=	Mean_Neighbour_IoU=	Stability_Eligible=false	Crop_Fraction=1.000000000	Flags=	
+Combination=12.00000000	threshold=500.0000000	minimum size=11.00000000	Objects=5.000000000	Objects_Per_mm3=90422.45370	Objects_Per_mm2=	Mean_Neighbour_IoU=0.7161909393	Stability_Eligible=true	Crop_Fraction=1.000000000	Flags=	
+Combination=13.00000000	threshold=500.0000000	minimum size=21.00000000	Objects=5.000000000	Objects_Per_mm3=90422.45370	Objects_Per_mm2=	Mean_Neighbour_IoU=0.7124244610	Stability_Eligible=true	Crop_Fraction=1.000000000	Flags=	
+Combination=14.00000000	threshold=500.0000000	minimum size=31.00000000	Objects=5.000000000	Objects_Per_mm3=90422.45370	Objects_Per_mm2=	Mean_Neighbour_IoU=0.7124244610	Stability_Eligible=true	Crop_Fraction=1.000000000	Flags=	
+Combination=15.00000000	threshold=500.0000000	minimum size=41.00000000	Objects=5.000000000	Objects_Per_mm3=90422.45370	Objects_Per_mm2=	Mean_Neighbour_IoU=	Stability_Eligible=false	Crop_Fraction=1.000000000	Flags=	
+Combination=16.00000000	threshold=700.0000000	minimum size=1.000000000	Objects=5.000000000	Objects_Per_mm3=90422.45370	Objects_Per_mm2=	Mean_Neighbour_IoU=	Stability_Eligible=false	Crop_Fraction=1.000000000	Flags=	
+Combination=17.00000000	threshold=700.0000000	minimum size=11.00000000	Objects=5.000000000	Objects_Per_mm3=90422.45370	Objects_Per_mm2=	Mean_Neighbour_IoU=0.6487979835	Stability_Eligible=true	Crop_Fraction=1.000000000	Flags=	
+Combination=18.00000000	threshold=700.0000000	minimum size=21.00000000	Objects=4.000000000	Objects_Per_mm3=72337.96296	Objects_Per_mm2=	Mean_Neighbour_IoU=0.6405425782	Stability_Eligible=true	Crop_Fraction=1.000000000	Flags=	
+Combination=19.00000000	threshold=700.0000000	minimum size=31.00000000	Objects=4.000000000	Objects_Per_mm3=72337.96296	Objects_Per_mm2=	Mean_Neighbour_IoU=0.6085493519	Stability_Eligible=true	Crop_Fraction=1.000000000	Flags=	
+Combination=20.00000000	threshold=700.0000000	minimum size=41.00000000	Objects=3.000000000	Objects_Per_mm3=54253.47222	Objects_Per_mm2=	Mean_Neighbour_IoU=	Stability_Eligible=false	Crop_Fraction=1.000000000	Flags=	
+Combination=21.00000000	threshold=900.0000000	minimum size=1.000000000	Objects=6.000000000	Objects_Per_mm3=108506.9444	Objects_Per_mm2=	Mean_Neighbour_IoU=	Stability_Eligible=false	Crop_Fraction=1.000000000	Flags=	
+Combination=22.00000000	threshold=900.0000000	minimum size=11.00000000	Objects=4.000000000	Objects_Per_mm3=72337.96296	Objects_Per_mm2=	Mean_Neighbour_IoU=0.5671286617	Stability_Eligible=true	Crop_Fraction=1.000000000	Flags=	
+Combination=23.00000000	threshold=900.0000000	minimum size=21.00000000	Objects=3.000000000	Objects_Per_mm3=54253.47222	Objects_Per_mm2=	Mean_Neighbour_IoU=0.4738176228	Stability_Eligible=true	Crop_Fraction=1.000000000	Flags=	
+Combination=24.00000000	threshold=900.0000000	minimum size=31.00000000	Objects=2.000000000	Objects_Per_mm3=36168.98148	Objects_Per_mm2=	Mean_Neighbour_IoU=0.2313112745	Stability_Eligible=true	Crop_Fraction=1.000000000	Flags=	
+Combination=25.00000000	threshold=900.0000000	minimum size=41.00000000	Objects=0.000000000	Objects_Per_mm3=0.000000000	Objects_Per_mm2=	Mean_Neighbour_IoU=	Stability_Eligible=false	Crop_Fraction=1.000000000	Flags=EMPTY	
+Combination=26.00000000	threshold=1100.000000	minimum size=1.000000000	Objects=4.000000000	Objects_Per_mm3=72337.96296	Objects_Per_mm2=	Mean_Neighbour_IoU=	Stability_Eligible=false	Crop_Fraction=1.000000000	Flags=	
+Combination=27.00000000	threshold=1100.000000	minimum size=11.00000000	Objects=1.000000000	Objects_Per_mm3=18084.49074	Objects_Per_mm2=	Mean_Neighbour_IoU=	Stability_Eligible=false	Crop_Fraction=1.000000000	Flags=	
+Combination=28.00000000	threshold=1100.000000	minimum size=21.00000000	Objects=0.000000000	Objects_Per_mm3=0.000000000	Objects_Per_mm2=	Mean_Neighbour_IoU=	Stability_Eligible=false	Crop_Fraction=1.000000000	Flags=EMPTY	
+Combination=29.00000000	threshold=1100.000000	minimum size=31.00000000	Objects=0.000000000	Objects_Per_mm3=0.000000000	Objects_Per_mm2=	Mean_Neighbour_IoU=	Stability_Eligible=false	Crop_Fraction=1.000000000	Flags=EMPTY	
+Combination=30.00000000	threshold=1100.000000	minimum size=41.00000000	Objects=0.000000000	Objects_Per_mm3=0.000000000	Objects_Per_mm2=	Mean_Neighbour_IoU=	Stability_Eligible=false	Crop_Fraction=1.000000000	Flags=EMPTY	
+[pick]
+criterion=both	chosen combination index=0.000000000	threshold=	minimum size=	knee outcome kind=MULTI_AXIS_UNSUPPORTED	knee value=	knee computation range min=100.0000000	knee computation range max=1100.000000	knee computation range step=200.0000000	knee computation values=[100,300,500,700,900,1100]	stability score=0.7692568476	stability outcome kind=STABLE_AT	knee recommended settings=	stability recommended settings={"min_size":11,"threshold":300}	eligible count=12.00000000	crop x=0.000000000	crop y=0.000000000	crop width=48.00000000	crop height=48.00000000	crop fraction=1.000000000	criteria agreed=false	
+[token]
+
+[warnings]
+Knee pick: Knee scoring is one-dimensional; it is not defined for two varying sweep axes.
+[labels]
+none
+[result labels]
+1	a03c8876f030748219aa243fde68ecce65ac543800c1daa391625e012537fab4
+2	a03c8876f030748219aa243fde68ecce65ac543800c1daa391625e012537fab4
+3	a03c8876f030748219aa243fde68ecce65ac543800c1daa391625e012537fab4
+4	a03c8876f030748219aa243fde68ecce65ac543800c1daa391625e012537fab4
+5	a03c8876f030748219aa243fde68ecce65ac543800c1daa391625e012537fab4
+6	0f1ec74d3dc709a7c6da29aa45c48f583165e2e60437aa3edabcd2088afea45a
+7	0f1ec74d3dc709a7c6da29aa45c48f583165e2e60437aa3edabcd2088afea45a
+8	0f1ec74d3dc709a7c6da29aa45c48f583165e2e60437aa3edabcd2088afea45a
+9	0f1ec74d3dc709a7c6da29aa45c48f583165e2e60437aa3edabcd2088afea45a
+10	0f1ec74d3dc709a7c6da29aa45c48f583165e2e60437aa3edabcd2088afea45a
+11	95a9ac53de716a8c059925b9f414ea0382ed1a33b9ed5100449f02d35919e115
+12	95a9ac53de716a8c059925b9f414ea0382ed1a33b9ed5100449f02d35919e115
+13	95a9ac53de716a8c059925b9f414ea0382ed1a33b9ed5100449f02d35919e115
+14	95a9ac53de716a8c059925b9f414ea0382ed1a33b9ed5100449f02d35919e115
+15	95a9ac53de716a8c059925b9f414ea0382ed1a33b9ed5100449f02d35919e115
+16	59e65f116286bc7fc55c541ede2095f9c55dadcfc83f55411cf88aee393ab030
+17	59e65f116286bc7fc55c541ede2095f9c55dadcfc83f55411cf88aee393ab030
+18	007d8b9005ae7c4c33add4bf7f392e7077bc708f1c8b23520962e5bf63d63e7e
+19	007d8b9005ae7c4c33add4bf7f392e7077bc708f1c8b23520962e5bf63d63e7e
+20	e4cd7cfd3407e815dde69209dcfa4154499af8b35eb3143a17364bf957bf6b7e
+21	0c873ca04f71150bd8100176f65fc9361ea70e4c508b7479a7f19116e31ee312
+22	687c25c2fa7156341fe2fcf743266c36ce8919ceec209b51de92b3468d78fcb4
+23	60fcbf1949c8030113488d7ab039f3d9b3f7b09a364f985662b8307063d3081b
+24	776468d786d8564e4301c2ecc717b5a6167687051ebdcc65eb0598d23b5a1564
+25	35295da1d5eca0b6db3168c0a64a2d61ed3ae8ca283dd4aa6116aa04703dcb60
+26	a75b133a8487571a55e3f9c38276a80413d6b0bc7cb7c6673ab8c915b5caa2e3
+27	b720c970f07263d33c4d4e25b119156719d5025e16b34522e4adb1e4b32de491
+28	35295da1d5eca0b6db3168c0a64a2d61ed3ae8ca283dd4aa6116aa04703dcb60
+29	35295da1d5eca0b6db3168c0a64a2d61ed3ae8ca283dd4aa6116aa04703dcb60
+30	35295da1d5eca0b6db3168c0a64a2d61ed3ae8ca283dd4aa6116aa04703dcb60

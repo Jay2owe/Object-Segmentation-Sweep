@@ -1,0 +1,20 @@
+[sweep]
+Combination=1.000000000	threshold=0.000000000	Objects=0.000000000	Objects_Per_mm3=0.000000000	Objects_Per_mm2=	Mean_Neighbour_IoU=	Stability_Eligible=false	Crop_Fraction=1.000000000	Flags=EMPTY	
+Combination=2.000000000	threshold=5.000000000	Objects=0.000000000	Objects_Per_mm3=0.000000000	Objects_Per_mm2=	Mean_Neighbour_IoU=0.000000000	Stability_Eligible=true	Crop_Fraction=1.000000000	Flags=EMPTY	
+Combination=3.000000000	threshold=10.00000000	Objects=0.000000000	Objects_Per_mm3=0.000000000	Objects_Per_mm2=	Mean_Neighbour_IoU=0.000000000	Stability_Eligible=true	Crop_Fraction=1.000000000	Flags=EMPTY	
+Combination=4.000000000	threshold=15.00000000	Objects=0.000000000	Objects_Per_mm3=0.000000000	Objects_Per_mm2=	Mean_Neighbour_IoU=0.000000000	Stability_Eligible=true	Crop_Fraction=1.000000000	Flags=EMPTY	
+Combination=5.000000000	threshold=20.00000000	Objects=0.000000000	Objects_Per_mm3=0.000000000	Objects_Per_mm2=	Mean_Neighbour_IoU=	Stability_Eligible=false	Crop_Fraction=1.000000000	Flags=EMPTY	
+[pick]
+criterion=knee	chosen combination index=0.000000000	threshold=	knee outcome kind=TOO_FEW_POINTS	knee value=	knee computation range min=0.000000000	knee computation range max=0.000000000	knee computation range step=	knee computation values=[0]	stability score=0.000000000	stability outcome kind=STABLE_AT	knee recommended settings=	stability recommended settings={"threshold":5}	eligible count=3.000000000	crop x=0.000000000	crop y=0.000000000	crop width=32.00000000	crop height=32.00000000	crop fraction=1.000000000	criteria agreed=false	
+[token]
+
+[warnings]
+Knee pick: Knee detection needs at least four finite points.
+[labels]
+none
+[result labels]
+1	fd9243e1ba57263ed469c3bdbd7ade6ec5254e7ed924a9f5737fa44749933cc0
+2	fd9243e1ba57263ed469c3bdbd7ade6ec5254e7ed924a9f5737fa44749933cc0
+3	fd9243e1ba57263ed469c3bdbd7ade6ec5254e7ed924a9f5737fa44749933cc0
+4	fd9243e1ba57263ed469c3bdbd7ade6ec5254e7ed924a9f5737fa44749933cc0
+5	fd9243e1ba57263ed469c3bdbd7ade6ec5254e7ed924a9f5737fa44749933cc0

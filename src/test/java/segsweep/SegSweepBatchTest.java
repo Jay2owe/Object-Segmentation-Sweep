@@ -293,6 +293,103 @@ public class SegSweepBatchTest {
                 .contains("no successful image picks"));
     }
 
+    @Test
+    public void happyPathWritesPerImageFoldersAndRollupIntoSaveDir() throws Exception {
+        saveImage(new File(tmp.getRoot(), "Exp1-A01_LH_CTX.tif"));
+        saveImage(new File(tmp.getRoot(), "Exp1-A02_LH_CTX.tif"));
+        File saveDir = tmp.newFolder("results");
+
+        SegSweepBatchResult result = SegSweepBatchRunner.run(SegSweepBatchParameters.builder(
+                tmp.getRoot(), "Exp1-(A\\d+)_(.+)_CTX\\.tif", 1)
+                .analysisOptions(kneeOptions(CropSpec.full()))
+                .hideDisplay(true)
+                .saveDir(saveDir)
+                .build());
+
+        assertEquals(2, result.totalImages());
+        assertEquals(2, result.processedImages());
+        assertEquals(0, result.failedImages());
+        File root = result.outputDirectory();
+        assertTrue(root.getAbsolutePath().startsWith(saveDir.getAbsolutePath()));
+        assertTrue(new File(root, "batch_picks.csv").isFile());
+        assertTrue(new File(root, "batch_failures.csv").isFile());
+        assertTrue(new File(root, "README.txt").isFile());
+        assertTrue(text(new File(root, "README.txt")).contains("Processed images: 2"));
+        for (SegSweepBatchResult.ImageResult imageResult : result.imageResults()) {
+            assertTrue(imageResult.outputDirectory().isDirectory());
+        }
+    }
+
+    @Test
+    public void folderWithNoMatchingFilesIsRefused() {
+        try {
+            SegSweepBatchRunner.run(SegSweepBatchParameters.builder(
+                    tmp.getRoot(), "Exp1-(A\\d+)\\.tif", 1)
+                    .analysisOptions(kneeOptions(CropSpec.full()))
+                    .build());
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("No matching files"));
+            return;
+        }
+        throw new AssertionError("Expected a no-matching-files refusal.");
+    }
+
+    @Test
+    public void missingInputFolderIsRefused() {
+        try {
+            SegSweepBatchRunner.run(SegSweepBatchParameters.builder(
+                    new File(tmp.getRoot(), "missing"), "(.*)\\.tif", 1)
+                    .analysisOptions(kneeOptions(CropSpec.full()))
+                    .build());
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("Input folder does not exist"));
+            return;
+        }
+        throw new AssertionError("Expected a missing-folder refusal.");
+    }
+
+    @Test
+    public void saveDirThatIsAFileIsRefused() throws Exception {
+        saveImage(new File(tmp.getRoot(), "Exp1-A01_LH_CTX.tif"));
+        File notADirectory = tmp.newFile("results.txt");
+        try {
+            SegSweepBatchRunner.run(SegSweepBatchParameters.builder(
+                    tmp.getRoot(), "Exp1-(A\\d+)_(.+)_CTX\\.tif", 1)
+                    .analysisOptions(kneeOptions(CropSpec.full()))
+                    .saveDir(notADirectory)
+                    .build());
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("not a directory"));
+            return;
+        }
+        throw new AssertionError("Expected a save-path refusal.");
+    }
+
+    @Test
+    public void invalidRegexIsRefusedWithReadableMessage() {
+        try {
+            SegSweepBatchRunner.preview(SegSweepBatchParameters.builder(
+                    tmp.getRoot(), "Exp1-(A\\d+", 1)
+                    .analysisOptions(kneeOptions(CropSpec.full()))
+                    .build());
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().startsWith("Invalid filename regex"));
+            return;
+        }
+        throw new AssertionError("Expected an invalid-regex refusal.");
+    }
+
+    @Test
+    public void previewListsMatchedFiles() throws Exception {
+        saveImage(new File(tmp.getRoot(), "Exp1-A01_LH_CTX.tif"));
+        String preview = SegSweepBatchRunner.preview(SegSweepBatchParameters.builder(
+                tmp.getRoot(), "Exp1-(A\\d+)_(.+)_CTX\\.tif", 1)
+                .analysisOptions(kneeOptions(CropSpec.full()))
+                .build());
+        assertTrue(preview.contains("Exp1-A01_LH_CTX.tif"));
+        assertTrue(preview.contains("1 files"));
+    }
+
     private static SegSweepResult runResult(CropSpec crop) {
         return SegSweep.run(SegSweepParameters.builder()
                 .image(SegSweepAnalysisTest.designedKneeStack(true))

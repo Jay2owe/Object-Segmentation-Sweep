@@ -1,0 +1,38 @@
+[sweep]
+Combination=1.000000000	threshold=0.5000000000	Objects=3.000000000	Objects_Per_mm3=5722045.898	Objects_Per_mm2=	Mean_Neighbour_IoU=	Stability_Eligible=false	Crop_Fraction=1.000000000	Flags=	
+Combination=2.000000000	threshold=1.000000000	Objects=3.000000000	Objects_Per_mm3=5722045.898	Objects_Per_mm2=	Mean_Neighbour_IoU=0.6181321197	Stability_Eligible=true	Crop_Fraction=1.000000000	Flags=	
+Combination=3.000000000	threshold=1.500000000	Objects=3.000000000	Objects_Per_mm3=5722045.898	Objects_Per_mm2=	Mean_Neighbour_IoU=0.5603038141	Stability_Eligible=true	Crop_Fraction=1.000000000	Flags=	
+Combination=4.000000000	threshold=2.000000000	Objects=3.000000000	Objects_Per_mm3=5722045.898	Objects_Per_mm2=	Mean_Neighbour_IoU=0.4790775525	Stability_Eligible=true	Crop_Fraction=1.000000000	Flags=	
+Combination=5.000000000	threshold=2.500000000	Objects=3.000000000	Objects_Per_mm3=5722045.898	Objects_Per_mm2=	Mean_Neighbour_IoU=0.3667763158	Stability_Eligible=true	Crop_Fraction=1.000000000	Flags=	
+Combination=6.000000000	threshold=3.000000000	Objects=2.000000000	Objects_Per_mm3=3814697.266	Objects_Per_mm2=	Mean_Neighbour_IoU=	Stability_Eligible=false	Crop_Fraction=1.000000000	Flags=	
+[pick]
+criterion=knee	chosen combination index=1.000000000	threshold=0.5000000000	knee outcome kind=KNEE_AT	knee value=-0.000000000	knee computation range min=-0.000000000	knee computation range max=4.000000000	knee computation range step=	knee computation values=[0,0,0.125,0.25,0.375,0.5,0.625,0.75,0.875,1,1.125,1.25,1.375,1.5,1.625,1.75,1.875,2,2.125,2.25,2.375,2.5,2.625,2.75,2.875,3,3.125,3.25,3.5,3.75,4]	stability score=0.6181321197	stability outcome kind=STABLE_AT	knee recommended settings={"threshold":0.5}	stability recommended settings={"threshold":1}	eligible count=4.000000000	crop x=0.000000000	crop y=0.000000000	crop width=32.00000000	crop height=32.00000000	crop fraction=1.000000000	criteria agreed=false	
+[token]
+# Object Segmentation Sweep 0.2.0
+# Written <masked>
+
+image	golden-nonfinite32
+channel	1
+settings	classical;thresh=0.5;minSize=0;maxSize=2147483647;channel=1;connectivity=twenty_six
+engine	Classical
+criterion	knee
+knee	KNEE_AT=0; combo={"threshold":0.5}; computation_range=[0,4]; computation_step=irregular; computation_values=[0,0,0.125,0.25,0.375,0.5,0.625,0.75,0.875,1,1.125,1.25,1.375,1.5,1.625,1.75,1.875,2,2.125,2.25,2.375,2.5,2.625,2.75,2.875,3,3.125,3.25,3.5,3.75,4]
+stability	STABLE_AT=0.6181321197152807; combo={"threshold":1}
+agreement	false
+
+displayed_range	threshold=0.5,1,1.5,2,2.5,3
+region	x=0 y=0 w=32 h=32 (100.0% of image)
+calibration	unit=micron; pixel_width=0.4; pixel_height=0.4; pixel_depth=0.8; pixel_area=0.16000000000000003; voxel_volume=0.12800000000000003
+connectivity	twenty_six
+provenance	{"calibrationUnit":"micron","connectivity":"twenty_six","crop":{"mode":"FULL"},"displayedRanges":{"threshold":[0.5,1,1.5,2,2.5,3]},"fullDepth":4,"fullHeight":32,"fullWidth":32,"pixelArea":0.16000000000000003,"pixelDepth":0.8,"pixelHeight":0.4,"pixelWidth":0.4,"voxelVolume":0.12800000000000003}
+
+[warnings]
+[labels]
+32x32x4 sha256=aa58a60d0e6aca30932238edfa504b0ed2a88b1b75fd766c859be564a6b37676
+[result labels]
+1	aa58a60d0e6aca30932238edfa504b0ed2a88b1b75fd766c859be564a6b37676
+2	dc5001ab8286220a75e1489173c7c7ba8594a940503739de1445b28fac181d85
+3	4032505481d3681fd29155f1ff329a6c88da4f5d046451a3d97fad1685060512
+4	69422bdcfe989ac42e9f74a08371c35fba79edbeaf4e49be6b015dfaae807eed
+5	fbfc467f913fcee3234b317f13aabed3ce987bd2a81d4e3b892b2c3a760a24ca
+6	c225798fe349fa380e663d2a0c25773d728bc8ec94186a596da3cd9814abd17c

@@ -1,0 +1,20 @@
+[sweep]
+Combination=1.000000000	threshold=20.00000000	minimum size=1.000000000	Objects=5.000000000	Objects_Per_mm3=	Objects_Per_mm2=4882.812500	Mean_Neighbour_IoU=	Stability_Eligible=false	Crop_Fraction=1.000000000	Flags=	
+Combination=2.000000000	threshold=20.00000000	minimum size=6.000000000	Objects=5.000000000	Objects_Per_mm3=	Objects_Per_mm2=4882.812500	Mean_Neighbour_IoU=1.000000000	Stability_Eligible=true	Crop_Fraction=1.000000000	Flags=	
+Combination=3.000000000	threshold=20.00000000	minimum size=11.00000000	Objects=5.000000000	Objects_Per_mm3=	Objects_Per_mm2=4882.812500	Mean_Neighbour_IoU=1.000000000	Stability_Eligible=true	Crop_Fraction=1.000000000	Flags=	
+Combination=4.000000000	threshold=20.00000000	minimum size=16.00000000	Objects=5.000000000	Objects_Per_mm3=	Objects_Per_mm2=4882.812500	Mean_Neighbour_IoU=1.000000000	Stability_Eligible=true	Crop_Fraction=1.000000000	Flags=	
+Combination=5.000000000	threshold=20.00000000	minimum size=21.00000000	Objects=5.000000000	Objects_Per_mm3=	Objects_Per_mm2=4882.812500	Mean_Neighbour_IoU=	Stability_Eligible=false	Crop_Fraction=1.000000000	Flags=	
+[pick]
+criterion=both	chosen combination index=0.000000000	threshold=	minimum size=	knee outcome kind=ALL_PLATEAU	knee value=	knee computation range min=1.000000000	knee computation range max=21.00000000	knee computation range step=5.000000000	knee computation values=[1,6,11,16,21]	stability score=1.000000000	stability outcome kind=STABLE_AT	knee recommended settings=	stability recommended settings={"min_size":6,"threshold":20}	eligible count=3.000000000	crop x=0.000000000	crop y=0.000000000	crop width=64.00000000	crop height=64.00000000	crop fraction=1.000000000	criteria agreed=false	
+[token]
+
+[warnings]
+Knee pick: The finite object-count curve is flat.
+[labels]
+none
+[result labels]
+1	a64ff4c727f9eac9f301ae42424488a83ed12b67cbd6acea2f7028719d5b01bd
+2	a64ff4c727f9eac9f301ae42424488a83ed12b67cbd6acea2f7028719d5b01bd
+3	a64ff4c727f9eac9f301ae42424488a83ed12b67cbd6acea2f7028719d5b01bd
+4	a64ff4c727f9eac9f301ae42424488a83ed12b67cbd6acea2f7028719d5b01bd
+5	a64ff4c727f9eac9f301ae42424488a83ed12b67cbd6acea2f7028719d5b01bd

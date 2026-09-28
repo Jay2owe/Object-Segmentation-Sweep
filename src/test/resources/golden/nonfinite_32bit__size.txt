@@ -1,0 +1,18 @@
+[sweep]
+Combination=1.000000000	threshold=1.000000000	minimum size=1.000000000	Objects=3.000000000	Objects_Per_mm3=5722045.898	Objects_Per_mm2=	Mean_Neighbour_IoU=	Stability_Eligible=false	Crop_Fraction=1.000000000	Flags=	
+Combination=2.000000000	threshold=1.000000000	minimum size=3.000000000	Objects=3.000000000	Objects_Per_mm3=5722045.898	Objects_Per_mm2=	Mean_Neighbour_IoU=1.000000000	Stability_Eligible=true	Crop_Fraction=1.000000000	Flags=	
+Combination=3.000000000	threshold=1.000000000	minimum size=5.000000000	Objects=3.000000000	Objects_Per_mm3=5722045.898	Objects_Per_mm2=	Mean_Neighbour_IoU=1.000000000	Stability_Eligible=true	Crop_Fraction=1.000000000	Flags=	
+Combination=4.000000000	threshold=1.000000000	minimum size=7.000000000	Objects=3.000000000	Objects_Per_mm3=5722045.898	Objects_Per_mm2=	Mean_Neighbour_IoU=	Stability_Eligible=false	Crop_Fraction=1.000000000	Flags=	
+[pick]
+criterion=both	chosen combination index=0.000000000	threshold=	minimum size=	knee outcome kind=ALL_PLATEAU	knee value=	knee computation range min=1.000000000	knee computation range max=7.000000000	knee computation range step=2.000000000	knee computation values=[1,3,5,7]	stability score=1.000000000	stability outcome kind=STABLE_AT	knee recommended settings=	stability recommended settings={"min_size":3,"threshold":1}	eligible count=2.000000000	crop x=0.000000000	crop y=0.000000000	crop width=32.00000000	crop height=32.00000000	crop fraction=1.000000000	criteria agreed=false	
+[token]
+
+[warnings]
+Knee pick: The finite object-count curve is flat.
+[labels]
+none
+[result labels]
+1	dc5001ab8286220a75e1489173c7c7ba8594a940503739de1445b28fac181d85
+2	dc5001ab8286220a75e1489173c7c7ba8594a940503739de1445b28fac181d85
+3	dc5001ab8286220a75e1489173c7c7ba8594a940503739de1445b28fac181d85
+4	dc5001ab8286220a75e1489173c7c7ba8594a940503739de1445b28fac181d85

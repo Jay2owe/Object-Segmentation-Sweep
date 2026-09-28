@@ -1,0 +1,21 @@
+[sweep]
+Combination=1.000000000	threshold=20.00000000	minimum size=1.000000000	Objects=3.000000000	Objects_Per_mm3=	Objects_Per_mm2=	Mean_Neighbour_IoU=	Stability_Eligible=false	Crop_Fraction=1.000000000	Flags=UNCALIBRATED	
+Combination=2.000000000	threshold=20.00000000	minimum size=6.000000000	Objects=3.000000000	Objects_Per_mm3=	Objects_Per_mm2=	Mean_Neighbour_IoU=1.000000000	Stability_Eligible=true	Crop_Fraction=1.000000000	Flags=UNCALIBRATED	
+Combination=3.000000000	threshold=20.00000000	minimum size=11.00000000	Objects=3.000000000	Objects_Per_mm3=	Objects_Per_mm2=	Mean_Neighbour_IoU=1.000000000	Stability_Eligible=true	Crop_Fraction=1.000000000	Flags=UNCALIBRATED	
+Combination=4.000000000	threshold=20.00000000	minimum size=16.00000000	Objects=3.000000000	Objects_Per_mm3=	Objects_Per_mm2=	Mean_Neighbour_IoU=1.000000000	Stability_Eligible=true	Crop_Fraction=1.000000000	Flags=UNCALIBRATED	
+Combination=5.000000000	threshold=20.00000000	minimum size=21.00000000	Objects=3.000000000	Objects_Per_mm3=	Objects_Per_mm2=	Mean_Neighbour_IoU=	Stability_Eligible=false	Crop_Fraction=1.000000000	Flags=UNCALIBRATED	
+[pick]
+criterion=both	chosen combination index=0.000000000	threshold=	minimum size=	knee outcome kind=ALL_PLATEAU	knee value=	knee computation range min=1.000000000	knee computation range max=21.00000000	knee computation range step=5.000000000	knee computation values=[1,6,11,16,21]	stability score=1.000000000	stability outcome kind=STABLE_AT	knee recommended settings=	stability recommended settings={"min_size":6,"threshold":20}	eligible count=3.000000000	crop x=0.000000000	crop y=0.000000000	crop width=48.00000000	crop height=48.00000000	crop fraction=1.000000000	criteria agreed=false	
+[token]
+
+[warnings]
+Input image is uncalibrated or has an unrecognised physical unit; density is left blank.
+Knee pick: The finite object-count curve is flat.
+[labels]
+none
+[result labels]
+1	0229b59850d2297bbdb7d801ff464a23b12cecea820fd21984b6bc10b1aa9759
+2	0229b59850d2297bbdb7d801ff464a23b12cecea820fd21984b6bc10b1aa9759
+3	0229b59850d2297bbdb7d801ff464a23b12cecea820fd21984b6bc10b1aa9759
+4	0229b59850d2297bbdb7d801ff464a23b12cecea820fd21984b6bc10b1aa9759
+5	0229b59850d2297bbdb7d801ff464a23b12cecea820fd21984b6bc10b1aa9759
