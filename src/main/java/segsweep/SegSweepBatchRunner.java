@@ -23,6 +23,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
+import java.util.function.BooleanSupplier;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
@@ -33,6 +35,11 @@ public final class SegSweepBatchRunner {
     private SegSweepBatchRunner() {
     }
 
+    /** Told before each image is opened; {@code index} is one-based. */
+    public interface ProgressListener {
+        void imageStarting(int index, int total, File file);
+    }
+
     public static String preview(SegSweepBatchParameters parameters) {
         CompiledBatch compiled = compile(parameters);
         Map<String, Map<String, List<File>>> groups = discover(parameters, compiled.pattern);
@@ -40,6 +47,18 @@ public final class SegSweepBatchRunner {
     }
 
     public static SegSweepBatchResult run(SegSweepBatchParameters parameters) {
+        return run(parameters, null, null);
+    }
+
+    /**
+     * Runs the batch, reporting each image before it is opened and polling
+     * {@code cancelCheck} between and during images. On cancel the images
+     * already finished are still written to the roll-up, then a
+     * {@link CancellationException} names how far the batch got.
+     */
+    public static SegSweepBatchResult run(SegSweepBatchParameters parameters,
+                                          ProgressListener progress,
+                                          BooleanSupplier cancelCheck) {
         CompiledBatch compiled = compile(parameters);
         Map<String, Map<String, List<File>>> groups = discover(parameters, compiled.pattern);
         if (groups.isEmpty()) {
@@ -63,7 +82,7 @@ public final class SegSweepBatchRunner {
         }
 
         try {
-            return runGroups(parameters, groups, outputRoot);
+            return runGroups(parameters, groups, outputRoot, progress, cancelCheck);
         } finally {
             if (outputReservation != null) outputReservation.release();
         }
@@ -72,38 +91,51 @@ public final class SegSweepBatchRunner {
     private static SegSweepBatchResult runGroups(
             SegSweepBatchParameters parameters,
             Map<String, Map<String, List<File>>> groups,
-            File outputRoot) {
+            File outputRoot,
+            ProgressListener progress,
+            BooleanSupplier cancelCheck) {
         List<SegSweepBatchResult.ImageResult> imageResults =
                 new ArrayList<SegSweepBatchResult.ImageResult>();
         List<SegSweepBatchResult.BatchFailure> failures =
                 new ArrayList<SegSweepBatchResult.BatchFailure>();
         int total = 0;
         int processed = 0;
+        int fileCount = countFiles(groups);
+        boolean cancelled = false;
 
+        outer:
         for (Map.Entry<String, Map<String, List<File>>> folderEntry : groups.entrySet()) {
             String relativeFolder = folderEntry.getKey();
             for (Map.Entry<String, List<File>> groupEntry : folderEntry.getValue().entrySet()) {
                 String groupKey = groupEntry.getKey();
                 List<File> files = groupEntry.getValue();
                 for (int i = 0; i < files.size(); i++) {
+                    if (isCancelled(cancelCheck)) {
+                        cancelled = true;
+                        break outer;
+                    }
                     total++;
                     File file = files.get(i);
+                    if (progress != null) progress.imageStarting(total, fileCount, file);
                     ImagePlus image = null;
                     try {
-                        image = IJ.openImage(file.getAbsolutePath());
+                        String[] openError = new String[1];
+                        image = QuietImageOpener.open(file.getAbsolutePath(), openError);
                         if (image == null) {
-                            throw new IOException("Could not open image.");
+                            throw new IOException(openError[0]);
                         }
                         if (parameters.autoSave()) {
                             ResourceGuard.Feasibility feasibility =
                                     ResourceGuard.assessMontageFeasibility(
-                                            displayWindow(parameters.analysisOptions()), image);
+                                            displayWindow(parameters.analysisOptions()), image,
+                                            parameters.analysisOptions().limits());
                             if (!feasibility.isOk()) {
                                 throw new SweepRefusedException(feasibility.getMessage());
                             }
                         }
-                        SegSweepResult result = SegSweep.run(
-                                parameters.analysisOptions().toParameters(image));
+                        SegSweepResult result = SegSweepAnalysis.run(
+                                parameters.analysisOptions().toParameters(image),
+                                null, cancelCheck);
                         File imageOutputDir = null;
                         if (parameters.autoSave()) {
                             AutoSaveWriter.DirectoryReservation imageReservation =
@@ -111,7 +143,8 @@ public final class SegSweepBatchRunner {
                                             new File(outputRoot, safeFolderName(file)));
                             imageOutputDir = imageReservation.directory;
                             try {
-                                AutoSaveWriter.writeToDirectory(imageOutputDir, file, result);
+                                AutoSaveWriter.writeToDirectory(imageOutputDir, file, result,
+                                        null, cancelCheck);
                             } finally {
                                 imageReservation.release();
                             }
@@ -119,6 +152,10 @@ public final class SegSweepBatchRunner {
                         imageResults.add(new SegSweepBatchResult.ImageResult(file,
                                 relativeFolder, groupKey, result.compactForBatch(), imageOutputDir));
                         processed++;
+                    } catch (CancellationException e) {
+                        total--;
+                        cancelled = true;
+                        break outer;
                     } catch (Exception e) {
                         failures.add(new SegSweepBatchResult.BatchFailure(file,
                                 relativeFolder, groupKey, failureMessage(e)));
@@ -138,7 +175,26 @@ public final class SegSweepBatchRunner {
         if (parameters.autoSave()) {
             writeBatchRollup(outputRoot, result);
         }
+        if (cancelled) {
+            throw new CancellationException("Batch cancelled after " + total + " of "
+                    + fileCount + " images; finished images were kept.");
+        }
         return result;
+    }
+
+    private static boolean isCancelled(BooleanSupplier cancelCheck) {
+        return Thread.currentThread().isInterrupted()
+                || (cancelCheck != null && cancelCheck.getAsBoolean());
+    }
+
+    private static int countFiles(Map<String, Map<String, List<File>>> groups) {
+        int count = 0;
+        for (Map<String, List<File>> folder : groups.values()) {
+            for (List<File> files : folder.values()) {
+                count += files.size();
+            }
+        }
+        return count;
     }
 
     private static ParameterSweep displayWindow(SegSweepMacroOptions options) {

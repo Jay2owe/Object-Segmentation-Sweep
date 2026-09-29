@@ -784,10 +784,11 @@ public final class SegSweepDialog {
                 throw new IllegalArgumentException("Selected image file does not exist: " + file);
             }
             File absolute = file.getAbsoluteFile();
-            ImagePlus opened = IJ.openImage(absolute.getAbsolutePath());
+            String[] error = new String[1];
+            ImagePlus opened = segsweep.QuietImageOpener.open(absolute.getAbsolutePath(), error);
             if (opened == null) {
-                throw new IllegalArgumentException("ImageJ could not open: "
-                        + absolute.getAbsolutePath());
+                throw new IllegalArgumentException(error[0] + " ("
+                        + absolute.getAbsolutePath() + ")");
             }
             disposeBrowsedImage();
             browsedFile = absolute;

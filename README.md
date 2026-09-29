@@ -124,23 +124,54 @@ run("Object Segmentation Sweep",
     "sweep=threshold from=10 to=60 step=5 pick=both hide_display");
 ```
 
-Key options:
+Paths may use either slash: backslashes in `image` and `autosave` (as returned by
+`getDirectory()` on Windows) are read as forward slashes. `image` names an open window
+first, then a file. Values cannot contain `[`, `]` or `"`; this is an ImageJ macro limit.
+
+Options (every key the command accepts):
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `image` | active image | File path or open-window title |
+| `image` | active image | Open-window title or file path |
 | `channel` | `1` | One-based channel |
 | `engine` | `classical` | The only executable v0.2.0 engine |
-| `sweep`, `from`, `to`, `step` | threshold, 10, 60, 5 | Primary axis |
-| `values` | — | Explicit comma-separated primary values |
-| `sweep2`, `from2`, `to2`, `step2`, `values2` | — | Optional secondary axis |
-| `crop` | full image | `x,y,width,height` |
+| `sweep`, `from`, `to`, `step` | threshold, 10, 60, 5 | Primary axis; each missing value takes its default |
+| `values` | none | Explicit comma-separated primary values instead of `from`/`to`/`step` |
+| `sweep2`, `from2`, `to2`, `step2`, `values2` | none | Optional secondary axis (no defaults) |
+| `crop` | `full` | `full` or `x,y,width,height` |
 | `pick` | `both` | `knee`, `stability`, `both`, or `none` |
 | `min_crop_fraction` | `0.05` | Warn below this crop fraction |
 | `stability_budget_ms` | `0` | Stability time budget; `0` is unlimited |
 | `autosave` | beside the input | Explicit output folder |
-| `hide_display` | off | Suppress all windows |
-| `hide_grid`, `hide_tables` | off | Suppress selected interactive outputs |
+| `hide_display`, `no_display` | off | Suppress all windows |
+| `show_display` | on | Undo an earlier `hide_display` |
+| `hide_grid`, `show_grid` | grid shown | Suppress or show the review grid |
+| `hide_tables`, `show_tables` | tables shown | Suppress or show the results tables |
+| `allow_oversized` | off | Run past the cell-count limits (the memory limit still applies) |
+
+In a macro or headless run a bad option, a refused sweep or Escape stops the calling macro
+with a one-line message. An image with no file location and no `autosave` still returns its
+result; the Log notes that autosave was skipped.
+
+Batch (`Plugins > Object Segmentation Sweep Batch`) runs every matching file in a folder and
+accepts the analysis options above except `image`, `autosave` and the display flags, plus:
+
+```javascript
+run("Object Segmentation Sweep Batch",
+    "folder=[C:/data] recursive regex=[(.*)_(A\\d+)] group=2 output=[C:/out] " +
+    "sweep=threshold from=10 to=60 step=5 pick=both");
+```
+
+| Batch option | Default | Meaning |
+| --- | --- | --- |
+| `folder` | required | Folder to search |
+| `regex` | `(.+?)-(.+?)_(.+)\.tif` | Filename pattern; keeps its backslashes |
+| `group` | `1` | Capture group that varies within a comparable set |
+| `output` | inside `folder` | Where the `Object Segmentation Sweep` output folder is created |
+| `recursive` | off | Include subfolders |
+
+Each file shows `n/N <file>` in the status bar; Escape stops after the current image and keeps
+finished results. Unreadable files are listed in `batch_failures.csv`.
 
 ## Java API
 

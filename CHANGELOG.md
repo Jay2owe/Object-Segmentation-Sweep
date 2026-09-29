@@ -6,6 +6,37 @@ All notable changes to Object Segmentation Sweep are documented here. The format
 
 ## [Unreleased]
 
+### Added
+
+- `Object Segmentation Sweep Batch` runs from a macro or headless with `folder`, `regex`, `group`,
+  `output` and `recursive` plus the analysis options, and batch runs are recorded.
+- Macro, headless, grid-off and batch runs show progress in the status bar and stop on Escape.
+
+### Changed
+
+- Macro options without `sweep`, `from`, `to` or `step` now take the documented defaults
+  (threshold, 10, 60, 5) instead of failing. Macros that relied on that error now run a sweep.
+- Backslashes in `image` and `autosave` paths are read as forward slashes instead of refused.
+- `image=` prefers an open window with that title over a same-named file.
+- A macro or headless error now stops the calling macro with a one-line message.
+- Batch analysis options refuse `image`, `autosave` and display flags instead of ignoring them.
+
+### Fixed
+
+- `allow_oversized` was ignored by the macro, autosave and batch feasibility checks, so a recorded
+  "run anyway" macro failed on replay.
+- A macro or headless run on an image with no file location and no `autosave` returned nothing
+  although the sweep succeeded; autosave is now skipped with a Log line. The grid no longer shows a
+  modal error for this after every run.
+- The recorder also wrote a bare `run("Object Segmentation Sweep");` after the full call.
+- Unreadable files in a batch no longer raise ImageJ's own error dialog per file.
+- An image title containing `[`, `]` or `"` stopped the dialog settings being remembered.
+- Cancel is now honoured inside a flat intensity level, during label-map materialisation and
+  during voxel traversal, where it could previously be missed.
+- The memory guard now accounts for bit depth; 32-bit images with many distinct values could pass
+  the guard and then run out of memory.
+- Histogram bin counts saturate instead of overflowing on very large stacks.
+
 ## [0.2.0] - 2026-08-07
 
 ### Added

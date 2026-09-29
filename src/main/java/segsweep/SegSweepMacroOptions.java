@@ -218,6 +218,41 @@ public final class SegSweepMacroOptions {
         }
     }
 
+    /** An independent copy; axis specs are immutable and shared. */
+    public SegSweepMacroOptions copy() {
+        SegSweepMacroOptions copy = new SegSweepMacroOptions();
+        copy.image = image;
+        copy.channel = channel;
+        copy.engine = engine;
+        copy.primaryAxis = primaryAxis;
+        copy.secondaryAxis = secondaryAxis;
+        copy.crop = crop;
+        copy.pickCriterion = pickCriterion;
+        copy.minimumCropFraction = minimumCropFraction;
+        copy.stabilityBudgetMs = stabilityBudgetMs;
+        copy.autosave = autosave;
+        copy.hideDisplay = hideDisplay;
+        copy.showGrid = showGrid;
+        copy.showTables = showTables;
+        copy.allowOversizedSweep = allowOversizedSweep;
+        return copy;
+    }
+
+    /**
+     * The analysis part only: no image, autosave folder or display flags. This is
+     * what a batch run accepts per image, since the batch supplies the images and
+     * the output folder itself and never displays.
+     */
+    public String toAnalysisMacroOptions() {
+        SegSweepMacroOptions analysis = copy();
+        analysis.image = null;
+        analysis.autosave = null;
+        analysis.hideDisplay = false;
+        analysis.showGrid = true;
+        analysis.showTables = true;
+        return analysis.toMacroOptions();
+    }
+
     public String toMacroOptions() {
         validate();
         List<String> tokens = new ArrayList<String>();

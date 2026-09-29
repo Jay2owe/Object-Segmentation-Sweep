@@ -109,10 +109,14 @@ public final class SweepStateStore {
             return null;
         }
         try {
-            SegSweepMacroOptions detached =
-                    SegSweepMacroOptionsParser.parse(options.toMacroOptions());
+            // Clear the image before serialising: it is never restored, and a
+            // title containing [ ] or " cannot be written as a macro option, which
+            // used to make the whole save fail silently.
+            SegSweepMacroOptions detached = options.copy();
             detached.setImage("");
-            return detached.toMacroOptions();
+            String text = detached.toMacroOptions();
+            SegSweepMacroOptionsParser.parse(text);
+            return text;
         } catch (Throwable ignored) {
             // An options object that does not validate is not worth storing.
             return null;

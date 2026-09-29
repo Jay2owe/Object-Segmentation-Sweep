@@ -9,6 +9,7 @@
 package segsweep;
 
 import ij.IJ;
+import ij.plugin.frame.Recorder;
 import sc.fiji.oc3d.core.io.RegexGroupDiscovery;
 import segsweep.ui.SegSweepDialog;
 
@@ -32,11 +33,17 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.io.File;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
@@ -44,7 +51,157 @@ import java.util.regex.PatternSyntaxException;
  * Batch processing dialog and grouping helpers.
  */
 public final class SegSweepBatch {
+    public static final String COMMAND_NAME = "Object Segmentation Sweep Batch";
+
+    /** Batch-only {@code key=value} options, in README order. */
+    public static final Set<String> VALUE_KEYS = Collections.unmodifiableSet(
+            new LinkedHashSet<String>(Arrays.asList("folder", "regex", "group", "output")));
+
+    /** Batch-only flags, in README order. */
+    public static final Set<String> FLAGS = Collections.unmodifiableSet(
+            new LinkedHashSet<String>(Arrays.asList("recursive")));
+
+    /**
+     * Single-image options that a batch cannot honour: the batch opens each
+     * matching file itself, writes under {@code output=}, and never displays.
+     * They used to be accepted and silently ignored.
+     */
+    static final Set<String> REFUSED_ANALYSIS_OPTIONS = Collections.unmodifiableSet(
+            new LinkedHashSet<String>(Arrays.asList(
+                    "image", "autosave", "hide_display", "no_display", "show_display",
+                    "hide_grid", "show_grid", "hide_tables", "show_tables")));
+
+    static final String DEFAULT_REGEX = "(.+?)-(.+?)_(.+)\\.tif";
+
     private SegSweepBatch() {
+    }
+
+    /**
+     * Parses the batch command's macro options:
+     * {@code folder=[..] regex=[..] group=n [recursive] [output=[..]]} plus any
+     * single-image analysis options except those in
+     * {@link #REFUSED_ANALYSIS_OPTIONS}. Absent {@code recursive} means top
+     * folder only, as for any ImageJ checkbox. {@code regex} keeps its
+     * backslashes; path values have backslashes turned into forward slashes.
+     */
+    public static SegSweepBatchParameters parseMacroOptions(String optionsText) {
+        List<String> tokens = SegSweepMacroOptionsParser.tokenize(
+                optionsText == null ? "" : optionsText);
+        Map<String, String> values = new LinkedHashMap<String, String>();
+        Set<String> flags = new HashSet<String>();
+        StringBuilder analysis = new StringBuilder();
+        for (int i = 0; i < tokens.size(); i++) {
+            String token = tokens.get(i);
+            int eq = token.indexOf('=');
+            String key = (eq >= 0 ? token.substring(0, eq) : token).trim()
+                    .toLowerCase(Locale.ROOT);
+            if (eq >= 0 && VALUE_KEYS.contains(key)) {
+                if (values.containsKey(key)) {
+                    throw new IllegalArgumentException("Duplicate macro option: " + key);
+                }
+                values.put(key, SegSweepMacroOptionsParser.decodeValue(key,
+                        token.substring(eq + 1).trim()));
+            } else if (eq < 0 && FLAGS.contains(key)) {
+                flags.add(key);
+            } else {
+                if (analysis.length() > 0) analysis.append(' ');
+                analysis.append(token);
+            }
+        }
+        String folder = values.get("folder");
+        if (folder == null || folder.trim().isEmpty()) {
+            throw new IllegalArgumentException("folder is required for " + COMMAND_NAME + ".");
+        }
+        String regex = values.containsKey("regex") ? values.get("regex") : DEFAULT_REGEX;
+        int group = 1;
+        if (values.containsKey("group")) {
+            try {
+                group = Integer.parseInt(values.get("group").trim());
+            } catch (NumberFormatException ex) {
+                throw new IllegalArgumentException("group must be an integer.");
+            }
+        }
+        SegSweepBatchParameters.Builder builder = SegSweepBatchParameters.builder(
+                new File(folder.trim()), regex, group)
+                .recursive(flags.contains("recursive"))
+                .hideDisplay(true)
+                .analysisOptions(parseAnalysisOptions(analysis.toString()));
+        String output = values.get("output");
+        if (output != null && !output.trim().isEmpty()) {
+            builder.saveDir(new File(output.trim()));
+        }
+        return builder.build();
+    }
+
+    /**
+     * Parses per-image analysis options for a batch, refusing the options a
+     * batch cannot honour with a message that says why.
+     */
+    public static SegSweepMacroOptions parseAnalysisOptions(String optionsText) {
+        Set<String> names = SegSweepMacroOptionsParser.namesIn(optionsText);
+        List<String> refused = new ArrayList<String>();
+        for (String name : names) {
+            if (REFUSED_ANALYSIS_OPTIONS.contains(name)) refused.add(name);
+        }
+        if (!refused.isEmpty()) {
+            throw new IllegalArgumentException("Batch analysis options cannot include "
+                    + refused + ": a batch opens each matching file in the folder, "
+                    + "saves under the output folder, and never displays windows.");
+        }
+        return SegSweepMacroOptionsParser.parse(optionsText == null ? "" : optionsText);
+    }
+
+    /**
+     * The macro call that reproduces {@code parameters}, or null when a value
+     * cannot be written as an ImageJ macro option ([, ] or " in it).
+     */
+    static String toMacroOptions(SegSweepBatchParameters parameters) {
+        List<String> tokens = new ArrayList<String>();
+        String folder = bracket(slashes(parameters.inputFolder().getPath()));
+        String regex = bracket(parameters.filenameRegex());
+        if (folder == null || regex == null) return null;
+        tokens.add("folder=" + folder);
+        tokens.add("regex=" + regex);
+        tokens.add("group=" + parameters.varyingGroup());
+        if (parameters.recursive()) tokens.add("recursive");
+        if (parameters.saveDir() != null) {
+            String output = bracket(slashes(parameters.saveDir().getPath()));
+            if (output == null) return null;
+            tokens.add("output=" + output);
+        }
+        tokens.add(parameters.analysisOptions().toAnalysisMacroOptions());
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < tokens.size(); i++) {
+            if (i > 0) sb.append(' ');
+            sb.append(tokens.get(i));
+        }
+        return sb.toString();
+    }
+
+    /** The line to append to the Recorder, with backslashes escaped for a macro string. */
+    static String recordedCall(SegSweepBatchParameters parameters) {
+        String options = toMacroOptions(parameters);
+        if (options == null) return null;
+        return "run(\"" + COMMAND_NAME + "\", \""
+                + options.replace("\\", "\\\\") + "\");\n";
+    }
+
+    static String completionMessage(SegSweepBatchResult result) {
+        return "Object Segmentation Sweep batch complete: "
+                + result.processedImages() + " processed, "
+                + result.failedImages() + " failed.";
+    }
+
+    private static String slashes(String path) {
+        return path == null ? "" : path.replace('\\', '/');
+    }
+
+    private static String bracket(String value) {
+        if (value == null || value.indexOf('[') >= 0 || value.indexOf(']') >= 0
+                || value.indexOf('"') >= 0) {
+            return null;
+        }
+        return "[" + value + "]";
     }
 
     public static void showBatchDialog() {
@@ -61,11 +218,11 @@ public final class SegSweepBatch {
 
         final JTextField folderField = addField(content, c, 0, "Folder", "");
         final JTextField regexField = addField(content, c, 1, "Filename regex",
-                "(.+?)-(.+?)_(.+)\\.tif");
+                DEFAULT_REGEX);
         final JTextField groupField = addField(content, c, 2, "Capture group", "1");
         final JCheckBox recursiveBox = addCheck(content, c, 3, "Include subfolders", true);
         final JTextField analysisField = addField(content, c, 4, "Analysis options",
-                SegSweepDialog.defaults().toMacroOptions());
+                SegSweepDialog.defaults().toAnalysisMacroOptions());
         analysisField.setToolTipText("Macro options: channel, sweep range(s), crop and pick criterion.");
         final JTextField autosaveField = addField(content, c, 5, "Save to", "");
 
@@ -111,20 +268,27 @@ public final class SegSweepBatch {
                         Integer.parseInt(groupField.getText().trim()))
                         .recursive(recursiveBox.isSelected())
                         .hideDisplay(true)
-                        .analysisOptions(SegSweepMacroOptionsParser.parse(
+                        .analysisOptions(parseAnalysisOptions(
                                 analysisField.getText().trim()));
                 if (autosaveField.getText().trim().length() > 0) {
                     builder.saveDir(new File(autosaveField.getText().trim()));
                 }
+                final SegSweepBatchParameters parameters = builder.build();
+                recordBatchCall(parameters);
                 new Thread(new Runnable() {
                     @Override public void run() {
                         try {
-                            SegSweepBatchResult result = SegSweepBatchRunner.run(builder.build());
-                            IJ.log("Object Segmentation Sweep batch complete: "
-                                    + result.processedImages() + " processed, "
-                                    + result.failedImages() + " failed.");
+                            SegSweepBatchResult result = SegSweepBatchRunner.run(parameters,
+                                    SegSweep_.batchStatus(), SegSweep_.escapeCancel());
+                            IJ.log(completionMessage(result));
+                            IJ.showStatus(COMMAND_NAME + ": done.");
+                        } catch (CancellationException ex) {
+                            IJ.log(COMMAND_NAME + ": " + ex.getMessage());
+                            IJ.showStatus(COMMAND_NAME + ": cancelled.");
                         } catch (Exception ex) {
-                            IJ.error("Object Segmentation Sweep Batch", ex.getMessage());
+                            IJ.error(COMMAND_NAME, ex.getMessage());
+                        } finally {
+                            IJ.showProgress(1.0d);
                         }
                     }
                 }, "SegSweep-Batch").start();
@@ -139,6 +303,17 @@ public final class SegSweepBatch {
         dialog.pack();
         dialog.setLocationRelativeTo(null);
         dialog.setVisible(true);
+    }
+
+    private static void recordBatchCall(SegSweepBatchParameters parameters) {
+        if (!Recorder.record) return;
+        String line = recordedCall(parameters);
+        if (line == null) {
+            IJ.log(COMMAND_NAME + ": this run was not recorded: the folder, output or "
+                    + "regex contains [, ] or \", which ImageJ macro options cannot carry.");
+            return;
+        }
+        Recorder.recordString(line);
     }
 
     static Map<String, List<File>> findGroups(File folder, Pattern pattern,

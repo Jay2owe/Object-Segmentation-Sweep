@@ -239,8 +239,10 @@ public final class AutoSaveWriter {
         ParameterSweep sweep = new ParameterSweep(ParameterSweep.Method.CLASSICAL,
                 new LinkedHashMap<ParameterId, ParameterValueList>(parameters.axes()),
                 parameters.crop(), "C" + parameters.channel());
+        // The caller's limits: a run the user allowed past the cell-count ceiling
+        // (allow_oversized) must be able to save what it computed.
         ResourceGuard.Feasibility feasibility = ResourceGuard.assessMontageOutputFeasibility(
-                sweep, parameters.image());
+                sweep, parameters.image(), parameters.limits());
         if (!feasibility.isOk()) {
             throw new IOException(feasibility.getMessage());
         }

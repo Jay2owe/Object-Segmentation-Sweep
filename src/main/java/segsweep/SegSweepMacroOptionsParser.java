@@ -15,7 +15,10 @@ import segsweep.token.SegmentationMethod;
 
 import java.awt.Rectangle;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -25,7 +28,45 @@ import java.util.Set;
  */
 public final class SegSweepMacroOptionsParser {
 
+    /** Every {@code key=value} option the single-image command accepts, in README order. */
+    public static final Set<String> VALUE_KEYS = Collections.unmodifiableSet(
+            new LinkedHashSet<String>(Arrays.asList(
+                    "image", "channel", "engine", "sweep", "from", "to", "step", "values",
+                    "sweep2", "from2", "to2", "step2", "values2", "crop", "pick",
+                    "min_crop_fraction", "stability_budget_ms", "autosave")));
+
+    /** Every bare flag the single-image command accepts, in README order. */
+    public static final Set<String> FLAGS = Collections.unmodifiableSet(
+            new LinkedHashSet<String>(Arrays.asList(
+                    "hide_display", "no_display", "show_display", "hide_grid", "show_grid",
+                    "hide_tables", "show_tables", "allow_oversized")));
+
+    /** Keys whose values are file paths; backslashes in them become forward slashes. */
+    static final Set<String> PATH_KEYS = Collections.unmodifiableSet(
+            new HashSet<String>(Arrays.asList("image", "autosave", "folder", "output")));
+
+    /** README defaults for the primary axis when the macro leaves them out. */
+    static final double DEFAULT_FROM = 10.0d;
+    static final double DEFAULT_TO = 60.0d;
+    static final double DEFAULT_STEP = 5.0d;
+
     private SegSweepMacroOptionsParser() {
+    }
+
+    /**
+     * The option keys and flags named in {@code optionsText}, lower-cased, without
+     * validating them. Lets a caller refuse options that make no sense in its
+     * context (for example {@code image=} inside a batch run).
+     */
+    public static Set<String> namesIn(String optionsText) {
+        Set<String> names = new LinkedHashSet<String>();
+        List<String> tokens = tokenize(optionsText == null ? "" : optionsText);
+        for (int i = 0; i < tokens.size(); i++) {
+            String token = tokens.get(i);
+            int eq = token.indexOf('=');
+            names.add((eq >= 0 ? token.substring(0, eq) : token).trim().toLowerCase(Locale.ROOT));
+        }
+        return names;
     }
 
     public static SegSweepMacroOptions parse(String optionsText) {
@@ -37,7 +78,7 @@ public final class SegSweepMacroOptionsParser {
             int eq = token.indexOf('=');
             if (eq >= 0) {
                 String key = token.substring(0, eq).trim().toLowerCase(Locale.ROOT);
-                String value = decodeValue(token.substring(eq + 1).trim());
+                String value = decodeValue(key, token.substring(eq + 1).trim());
                 if (!seenKeys.add(key)) {
                     throw new IllegalArgumentException("Duplicate macro option: " + key);
                 }
@@ -90,6 +131,9 @@ public final class SegSweepMacroOptionsParser {
     }
 
     private static void applyKeyValue(BuilderState state, String key, String value) {
+        if (!VALUE_KEYS.contains(key)) {
+            throw new IllegalArgumentException("Unknown Object Segmentation Sweep macro option: " + key);
+        }
         SegSweepMacroOptions options = state.options;
         if ("image".equals(key)) {
             options.setImage(value);
@@ -138,6 +182,9 @@ public final class SegSweepMacroOptionsParser {
     }
 
     private static void applyFlag(SegSweepMacroOptions options, String flag) {
+        if (!FLAGS.contains(flag)) {
+            throw new IllegalArgumentException("Unknown Object Segmentation Sweep macro flag: " + flag);
+        }
         if ("hide_display".equals(flag) || "no_display".equals(flag)) {
             options.setHideDisplay(true);
         } else if ("show_display".equals(flag)) {
@@ -248,21 +295,29 @@ public final class SegSweepMacroOptionsParser {
         throw new IllegalArgumentException(optionName + " must be a finite number.");
     }
 
-    private static String decodeValue(String raw) {
+    /**
+     * Strips the brackets from a value. Path values from {@code getDirectory()}
+     * on Windows carry backslashes; they are normalised to forward slashes, which
+     * Java accepts on every platform. Other values keep their backslashes (a
+     * batch filename regex needs them); numeric values then fail their own parse.
+     */
+    static String decodeValue(String key, String raw) {
+        String value = raw;
         if (raw.length() >= 2 && raw.charAt(0) == '[' && raw.charAt(raw.length() - 1) == ']') {
-            String inner = raw.substring(1, raw.length() - 1);
-            if (inner.indexOf('[') >= 0 || inner.indexOf(']') >= 0
-                    || inner.indexOf('"') >= 0 || inner.indexOf('\\') >= 0
-                    || inner.indexOf('\n') >= 0 || inner.indexOf('\r') >= 0) {
-                throw new IllegalArgumentException("Bracketed macro values must not contain brackets, quotes, backslashes, or line breaks.");
+            value = raw.substring(1, raw.length() - 1);
+            if (value.indexOf('[') >= 0 || value.indexOf(']') >= 0) {
+                throw new IllegalArgumentException(
+                        "Bracketed macro values must not contain brackets.");
             }
-            return inner;
         }
-        if (raw.indexOf('"') >= 0 || raw.indexOf('\\') >= 0
-                || raw.indexOf('\n') >= 0 || raw.indexOf('\r') >= 0) {
-            throw new IllegalArgumentException("Macro values must not contain quotes, backslashes, or line breaks.");
+        if (value.indexOf('"') >= 0 || value.indexOf('\n') >= 0 || value.indexOf('\r') >= 0) {
+            throw new IllegalArgumentException(
+                    "Macro values must not contain quotes or line breaks.");
         }
-        return raw;
+        if (key != null && PATH_KEYS.contains(key)) {
+            value = value.replace('\\', '/');
+        }
+        return value;
     }
 
     private static final class BuilderState {
@@ -272,6 +327,7 @@ public final class SegSweepMacroOptionsParser {
         boolean hasSecondary;
 
         void finishAxes() {
+            primary.applyDefaults();
             options.setPrimaryAxis(primary.build("sweep", "values", "from/to/step"));
             if (hasSecondary) {
                 options.setSecondaryAxis(secondary.build("sweep2", "values2", "from2/to2/step2"));
@@ -285,6 +341,19 @@ public final class SegSweepMacroOptionsParser {
         Double to;
         Double step;
         ParameterValueList values;
+
+        /**
+         * README contract: {@code sweep}, {@code from}, {@code to} and {@code step}
+         * default to threshold, 10, 60 and 5. Explicit {@code values} replace the
+         * range, so no range default is applied alongside them.
+         */
+        void applyDefaults() {
+            if (id == null) id = ParameterId.THRESHOLD;
+            if (values != null) return;
+            if (from == null) from = Double.valueOf(DEFAULT_FROM);
+            if (to == null) to = Double.valueOf(DEFAULT_TO);
+            if (step == null) step = Double.valueOf(DEFAULT_STEP);
+        }
 
         SegSweepMacroOptions.AxisSpec build(String sweepName,
                                             String valuesName,

@@ -52,6 +52,14 @@ public class SegSweep_ implements PlugIn {
     @Override
     public void run(String arg) {
         if (hasText(arg) && "batch".equalsIgnoreCase(arg.trim())) {
+            String batchOptions = Macro.getOptions();
+            if (hasText(batchOptions) || GraphicsEnvironment.isHeadless()) {
+                runBatchFromMacro(batchOptions);
+                return;
+            }
+            // The batch dialog is modeless and records its own call on Run;
+            // stop ImageJ also recording a bare run("... Batch") when run() returns.
+            Recorder.disableCommandRecording();
             SegSweepBatch.showBatchDialog();
             return;
         }
@@ -64,6 +72,31 @@ public class SegSweep_ implements PlugIn {
             return;
         }
         runInteractive();
+    }
+
+    /**
+     * The batch command's macro/headless path: parses folder, regex, group,
+     * output and the per-image analysis options, runs the batch on the calling
+     * thread with per-file status, and aborts the macro on failure.
+     */
+    SegSweepBatchResult runBatchFromMacro(String optionsText) {
+        if (!hasText(optionsText)) {
+            reportError(SegSweepBatch.COMMAND_NAME
+                    + " macro/headless execution requires explicit macro options.");
+            return null;
+        }
+        try {
+            SegSweepBatchParameters parameters = SegSweepBatch.parseMacroOptions(optionsText);
+            SegSweepBatchResult result = SegSweepBatchRunner.run(parameters,
+                    batchStatus(), escapeCancel());
+            log(SegSweepBatch.completionMessage(result));
+            return result;
+        } catch (Exception ex) {
+            reportError(ex.getMessage());
+            return null;
+        } finally {
+            IJ.showProgress(1.0d);
+        }
     }
 
     SegSweepResult runFromMacro(String optionsText) {
@@ -81,28 +114,72 @@ public class SegSweep_ implements PlugIn {
                 throw new IllegalArgumentException("No source image was found. Provide image=[path or title] or open an image.");
             }
             ResourceGuard.Feasibility outputFeasibility = shouldAutoSaveImmediately(options)
-                    ? ResourceGuard.assessMontageFeasibility(displayWindow(options), image)
-                    : ResourceGuard.assessFeasibility(displayWindow(options), image);
+                    ? ResourceGuard.assessMontageFeasibility(displayWindow(options), image,
+                            options.limits())
+                    : ResourceGuard.assessFeasibility(displayWindow(options), image,
+                            options.limits());
             if (!outputFeasibility.isOk()) {
                 throw new SweepRefusedException(outputFeasibility.getMessage());
             }
-            SegSweepResult result = SegSweep.run(options.toParameters(image));
+            BooleanSupplier cancel = escapeCancel();
+            SegSweepResult result = SegSweepAnalysis.run(options.toParameters(image),
+                    statusProgress(), cancel);
             if (shouldAutoSaveImmediately(options)) {
-                autoSaveIfRequested(result, options, image);
+                autoSaveOrSkip(result, options, image, null, cancel);
             }
             retainedByGrid = showMacroResult(result, options, lease);
             return result;
         } catch (Exception ex) {
-            reportError(ex.getMessage());
+            reportError(ex instanceof CancellationException
+                    ? "Sweep cancelled." : ex.getMessage());
             return null;
         } finally {
+            IJ.showProgress(1.0d);
             if (lease != null && !retainedByGrid) {
                 lease.close();
             }
         }
     }
 
+    /** Escape cancels a macro, headless or grid-off run; cleared first so a stale press does not. */
+    static BooleanSupplier escapeCancel() {
+        IJ.resetEscape();
+        return new BooleanSupplier() {
+            @Override public boolean getAsBoolean() {
+                return IJ.escapePressed();
+            }
+        };
+    }
+
+    /** Progress bar and status line for runs that have no grid to show progress in. */
+    static Consumer<SweepProgress> statusProgress() {
+        return new Consumer<SweepProgress>() {
+            @Override public void accept(SweepProgress progress) {
+                if (progress == null) return;
+                int total = Math.max(1, progress.total());
+                IJ.showProgress(Math.min(progress.completed(), total - 1), total);
+                IJ.showStatus(COMMAND_NAME + ": " + progress.completed() + "/"
+                        + progress.total() + " combinations (Esc to cancel)");
+            }
+        };
+    }
+
+    /** Per-file status for batch runs: {@code n/N <file>}. */
+    static SegSweepBatchRunner.ProgressListener batchStatus() {
+        return new SegSweepBatchRunner.ProgressListener() {
+            @Override public void imageStarting(int index, int total, File file) {
+                IJ.showProgress(index - 1, Math.max(1, total));
+                IJ.showStatus(SegSweepBatch.COMMAND_NAME + ": " + index + "/" + total + " "
+                        + (file == null ? "" : file.getName()) + " (Esc to cancel)");
+            }
+        };
+    }
+
     private void runInteractive() {
+        // This command records its own full call (recordMacroCall); without this
+        // ImageJ would also record a bare run("Object Segmentation Sweep") when
+        // run() returns, and on replay that line would open the dialog again.
+        Recorder.disableCommandRecording();
         ImagePlus active = WindowManager.getCurrentImage();
         SegSweepDialog dialog = new SegSweepDialog(active);
         SegSweepMacroOptions options = dialog.showDialog();
@@ -127,15 +204,20 @@ public class SegSweep_ implements PlugIn {
                 boolean retainedByGrid = false;
                 try {
                     IJ.showStatus(COMMAND_NAME + ": running sweep...");
-                    SegSweepResult result = SegSweep.run(runOptions.toParameters(runImage));
+                    BooleanSupplier cancel = escapeCancel();
+                    SegSweepResult result = SegSweepAnalysis.run(
+                            runOptions.toParameters(runImage), statusProgress(), cancel);
                     if (shouldAutoSaveImmediately(runOptions)) {
-                        autoSaveIfRequested(result, runOptions, runImage);
+                        autoSaveOrSkip(result, runOptions, runImage, null, cancel);
                     }
                     retainedByGrid = showMacroResult(result, runOptions, lease);
                     IJ.showStatus(COMMAND_NAME + ": done.");
+                } catch (CancellationException ex) {
+                    IJ.showStatus(COMMAND_NAME + ": cancelled.");
                 } catch (Exception ex) {
                     reportError(ex.getMessage());
                 } finally {
+                    IJ.showProgress(1.0d);
                     if (!retainedByGrid) {
                         lease.close();
                     }
@@ -206,7 +288,7 @@ public class SegSweep_ implements PlugIn {
                             boolean retainedByGrid = false;
                             try {
                                 if (shouldAutoSaveImmediately(options)) {
-                                    autoSaveIfRequested(completed, options, image);
+                                    autoSaveOrSkip(completed, options, image, null, null);
                                 }
                                 retainedByGrid = showMacroResult(completed, options, lease);
                                 IJ.showStatus(COMMAND_NAME + ": done.");
@@ -353,6 +435,11 @@ public class SegSweep_ implements PlugIn {
                     labels.setTitle(COMMAND_NAME + " - picked labels");
                     labels.show();
                 }
+                if (autoSaveDestinationMissing(options, image)) {
+                    grid.setActionStatus("Picked " + selected + "; not saved: "
+                            + NO_FILE_LOCATION_HINT);
+                    return;
+                }
                 try {
                     BufferedImage reviewedGrid = grid.renderGridSnapshot();
                     File output = autoSaveIfRequested(
@@ -365,13 +452,23 @@ public class SegSweep_ implements PlugIn {
         });
         grid.setVisible(true);
         if (shouldAutoSaveRenderedGrid(options)) {
-            try {
-                File output = autoSaveIfRequested(
-                        result, options, image, grid.renderGridSnapshot());
-                IJ.log(COMMAND_NAME + ": saved initial reviewed grid to "
-                        + output.getAbsolutePath());
-            } catch (Exception ex) {
-                IJ.error(COMMAND_NAME, "Could not save sweep: " + ex.getMessage());
+            if (autoSaveDestinationMissing(options, image)) {
+                // An unsaved image is normal in interactive use; say so once in
+                // the grid rather than raising a modal error after every run.
+                log(COMMAND_NAME + ": autosave skipped: " + NO_FILE_LOCATION_HINT);
+                grid.setActionStatus("Not saved: " + NO_FILE_LOCATION_HINT);
+            } else {
+                try {
+                    File output = autoSaveIfRequested(
+                            result, options, image, grid.renderGridSnapshot());
+                    log(COMMAND_NAME + ": saved initial reviewed grid to "
+                            + output.getAbsolutePath());
+                } catch (Exception ex) {
+                    log(COMMAND_NAME + ": could not save sweep: "
+                            + QuietImageOpener.oneLine(ex.getMessage()));
+                    grid.setActionStatus("Could not save sweep: "
+                            + QuietImageOpener.oneLine(ex.getMessage()));
+                }
             }
         }
         return true;
@@ -452,34 +549,84 @@ public class SegSweep_ implements PlugIn {
         if (result == null || options == null) {
             return null;
         }
+        return autoSaveIfRequested(result, options, image, reviewedGrid, null);
+    }
+
+    File autoSaveIfRequested(SegSweepResult result,
+                             SegSweepMacroOptions options,
+                             ImagePlus image,
+                             BufferedImage reviewedGrid,
+                             BooleanSupplier cancel) throws java.io.IOException {
+        if (result == null || options == null) {
+            return null;
+        }
         File inputFile = inputFileFor(options, image);
         if (hasText(options.autosave())) {
             return AutoSaveWriter.writeTo(
-                    new File(options.autosave()), inputFile, result, reviewedGrid);
+                    new File(options.autosave()), inputFile, result, reviewedGrid, cancel);
         }
         File existingInput = existingInputFileFor(options, image);
         if (existingInput == null) {
             throw new java.io.IOException(
                     "The source image has no file location. Choose an explicit Save to folder.");
         }
-        return AutoSaveWriter.write(existingInput, result, reviewedGrid);
+        return AutoSaveWriter.write(existingInput, result, reviewedGrid, cancel);
     }
 
+    static final String NO_FILE_LOCATION_HINT = "the image has no file location. "
+            + "Save it first or pass autosave=[folder].";
+
+    /** True when there is neither an explicit autosave folder nor a saved source file. */
+    static boolean autoSaveDestinationMissing(SegSweepMacroOptions options, ImagePlus image) {
+        return options != null && !hasText(options.autosave())
+                && existingInputFileFor(options, image) == null;
+    }
+
+    /**
+     * Autosaves when there is somewhere to save; otherwise logs that autosave
+     * was skipped. A new, duplicated or processed image has no file, and a
+     * successful sweep must not be reported as a failure because of that.
+     */
+    File autoSaveOrSkip(SegSweepResult result,
+                        SegSweepMacroOptions options,
+                        ImagePlus image,
+                        BufferedImage reviewedGrid,
+                        BooleanSupplier cancel) throws java.io.IOException {
+        if (autoSaveDestinationMissing(options, image)) {
+            log(COMMAND_NAME + ": autosave skipped: " + NO_FILE_LOCATION_HINT);
+            return null;
+        }
+        return autoSaveIfRequested(result, options, image, reviewedGrid, cancel);
+    }
+
+    /**
+     * The saved source file, or null. Only an absolute location counts: a bare
+     * title or a file name without a directory would resolve against Fiji's
+     * working directory, and autosave must never write there by accident.
+     */
     private static File existingInputFileFor(SegSweepMacroOptions options, ImagePlus image) {
-        File input = inputFileFor(options, image);
-        return input.isFile() ? input : null;
-    }
-
-    private static File inputFileFor(SegSweepMacroOptions options, ImagePlus image) {
         if (options != null && hasText(options.image())) {
             File explicit = new File(options.image());
-            if (explicit.isFile()) return explicit;
+            if (explicit.isAbsolute() && explicit.isFile()) return explicit;
         }
         if (image != null) {
             FileInfo info = image.getOriginalFileInfo();
+            if (info != null && hasText(info.fileName) && hasText(info.directory)) {
+                File file = new File(info.directory, info.fileName);
+                if (file.isAbsolute() && file.isFile()) return file;
+            }
+        }
+        return null;
+    }
+
+    /** Names the outputs; never used as a save location on its own. */
+    private static File inputFileFor(SegSweepMacroOptions options, ImagePlus image) {
+        File existing = existingInputFileFor(options, image);
+        if (existing != null) return existing;
+        if (image != null) {
+            FileInfo info = image.getOriginalFileInfo();
             if (info != null && hasText(info.fileName)) {
-                File directory = hasText(info.directory) ? new File(info.directory) : new File(".");
-                return new File(directory, info.fileName);
+                return new File(info.fileName);
             }
             if (hasText(image.getTitle())) {
                 return new File(image.getTitle());
@@ -488,24 +635,26 @@ public class SegSweep_ implements PlugIn {
         return new File("image.tif");
     }
 
-    private ImageLease resolveImage(String imageOption) {
+    /**
+     * Resolves {@code image=}: an open window title first (the user named an
+     * image they can see; a same-named file in Fiji's working directory must not
+     * win), then an absolute or relative file path.
+     */
+    ImageLease resolveImage(String imageOption) {
         if (hasText(imageOption)) {
             String value = imageOption.trim();
-            File file = new File(value);
-            if (file.exists()) {
-                ImagePlus image = IJ.openImage(file.getAbsolutePath());
-                if (image == null) {
-                    throw new IllegalArgumentException("Could not open image: " + value);
-                }
-                return ImageLease.owned(image);
-            }
             ImagePlus byTitle = WindowManager.getImage(value);
             if (byTitle != null) {
                 return ImageLease.borrowed(byTitle);
             }
-            ImagePlus opened = IJ.openImage(value);
-            if (opened != null) {
-                return ImageLease.owned(opened);
+            File file = new File(value);
+            if (file.exists()) {
+                String[] error = new String[1];
+                ImagePlus image = QuietImageOpener.open(file.getAbsolutePath(), error);
+                if (image == null) {
+                    throw new IllegalArgumentException(error[0] + " (" + value + ")");
+                }
+                return ImageLease.owned(image);
             }
             throw new IllegalArgumentException("Open image or file not found: " + value);
         }
@@ -545,34 +694,81 @@ public class SegSweep_ implements PlugIn {
         }
     }
 
-    private void recordMacroCall(SegSweepMacroOptions options) {
+    /**
+     * Records the full call, then clears ImageJ's pending command so it does
+     * not also record a bare {@code run("Object Segmentation Sweep");} when
+     * {@code run()} returns. Returns the recorded line, or null.
+     */
+    static String recordMacroCall(SegSweepMacroOptions options) {
         if (!Recorder.record || options == null) {
-            return;
+            return null;
         }
+        String line;
         try {
-            Recorder.recordString("run(\"" + COMMAND_NAME + "\", \""
-                    + options.toMacroOptions() + "\");\n");
+            line = "run(\"" + COMMAND_NAME + "\", \"" + options.toMacroOptions() + "\");\n";
         } catch (IllegalArgumentException ex) {
-            IJ.log(COMMAND_NAME + ": Could not record macro options: " + ex.getMessage());
+            IJ.log(COMMAND_NAME + ": this run was not recorded: the image title or a path "
+                    + "contains [, ] or \", which ImageJ macro options cannot carry. "
+                    + "Rename the image or choose another folder to record it.");
+            Recorder.disableCommandRecording();
+            return null;
         }
+        Recorder.recordString(line);
+        Recorder.disableCommandRecording();
+        return line;
     }
 
-    private static void logWarnings(SegSweepResult result) {
+    private void logWarnings(SegSweepResult result) {
         if (result == null || result.warnings().isEmpty()) {
             return;
         }
         for (int i = 0; i < result.warnings().size(); i++) {
-            IJ.log(COMMAND_NAME + " warning: " + result.warnings().get(i));
+            log(COMMAND_NAME + " warning: " + result.warnings().get(i));
         }
     }
 
-    private void reportError(String message) {
-        String text = hasText(message) ? message : "Unknown Object Segmentation Sweep error.";
-        if (GraphicsEnvironment.isHeadless()) {
-            IJ.log(COMMAND_NAME.toUpperCase(Locale.ROOT) + " ERROR: " + text);
+    /**
+     * Reports an error on one line. In the GUI it is an ImageJ error dialog; in
+     * a macro or headless run it also aborts the calling macro, which used to
+     * carry on as if the sweep had succeeded.
+     */
+    void reportError(String message) {
+        String text = hasText(message)
+                ? QuietImageOpener.oneLine(message)
+                : "Unknown Object Segmentation Sweep error.";
+        boolean headless = GraphicsEnvironment.isHeadless();
+        if (headless) {
+            log(COMMAND_NAME.toUpperCase(Locale.ROOT) + " ERROR: " + text);
         } else {
-            IJ.error(COMMAND_NAME, text);
+            showError(text);
         }
+        if (headless || inMacro()) {
+            abortMacro();
+        }
+    }
+
+    /** Test seam: IJ.log. */
+    void log(String message) {
+        IJ.log(message);
+    }
+
+    /** Test seam: the GUI error dialog (IJ.error also aborts a running macro). */
+    void showError(String text) {
+        IJ.error(COMMAND_NAME, text);
+    }
+
+    /** True when called from a macro {@code run(...)} with options. */
+    boolean inMacro() {
+        return Macro.getOptions() != null;
+    }
+
+    /**
+     * Aborts the calling macro. {@code Macro.abort()} throws
+     * {@code RuntimeException(Macro.MACRO_CANCELED)} on a macro thread, which
+     * ImageJ treats as a quiet stop; elsewhere it only sets ImageJ's abort flag.
+     */
+    void abortMacro() {
+        Macro.abort();
     }
 
     private static boolean hasText(String value) {
