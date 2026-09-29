@@ -42,15 +42,15 @@ jobs:
       IMAGEJ_UPDATE_SITE_NAME: "Object-Segmentation-Sweep"
       IMAGEJ_UPDATE_SITE_URL: "https://sites.imagej.net/Object-Segmentation-Sweep/"
       GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: "v0.2.0"
-      RELEASE_COMMIT: "b22a650309c3b48d672aeb456d966ff1c83ea821"
-      RELEASE_SHA256: "CDC29D37952C1C700ECD2D981AD84AACB6497D4D9F712AB00EEE1EB9156505A7"
-      RELEASE_JAR: "Object-Segmentation-Sweep-0.2.0.jar"
+      RELEASE_TAG: "v0.2.1"
+      RELEASE_COMMIT: "463dbaaff39d5518fe8d844e0225911a3c5ca646"
+      RELEASE_SHA256: "8A65266764903B35812BD08B699A99A69E8198B3BD4B9654FB0B217D7D64F87E"
+      RELEASE_JAR: "Object-Segmentation-Sweep-0.2.1.jar"
       OC3D_CORE_REPO: "Jay2owe/oc3d-core"
       OC3D_CORE_REF: "v0.1.0"
       IMAGEJ_UPLOAD_USER: ${{ secrets.IMAGEJ_UPLOAD_USER }}
       IMAGEJ_UPLOAD_PASSWORD: ${{ secrets.IMAGEJ_UPLOAD_PASSWORD }}
-      ARTIFACT_GLOB: "release-artifact/Object-Segmentation-Sweep-0.2.0.jar"
+      ARTIFACT_GLOB: "release-artifact/Object-Segmentation-Sweep-0.2.1.jar"
       INSTALL_DIR: "plugins"
       REPLACE_GLOB: "plugins/Object-Segmentation-Sweep-*.jar"
       LIVE_UPLOAD_CONFIRMATION: "UPLOAD Object-Segmentation-Sweep"
@@ -238,5 +238,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: object-segmentation-sweep-uploaded-artifact
-          path: release-artifact/Object-Segmentation-Sweep-0.2.0.jar
+          path: release-artifact/Object-Segmentation-Sweep-0.2.1.jar
           if-no-files-found: error

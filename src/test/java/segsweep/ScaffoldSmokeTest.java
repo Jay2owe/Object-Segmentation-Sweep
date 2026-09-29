@@ -34,12 +34,13 @@ public class ScaffoldSmokeTest {
         }
         String version = projectVersion(read(root, "pom.xml"));
         if (version.endsWith("-SNAPSHOT")) {
-            // Between releases main builds the next version: the changelog
-            // already has its section, while README and CITATION still name
-            // the last release until the release commit updates them.
+            // Between releases main builds the next version: its changes go
+            // under [Unreleased] or a section of their own, while README and
+            // CITATION name the last release until the release commit.
             String next = version.substring(0, version.length() - "-SNAPSHOT".length());
-            assertTrue("CHANGELOG.md has a section for " + next,
-                    read(root, "CHANGELOG.md").contains("## [" + next + "] - "));
+            String changelog = read(root, "CHANGELOG.md");
+            assertTrue("CHANGELOG.md has an [Unreleased] or " + next + " section",
+                    changelog.contains("## [Unreleased]") || changelog.contains("## [" + next + "] - "));
             return;
         }
         assertTrue(read(root, "CITATION.cff").contains("version: \"" + version + "\""));
