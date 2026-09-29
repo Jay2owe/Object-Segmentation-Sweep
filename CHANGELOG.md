@@ -6,6 +6,41 @@ All notable changes to Object Segmentation Sweep are documented here. The format
 
 ## [Unreleased]
 
+## [0.2.1] - Unreleased
+
+Fixes found by driving 0.2.0 in a real Fiji window and by a review of the 0.2.0 changes. Measurement
+outputs (tables, picks, label values) are unchanged.
+
+### Fixed
+
+- The dialog fits the screen: after Suggest range the OUTPUT section and Save to were cut off below
+  a fixed 620-pixel height on a 1536x864 screen. The dialog now sizes to its content within the
+  usable screen and scrolls beyond that. At ImageJ's GUI scale (Edit > Options > Appearance) its
+  text and fixed sizes grow too, as do the batch dialog's.
+- With no image open, the dialog's cost line and Run said "No parameter sweep was provided." They
+  now say an image is needed and how to choose one.
+- The picked label map opened with the grey lookup table, so labels 1..N of a 16-bit map were all
+  but black. It now opens with the grid's label colours, each label drawn as its tile drew it.
+- The pick status in the review grid (Knee or Stability result) was replaced by input warnings
+  such as "uncalibrated"; the warnings are now added after it.
+- Escape in the ImageJ window did not cancel a sweep shown in the progress grid; it now does, as it
+  does without the grid. Escape pressed after the last variation also stops the autosave.
+- Cancelling while the picked label stack was being built could leave a partly written output
+  folder; nothing is written until the labels are ready.
+- The batch dialog's default filename pattern ignores case and accepts `.tiff`, so `.TIF` and
+  `.tiff` files are found. Typed patterns are used as written.
+- Batch Run with a missing folder, a bad pattern or capture group closed the dialog and recorded
+  the failing call before reporting the error. The dialog now stays open with the typed settings and
+  nothing is recorded.
+- Pick selected could start a second pick while the first was still saving (selecting another tile
+  re-enabled it); Pick now stays disabled until the running pick ends. An out-of-memory error during
+  a pick is reported and re-enables Pick. The saved and the shown label stacks are no longer held in
+  memory at the same time.
+- In a macro with the grid shown, a failed autosave only logged the error and the macro carried on;
+  it now stops the macro, as it does without the grid.
+- Suggest range results that arrive after the axis, image, crop or channel changed are dropped
+  instead of being written into the fields for the new choice.
+
 ## [0.2.0] - 2026-09-29
 
 First public release. Earlier 0.1.0 and 0.2.0 builds were never tagged; this entry covers

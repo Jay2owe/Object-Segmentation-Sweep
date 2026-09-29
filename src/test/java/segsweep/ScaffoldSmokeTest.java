@@ -16,7 +16,6 @@ import java.nio.file.Files;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -34,7 +33,15 @@ public class ScaffoldSmokeTest {
             assertTrue(name + " should exist", new File(root, name).isFile());
         }
         String version = projectVersion(read(root, "pom.xml"));
-        assertFalse("a release is built without -SNAPSHOT", version.endsWith("-SNAPSHOT"));
+        if (version.endsWith("-SNAPSHOT")) {
+            // Between releases main builds the next version: the changelog
+            // already has its section, while README and CITATION still name
+            // the last release until the release commit updates them.
+            String next = version.substring(0, version.length() - "-SNAPSHOT".length());
+            assertTrue("CHANGELOG.md has a section for " + next,
+                    read(root, "CHANGELOG.md").contains("## [" + next + "] - "));
+            return;
+        }
         assertTrue(read(root, "CITATION.cff").contains("version: \"" + version + "\""));
         assertTrue(read(root, "CHANGELOG.md").contains("## [" + version + "] - "));
         assertTrue(read(root, "README.md").contains("Object-Segmentation-Sweep-" + version + ".jar"));
