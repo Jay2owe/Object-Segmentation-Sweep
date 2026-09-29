@@ -348,6 +348,44 @@ public class SegSweepBatchTest {
         throw new AssertionError("Expected a missing-folder refusal.");
     }
 
+    /**
+     * Found by the GUI checks of 0.2.0: Run in the batch dialog with a mistyped
+     * folder closed the dialog and recorded the call before the worker thread
+     * reported the error. The dialog's start now refuses first, so the dialog
+     * (which stays open when start throws) keeps the typed settings.
+     */
+    @Test
+    public void dialogStartRefusesWrongInputsBeforeStartingAWorker() throws IOException {
+        File folder = tmp.newFolder("start-checks");
+        int workersBefore = batchWorkers();
+        String[][] cases = {
+                { new File(tmp.getRoot(), "missing").getPath(), "(.*)\\.tif", "1",
+                        "Input folder does not exist" },
+                { folder.getPath(), "(.*)\\.tif", "3", "Capture group 3" },
+                { folder.getPath(), "(.*\\.tif", "1", "Invalid filename regex" },
+        };
+        for (String[] c : cases) {
+            try {
+                SegSweepBatch.start(SegSweepBatchParameters.builder(
+                        new File(c[0]), c[1], Integer.parseInt(c[2]))
+                        .analysisOptions(kneeOptions(CropSpec.full()))
+                        .build());
+                throw new AssertionError("Expected a refusal for " + c[3]);
+            } catch (IllegalArgumentException expected) {
+                assertTrue(expected.getMessage(), expected.getMessage().contains(c[3]));
+            }
+        }
+        assertEquals(workersBefore, batchWorkers());
+    }
+
+    private static int batchWorkers() {
+        int count = 0;
+        for (Thread thread : Thread.getAllStackTraces().keySet()) {
+            if ("SegSweep-Batch".equals(thread.getName()) && thread.isAlive()) count++;
+        }
+        return count;
+    }
+
     @Test
     public void saveDirThatIsAFileIsRefused() throws Exception {
         saveImage(new File(tmp.getRoot(), "Exp1-A01_LH_CTX.tif"));
@@ -388,6 +426,32 @@ public class SegSweepBatchTest {
                 .build());
         assertTrue(preview.contains("Exp1-A01_LH_CTX.tif"));
         assertTrue(preview.contains("1 files"));
+    }
+
+    /**
+     * Found by the GUI checks of 0.2.0: the default pattern was case-sensitive
+     * and ended in {@code \.tif}, so a sample exported as {@code .TIF} or
+     * {@code .tiff} was silently left out of the batch.
+     */
+    @Test
+    public void defaultPatternFindsUpperCaseAndFourLetterTiffExtensions() throws Exception {
+        saveImage(new File(tmp.getRoot(), "s-a_1.tif"));
+        saveImage(new File(tmp.getRoot(), "upper.tif"));
+        saveImage(new File(tmp.getRoot(), "long.tif"));
+        assertTrue(new File(tmp.getRoot(), "upper.tif").renameTo(new File(tmp.getRoot(), "s-a_2.TIF")));
+        assertTrue(new File(tmp.getRoot(), "long.tif").renameTo(new File(tmp.getRoot(), "s-b_1.tiff")));
+        Files.write(new File(tmp.getRoot(), "s-c_1.txt").toPath(),
+                "not an image".getBytes(StandardCharsets.UTF_8));
+
+        SegSweepBatchParameters parameters = SegSweepBatch.parseMacroOptions(
+                "folder=[" + tmp.getRoot().getPath().replace('\\', '/') + "] "
+                        + "sweep=threshold from=10 to=60 step=10 pick=knee");
+        String preview = SegSweepBatchRunner.preview(parameters);
+        assertTrue(preview, preview.contains("s-a_1.tif"));
+        assertTrue(preview, preview.contains("s-a_2.TIF"));
+        assertTrue(preview, preview.contains("s-b_1.tiff"));
+        assertFalse(preview, preview.contains("s-c_1.txt"));
+        assertTrue(preview, preview.contains("3 files"));
     }
 
     private static SegSweepResult runResult(CropSpec crop) {

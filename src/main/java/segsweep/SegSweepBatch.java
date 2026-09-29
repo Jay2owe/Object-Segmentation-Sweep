@@ -71,7 +71,11 @@ public final class SegSweepBatch {
                     "image", "autosave", "hide_display", "no_display", "show_display",
                     "hide_grid", "show_grid", "hide_tables", "show_tables")));
 
-    static final String DEFAULT_REGEX = "(.+?)-(.+?)_(.+)\\.tif";
+    /**
+     * Ignores case and accepts {@code .tiff}, so {@code .TIF} and {@code .tiff}
+     * exports are found too; typed patterns are used as written.
+     */
+    static final String DEFAULT_REGEX = "(?i)(.+?)-(.+?)_(.+)\\.tiff?";
 
     private SegSweepBatch() {
     }
@@ -209,7 +213,9 @@ public final class SegSweepBatch {
                 "Object Segmentation Sweep - Batch", false);
         dialog.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
         JPanel content = new JPanel(new GridBagLayout());
-        content.setBorder(javax.swing.BorderFactory.createEmptyBorder(14, 16, 10, 16));
+        content.setBorder(javax.swing.BorderFactory.createEmptyBorder(
+                SegSweepDialog.scaled(14), SegSweepDialog.scaled(16),
+                SegSweepDialog.scaled(10), SegSweepDialog.scaled(16)));
         dialog.add(content, BorderLayout.CENTER);
         GridBagConstraints c = new GridBagConstraints();
         c.insets = new Insets(3, 3, 3, 3);
@@ -231,7 +237,8 @@ public final class SegSweepBatch {
         previewArea.setFont(new Font("Monospaced", Font.PLAIN, 11));
         JScrollPane previewScroll = new JScrollPane(previewArea);
         previewScroll.setAlignmentX(Component.LEFT_ALIGNMENT);
-        previewScroll.setPreferredSize(new Dimension(520, 180));
+        previewScroll.setPreferredSize(new Dimension(
+                SegSweepDialog.scaled(520), SegSweepDialog.scaled(180)));
         c.gridx = 0;
         c.gridy = 6;
         c.gridwidth = 2;
@@ -273,25 +280,7 @@ public final class SegSweepBatch {
                 if (autosaveField.getText().trim().length() > 0) {
                     builder.saveDir(new File(autosaveField.getText().trim()));
                 }
-                final SegSweepBatchParameters parameters = builder.build();
-                recordBatchCall(parameters);
-                new Thread(new Runnable() {
-                    @Override public void run() {
-                        try {
-                            SegSweepBatchResult result = SegSweepBatchRunner.run(parameters,
-                                    SegSweep_.batchStatus(), SegSweep_.escapeCancel());
-                            IJ.log(completionMessage(result));
-                            IJ.showStatus(COMMAND_NAME + ": done.");
-                        } catch (CancellationException ex) {
-                            IJ.log(COMMAND_NAME + ": " + ex.getMessage());
-                            IJ.showStatus(COMMAND_NAME + ": cancelled.");
-                        } catch (Exception ex) {
-                            IJ.error(COMMAND_NAME, ex.getMessage());
-                        } finally {
-                            IJ.showProgress(1.0d);
-                        }
-                    }
-                }, "SegSweep-Batch").start();
+                start(builder.build());
                 dialog.dispose();
             } catch (RuntimeException ex) {
                 JOptionPane.showMessageDialog(dialog, ex.getMessage(),
@@ -300,9 +289,41 @@ public final class SegSweepBatch {
         });
         close.addActionListener(e -> dialog.dispose());
 
+        ij.gui.GUI.scale(dialog.getContentPane());
         dialog.pack();
         dialog.setLocationRelativeTo(null);
         dialog.setVisible(true);
+    }
+
+    /**
+     * Checks a dialog batch, records it and starts it on its own thread. Wrong
+     * inputs (a missing folder, a bad regex or capture group) throw here, before
+     * anything is recorded or the dialog closes, so the typed settings stay on
+     * screen; 0.2.0 closed the dialog, recorded the failing call and only then
+     * reported the error.
+     */
+    static Thread start(final SegSweepBatchParameters parameters) {
+        SegSweepBatchRunner.check(parameters);
+        recordBatchCall(parameters);
+        Thread worker = new Thread(new Runnable() {
+            @Override public void run() {
+                try {
+                    SegSweepBatchResult result = SegSweepBatchRunner.run(parameters,
+                            SegSweep_.batchStatus(), SegSweep_.escapeCancel());
+                    IJ.log(completionMessage(result));
+                    IJ.showStatus(COMMAND_NAME + ": done.");
+                } catch (CancellationException ex) {
+                    IJ.log(COMMAND_NAME + ": " + ex.getMessage());
+                    IJ.showStatus(COMMAND_NAME + ": cancelled.");
+                } catch (Exception ex) {
+                    IJ.error(COMMAND_NAME, ex.getMessage());
+                } finally {
+                    IJ.showProgress(1.0d);
+                }
+            }
+        }, "SegSweep-Batch");
+        worker.start();
+        return worker;
     }
 
     private static void recordBatchCall(SegSweepBatchParameters parameters) {

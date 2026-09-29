@@ -278,6 +278,11 @@ public final class SegSweepBatchRunner {
         }
     }
 
+    /** Throws {@link IllegalArgumentException} for inputs {@link #run} would reject. */
+    static void check(SegSweepBatchParameters parameters) {
+        compile(parameters);
+    }
+
     private static CompiledBatch compile(SegSweepBatchParameters parameters) {
         validate(parameters);
         try {

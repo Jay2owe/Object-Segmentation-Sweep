@@ -162,7 +162,7 @@ run("Object Segmentation Sweep Batch",
 | Batch option | Default | Meaning |
 | --- | --- | --- |
 | `folder` | required | Folder to search |
-| `regex` | `(.+?)-(.+?)_(.+)\.tif` | Filename pattern; keeps its backslashes |
+| `regex` | `(?i)(.+?)-(.+?)_(.+)\.tiff?` | Filename pattern; keeps its backslashes. The default ignores case, so `.TIF` and `.tiff` files are found |
 | `group` | `1` | Capture group that varies within a comparable set |
 | `output` | inside `folder` | Where the `Object Segmentation Sweep` output folder is created |
 | `recursive` | off | Include subfolders |
