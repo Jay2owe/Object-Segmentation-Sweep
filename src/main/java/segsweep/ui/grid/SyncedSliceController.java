@@ -24,7 +24,9 @@ public final class SyncedSliceController {
         if (!cells.contains(cell)) {
             cells.add(cell);
         }
-        setSlice(currentSlice);
+        // No slice update here: doing it per registration updated every cell
+        // each time (n squared while a grid is built). The owner calls
+        // setSlice once after registering all cells.
     }
 
     public void unregister(VariationCellPanel cell) {

@@ -14,6 +14,7 @@ import org.junit.Test;
 import javax.swing.SwingUtilities;
 import java.awt.GraphicsEnvironment;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class VariationGridWindowObjectToolbarTest {
@@ -29,7 +30,9 @@ public class VariationGridWindowObjectToolbarTest {
                 try {
                     assertTrue(window.toolBarForTest()
                             .isAncestorOf(window.objectOverlayCheckBoxForTest()));
-                    assertTrue(window.toolBarForTest()
+                    // Filtered and raw are the same crop for the classical
+                    // engine, so the chooser is not shown.
+                    assertFalse(window.toolBarForTest()
                             .isAncestorOf(window.objectOverlaySourceChoiceForTest()));
                     assertTrue(window.toolBarForTest()
                             .isAncestorOf(window.lutToggleButtonForTest()));

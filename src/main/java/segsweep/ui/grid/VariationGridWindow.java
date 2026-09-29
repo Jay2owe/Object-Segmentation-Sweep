@@ -20,7 +20,12 @@ import segsweep.sweep.analysis.KneeOutcome;
 import segsweep.sweep.analysis.PickResult;
 import segsweep.sweep.analysis.StabilityOutcome;
 
+import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
+import javax.swing.JComponent;
+import javax.swing.JOptionPane;
+import javax.swing.JRootPane;
+import javax.swing.KeyStroke;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
@@ -42,6 +47,8 @@ import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Component;
+import java.awt.Container;
 import java.awt.Dialog;
 import java.awt.Dimension;
 import java.awt.Graphics2D;
@@ -51,14 +58,18 @@ import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.Window;
 import java.awt.event.ActionListener;
+import java.awt.event.KeyEvent;
 import java.awt.event.MouseWheelEvent;
 import java.awt.event.MouseWheelListener;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.function.BooleanSupplier;
 
 public final class VariationGridWindow extends JDialog {
 
@@ -69,6 +80,8 @@ public final class VariationGridWindow extends JDialog {
     private static final double MAX_ZOOM = 10.0;
     private static final double ZOOM_STEP = 1.15;
     private static final Color CANVAS_BACKGROUND = new Color(0x1E, 0x20, 0x24);
+    /** Blank rows between pages when several pages are stacked into one grid.png. */
+    private static final int PAGE_GAP = 8;
 
     private final SyncedSliceController controller = new SyncedSliceController();
     private final List<VariationCellPanel> cells =
@@ -108,6 +121,18 @@ public final class VariationGridWindow extends JDialog {
     private Dimension fitGridSize;
     private double zoom = 1.0;
     private boolean reviewControlsEnabled = true;
+    /** Cells whose result failed; counted once however often a result arrives. */
+    private final Set<VariationCellPanel> failedCells =
+            java.util.Collections.newSetFromMap(new IdentityHashMap<VariationCellPanel, Boolean>());
+    /** Asks before Escape cancels a running sweep; tests replace it. */
+    private BooleanSupplier escapeConfirm = new BooleanSupplier() {
+        @Override public boolean getAsBoolean() {
+            return JOptionPane.showConfirmDialog(VariationGridWindow.this,
+                    "Cancel the running sweep and close the grid?",
+                    "Object Segmentation Sweep", JOptionPane.YES_NO_OPTION)
+                    == JOptionPane.YES_OPTION;
+        }
+    };
 
     public VariationGridWindow(Window owner,
                                String title,
@@ -149,13 +174,8 @@ public final class VariationGridWindow extends JDialog {
         int availH = Math.max(1, desktop.height - toolBarHeight - southHeight
                 - TOP_DECORATION);
 
-        int[] dims = displayWindow == null
-                ? (imageSize == null
-                ? gridDimensions(cells.size())
-                : optimalGrid(cells.size(), availW, availH,
-                imageSize.width / (double) imageSize.height,
-                CELL_GAP, GRID_BORDER))
-                : gridDimensions(displayWindow);
+        int[] dims = layoutDimensions(displayWindow, cells.size(), imageSize,
+                availW, availH);
         gridPanel = new ZoomableGrid(new GridLayout(dims[0], dims[1], CELL_GAP, CELL_GAP));
         gridPanel.setBackground(CANVAS_BACKGROUND);
         gridPanel.setBorder(BorderFactory.createEmptyBorder(
@@ -186,6 +206,7 @@ public final class VariationGridWindow extends JDialog {
         setSliceMax(controller.maxSlice());
         applySizeAndLocation(desktop, dims[0], dims[1], imageSize,
                 toolBarHeight, southHeight, availW, availH);
+        installKeyBindings();
     }
 
     public void setSliceMax(int sliceMax) {
@@ -200,7 +221,7 @@ public final class VariationGridWindow extends JDialog {
     public void setCompletedCount(int completed, int total, int failed) {
         this.completed = Math.max(0, completed);
         this.total = Math.max(0, total);
-        this.failed = Math.max(0, failed);
+        this.failed = Math.max(Math.max(0, failed), failedCells.size());
         progressBar.setMaximum(Math.max(1, this.total));
         progressBar.setValue(Math.min(this.completed, Math.max(1, this.total)));
         progressBar.setString(progressText());
@@ -252,12 +273,21 @@ public final class VariationGridWindow extends JDialog {
         if (result == null) {
             return;
         }
-        VariationCellPanel cell = cellsByCombo.get(result.combo());
+        // Match by coordinates, not equals(): a result keyed Double 3.0 must
+        // still land on the cell keyed Integer 3, or that cell stays pending.
+        VariationCellPanel cell = cellForCombo(result.combo());
         if (cell != null) {
             cell.setResult(result);
             resultArrived = true;
             setPickSelectedEnabled(selectedCombo != null);
             cell.setPickAvailable(reviewControlsEnabled);
+            boolean changed = result.hasError()
+                    ? failedCells.add(cell) : failedCells.remove(cell);
+            if (changed) {
+                failed = failedCells.size();
+                progressBar.setString(progressText());
+                refreshStatus();
+            }
         }
     }
 
@@ -282,7 +312,25 @@ public final class VariationGridWindow extends JDialog {
                 stabilityCell.setPickBadge(new PickBadge(PickBadge.Kind.STABILITY));
             }
         }
+        showPageOf(kneeCell != null ? kneeCell : stabilityCell);
         setActionStatus(pickStatusText(pickResult));
+    }
+
+    /** Switches to the page holding {@code cell} so a badge is never off screen. */
+    private void showPageOf(VariationCellPanel cell) {
+        if (cell == null || facetKeys.size() <= 1) {
+            return;
+        }
+        int current = facetChoice.getSelectedIndex();
+        if (cellsForFacet(current).contains(cell)) {
+            return;
+        }
+        for (int i = 0; i < facetKeys.size(); i++) {
+            if (cellsForFacet(i).contains(cell)) {
+                facetChoice.setSelectedIndex(i);
+                return;
+            }
+        }
     }
 
     private VariationCellPanel cellForCombo(ParameterCombo combo) {
@@ -390,18 +438,34 @@ public final class VariationGridWindow extends JDialog {
         return selectedCombo;
     }
 
-    /** Captures the complete grid at its current zoom, slice, overlays, and display settings. */
+    /**
+     * Captures the grid for {@code grid.png}: every page at 100% zoom, stacked
+     * top to bottom, with the current slice, overlays and display settings.
+     *
+     * @throws IllegalStateException if the grid cannot be captured, including
+     *         when it would not fit in memory; callers fall back to the montage
+     */
     public BufferedImage renderGridSnapshot() {
+        return stackPages(renderGridSnapshots());
+    }
+
+    /**
+     * One image per page at 100% zoom. The live grid is not resized or
+     * re-paged: each cell is laid out at its zoom-1 size, painted, and put back.
+     * It used to paint the live grid at the current zoom (up to 10x, hundreds of
+     * megabytes) and only the page on screen, leaving the grid resized.
+     */
+    public List<BufferedImage> renderGridSnapshots() {
         if (SwingUtilities.isEventDispatchThread()) {
-            return renderGridSnapshotOnEdt();
+            return renderGridSnapshotsOnEdt();
         }
-        final BufferedImage[] captured = new BufferedImage[1];
+        final List<List<BufferedImage>> captured = new ArrayList<List<BufferedImage>>();
         final RuntimeException[] failure = new RuntimeException[1];
         try {
             SwingUtilities.invokeAndWait(new Runnable() {
                 @Override public void run() {
                     try {
-                        captured[0] = renderGridSnapshotOnEdt();
+                        captured.add(renderGridSnapshotsOnEdt());
                     } catch (RuntimeException ex) {
                         failure[0] = ex;
                     }
@@ -411,23 +475,132 @@ public final class VariationGridWindow extends JDialog {
             throw new IllegalStateException("Could not capture the reviewed grid.", ex);
         }
         if (failure[0] != null) throw failure[0];
-        return captured[0];
+        return captured.get(0);
     }
 
-    private BufferedImage renderGridSnapshotOnEdt() {
-        Dimension preferred = gridPanel.getPreferredSize();
-        int width = Math.max(1, preferred == null ? gridPanel.getWidth() : preferred.width);
-        int height = Math.max(1, preferred == null ? gridPanel.getHeight() : preferred.height);
-        gridPanel.setSize(width, height);
-        gridPanel.doLayout();
-        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+    private List<BufferedImage> renderGridSnapshotsOnEdt() {
+        Dimension base = snapshotSize();
+        GridLayout layout = (GridLayout) gridPanel.getLayout();
+        int rows = Math.max(1, layout.getRows());
+        int cols = Math.max(1, layout.getColumns());
+        int pages = Math.max(1, facetKeys.size());
+        long bytes = 4L * base.width * base.height * (pages == 1 ? 1 : 2L * pages);
+        Runtime runtime = Runtime.getRuntime();
+        long headroom = runtime.maxMemory() - (runtime.totalMemory() - runtime.freeMemory());
+        if (bytes > headroom / 2) {
+            throw new IllegalStateException("The reviewed grid (" + pages + " page"
+                    + (pages == 1 ? "" : "s") + " of " + base.width + " x " + base.height
+                    + " px) is too large to capture in the memory available.");
+        }
+        List<BufferedImage> out = new ArrayList<BufferedImage>();
+        try {
+            for (int page = 0; page < pages; page++) {
+                out.add(renderPage(cellsForFacet(page), base, rows, cols));
+            }
+        } catch (OutOfMemoryError oom) {
+            out.clear();
+            throw new IllegalStateException(
+                    "The reviewed grid is too large to capture in the memory available.");
+        }
+        return out;
+    }
+
+    /** The grid's size at 100% zoom, independent of the window's current size. */
+    private Dimension snapshotSize() {
+        Dimension size = fitGridSize;
+        if (size == null) {
+            size = zoom <= 1.0 ? gridPanel.getPreferredSize() : gridPanel.getSize();
+        }
+        if (size == null) {
+            size = gridPanel.getSize();
+        }
+        return new Dimension(Math.max(1, size.width), Math.max(1, size.height));
+    }
+
+    private BufferedImage renderPage(List<VariationCellPanel> page, Dimension base,
+                                     int rows, int cols) {
+        BufferedImage image = new BufferedImage(base.width, base.height,
+                BufferedImage.TYPE_INT_ARGB);
         Graphics2D graphics = image.createGraphics();
         try {
-            gridPanel.printAll(graphics);
+            graphics.setColor(CANVAS_BACKGROUND);
+            graphics.fillRect(0, 0, base.width, base.height);
+            int innerW = base.width - 2 * GRID_BORDER;
+            int innerH = base.height - 2 * GRID_BORDER;
+            int cellW = Math.max(1, (innerW - (cols - 1) * CELL_GAP) / cols);
+            int cellH = Math.max(1, (innerH - (rows - 1) * CELL_GAP) / rows);
+            for (int i = 0; i < page.size() && i < rows * cols; i++) {
+                VariationCellPanel cell = page.get(i);
+                int x = GRID_BORDER + (i % cols) * (cellW + CELL_GAP);
+                int y = GRID_BORDER + (i / cols) * (cellH + CELL_GAP);
+                Rectangle saved = cell.getBounds();
+                try {
+                    cell.setBounds(0, 0, cellW, cellH);
+                    layoutTree(cell);
+                    Graphics2D cellGraphics = (Graphics2D) graphics.create(x, y, cellW, cellH);
+                    try {
+                        cell.print(cellGraphics);
+                    } finally {
+                        cellGraphics.dispose();
+                    }
+                } finally {
+                    cell.setBounds(saved);
+                    layoutTree(cell);
+                }
+            }
         } finally {
             graphics.dispose();
         }
         return image;
+    }
+
+    private static void layoutTree(Component component) {
+        if (component instanceof Container) {
+            Container container = (Container) component;
+            container.doLayout();
+            for (int i = 0; i < container.getComponentCount(); i++) {
+                layoutTree(container.getComponent(i));
+            }
+        }
+    }
+
+    /** One page is returned as is; several are stacked with a thin gap. */
+    static BufferedImage stackPages(List<BufferedImage> pages) {
+        if (pages == null || pages.isEmpty()) {
+            throw new IllegalStateException("The reviewed grid has no pages to capture.");
+        }
+        if (pages.size() == 1) {
+            return pages.get(0);
+        }
+        int width = 1;
+        long height = 0;
+        for (int i = 0; i < pages.size(); i++) {
+            width = Math.max(width, pages.get(i).getWidth());
+            height += pages.get(i).getHeight() + (i == 0 ? 0 : PAGE_GAP);
+        }
+        if (height > Integer.MAX_VALUE / Math.max(1, width)) {
+            throw new IllegalStateException("The reviewed grid is too large to capture.");
+        }
+        try {
+            BufferedImage out = new BufferedImage(width, (int) height,
+                    BufferedImage.TYPE_INT_ARGB);
+            Graphics2D graphics = out.createGraphics();
+            try {
+                graphics.setColor(CANVAS_BACKGROUND);
+                graphics.fillRect(0, 0, width, (int) height);
+                int y = 0;
+                for (int i = 0; i < pages.size(); i++) {
+                    graphics.drawImage(pages.get(i), 0, y, null);
+                    y += pages.get(i).getHeight() + PAGE_GAP;
+                }
+            } finally {
+                graphics.dispose();
+            }
+            return out;
+        } catch (OutOfMemoryError oom) {
+            throw new IllegalStateException(
+                    "The reviewed grid is too large to capture in the memory available.");
+        }
     }
 
     @Override public void dispose() {
@@ -507,6 +680,34 @@ public final class VariationGridWindow extends JDialog {
         return selectedCombo;
     }
 
+    int failedCountForTest() {
+        return failed;
+    }
+
+    int currentPageForTest() {
+        return facetKeys.size() <= 1 ? 0 : facetChoice.getSelectedIndex();
+    }
+
+    void zoomByForTest(double factor) {
+        zoomBy(factor, null);
+    }
+
+    Dimension gridPreferredSizeForTest() {
+        return gridPanel.getPreferredSize();
+    }
+
+    void setEscapeConfirmForTest(BooleanSupplier confirm) {
+        escapeConfirm = confirm;
+    }
+
+    void pressEscapeForTest() {
+        onEscape();
+    }
+
+    void stepSliceForTest(int delta) {
+        stepSlice(delta);
+    }
+
     private void initialiseCells(List<VariationCellPanel> sourceCells,
                                  ParameterSweep displayWindow) {
         if (sourceCells != null) {
@@ -518,17 +719,25 @@ public final class VariationGridWindow extends JDialog {
                             selectCombo(combo);
                         }
                     });
+                    // The tile's Pick pill picks: select, then run Pick selected.
                     cell.setOnPickCommit(new java.util.function.Consumer<ParameterCombo>() {
                         @Override public void accept(ParameterCombo combo) {
                             selectCombo(combo);
+                            if (pickSelectedButton.isEnabled()) {
+                                pickSelectedButton.doClick();
+                            }
                         }
                     });
-                    cell.setMaterialisationListener(new Runnable() {
-                        @Override public void run() {
-                            setMaterialisationProgress(materialised + 1,
-                                    Math.max(materialisationRequests, materialised + 1));
-                        }
-                    });
+                    // Display-only slice builds are not reported: they used to
+                    // overwrite the pick text and warnings with "Materialising labels".
+                    if (cell.comparisonSelection() != null) {
+                        cell.comparisonSelection().setStatusSink(
+                                new java.util.function.Consumer<String>() {
+                                    @Override public void accept(String text) {
+                                        setActionStatus(text);
+                                    }
+                                });
+                    }
                     cells.add(cell);
                     cellsByCombo.put(cell.combo(), cell);
                     controller.register(cell);
@@ -708,6 +917,7 @@ public final class VariationGridWindow extends JDialog {
                     i);
             cell.setRawSource(source);
             cell.setObjectRawCrop(source);
+            cell.setComparisonSelection(compareSelection);
             cells.add(cell);
         }
         return cells;
@@ -753,8 +963,9 @@ public final class VariationGridWindow extends JDialog {
         pickSelectedButton.setEnabled(false);
         pickSelectedButton.setToolTipText("Use the currently selected variation as the result.");
         toolBar.add(objectOverlayCheckBox);
-        toolBar.add(new JLabel("over"));
-        toolBar.add(objectOverlaySourceChoice);
+        // The classical engine draws objects over the same crop whether
+        // "Filtered" or "Raw" is chosen, so the chooser is not shown. It stays
+        // built for engines that filter the image first.
         toolBar.addSeparator();
         toolBar.add(lutToggleButton);
         toolBar.add(brightnessButton);
@@ -1004,6 +1215,74 @@ public final class VariationGridWindow extends JDialog {
         setSize(width, height);
         setLocation(desktop.x + Math.max(0, (desktop.width - width) / 2),
                 desktop.y + Math.max(0, (desktop.height - height) / 2));
+    }
+
+    /**
+     * Escape closes the grid; while a sweep runs it asks first and cancels the
+     * sweep. Left and Right step through Z. Bound on the root pane so they work
+     * whichever control has focus (a focused slider handles its own arrows).
+     */
+    private void installKeyBindings() {
+        JRootPane root = getRootPane();
+        root.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
+                .put(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), "segsweep.escape");
+        root.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
+                .put(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, 0), "segsweep.previousSlice");
+        root.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
+                .put(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, 0), "segsweep.nextSlice");
+        root.getActionMap().put("segsweep.escape", new AbstractAction() {
+            @Override public void actionPerformed(java.awt.event.ActionEvent e) {
+                onEscape();
+            }
+        });
+        root.getActionMap().put("segsweep.previousSlice", new AbstractAction() {
+            @Override public void actionPerformed(java.awt.event.ActionEvent e) {
+                stepSlice(-1);
+            }
+        });
+        root.getActionMap().put("segsweep.nextSlice", new AbstractAction() {
+            @Override public void actionPerformed(java.awt.event.ActionEvent e) {
+                stepSlice(1);
+            }
+        });
+    }
+
+    private void onEscape() {
+        boolean running = cancelButton.isEnabled()
+                && cancelButton.getActionListeners().length > 0;
+        if (running) {
+            if (!escapeConfirm.getAsBoolean()) {
+                return;
+            }
+            cancelButton.doClick();
+        }
+        dispose();
+    }
+
+    private void stepSlice(int delta) {
+        if (!zSlider.isEnabled()) {
+            return;
+        }
+        zSlider.setValue(clamp(zSlider.getValue() + delta,
+                zSlider.getMinimum(), zSlider.getMaximum()));
+    }
+
+    /**
+     * Rows and columns for the constructor. Two-axis sweeps keep their axes as
+     * rows and columns; a one-axis sweep wraps to fit the screen, as it used to
+     * be one row of N tiles (20 values gave ~90 px tiles).
+     */
+    static int[] layoutDimensions(ParameterSweep sweep, int cellCount, Dimension imageSize,
+                                  int availW, int availH) {
+        boolean oneAxis = sweep != null && sweep.valueLists().size() == 1;
+        if (sweep != null && !oneAxis) {
+            return gridDimensions(sweep);
+        }
+        if (imageSize == null || imageSize.width <= 0 || imageSize.height <= 0) {
+            return gridDimensions(cellCount);
+        }
+        return optimalGrid(cellCount, availW, availH,
+                imageSize.width / (double) imageSize.height, CELL_GAP, GRID_BORDER);
     }
 
     private void selectCombo(ParameterCombo combo) {

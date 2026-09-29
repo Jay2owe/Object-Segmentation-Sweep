@@ -369,13 +369,14 @@ public class SegSweep_ implements PlugIn {
             }
         });
         if (shouldAutoSaveRenderedGrid(options)) {
-            final BufferedImage snapshot = autoSaveDestinationMissing(options, lease.image())
-                    ? null : grid.renderGridSnapshot();
+            final boolean destinationMissing = autoSaveDestinationMissing(options, lease.image());
+            final BufferedImage snapshot = destinationMissing ? null : reviewedGridOrNull(grid);
             lease.retain();
             offEdt("SegSweep-Autosave", new Runnable() {
                 @Override public void run() {
                     try {
-                        saveInitialGrid(result, options, lease.image(), grid, snapshot);
+                        saveInitialGrid(result, options, lease.image(), grid,
+                                destinationMissing, snapshot);
                     } finally {
                         lease.close();
                     }
@@ -387,9 +388,9 @@ public class SegSweep_ implements PlugIn {
 
     private void saveInitialGrid(SegSweepResult result, SegSweepMacroOptions options,
                                  ImagePlus image, final VariationGridWindow grid,
-                                 BufferedImage snapshot) {
+                                 boolean destinationMissing, BufferedImage snapshot) {
         final String status;
-        if (snapshot == null) {
+        if (destinationMissing) {
             // An unsaved image is normal in interactive use; say so once in
             // the grid rather than raising a modal error after every run.
             log(COMMAND_NAME + ": autosave skipped: " + NO_FILE_LOCATION_HINT);
@@ -413,6 +414,22 @@ public class SegSweep_ implements PlugIn {
                     grid.setActionStatus(status);
                 }
             });
+        }
+    }
+
+    /**
+     * The reviewed grid for grid.png, or null when it cannot be captured (for
+     * example it would not fit in memory). Null makes the writer draw its
+     * deterministic montage instead, so the save still happens. The capture
+     * used to be able to throw OutOfMemoryError, which nothing caught.
+     */
+    BufferedImage reviewedGridOrNull(VariationGridWindow grid) {
+        try {
+            return grid.renderGridSnapshot();
+        } catch (IllegalStateException ex) {
+            log(COMMAND_NAME + ": " + QuietImageOpener.oneLine(ex.getMessage())
+                    + " grid.png uses the montage instead.");
+            return null;
         }
     }
 
@@ -530,7 +547,7 @@ public class SegSweep_ implements PlugIn {
         grid.setPickSelectedEnabled(false);
         grid.setActionStatus("Picking " + selected + "...");
         final boolean destinationMissing = autoSaveDestinationMissing(options, lease.image());
-        final BufferedImage reviewedGrid = destinationMissing ? null : grid.renderGridSnapshot();
+        final BufferedImage reviewedGrid = destinationMissing ? null : reviewedGridOrNull(grid);
         lease.retain();
         new Thread(new Runnable() {
             @Override public void run() {

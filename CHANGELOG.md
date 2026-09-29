@@ -11,6 +11,8 @@ All notable changes to Object Segmentation Sweep are documented here. The format
 - `Object Segmentation Sweep Batch` runs from a macro or headless with `folder`, `regex`, `group`,
   `output` and `recursive` plus the analysis options, and batch runs are recorded.
 - Macro, headless, grid-off and batch runs show progress in the status bar and stop on Escape.
+- The review grid closes on Escape (asking first, and cancelling, while a sweep runs), and Left and
+  Right step through Z.
 
 ### Changed
 
@@ -20,6 +22,13 @@ All notable changes to Object Segmentation Sweep are documented here. The format
 - `image=` prefers an open window with that title over a same-named file.
 - A macro or headless error now stops the calling macro with a one-line message.
 - Batch analysis options refuse `image`, `autosave` and display flags instead of ignoring them.
+- The Pick pill on a tile now picks that tile (select, then Pick selected) instead of only
+  selecting it.
+- grid.png is now always rendered at 100% zoom, one image per page, with the pages of a paged
+  sweep stacked top to bottom. If the grid cannot be captured, grid.png falls back to the montage.
+- A one-axis sweep wraps its tiles into rows that fit the screen instead of one long row.
+- The "Filtered/Raw image" chooser is hidden: for the classical engine both are the same crop.
+- Clicking a tile selects it on release; holding to peek no longer selects it.
 
 ### Fixed
 
@@ -46,6 +55,15 @@ All notable changes to Object Segmentation Sweep are documented here. The format
 - The first LUT toggle or brightness edit no longer turns coloured channels grey.
 - While a sweep runs, the grid's overlay, LUT, brightness and Pick controls are disabled instead of
   doing nothing.
+- Capturing the grid for autosave could run out of memory at high zoom and left the grid resized.
+- After holding a tile to peek, the next click on it was ignored.
+- Shift-click compare never opened outside tests, and its prompts were not shown.
+- Moving through Z replaced the pick summary and warnings with "Materialising labels".
+- Badged tiles repainted 30 times a second while idle.
+- A result whose values differed only in number type (3 vs 3.0) could leave its tile "pending".
+- Failed tiles were never counted, so "(n failed)" never appeared.
+- Empty tiles said "No image selected"; they now say "Waiting", "Failed" or "Cancelled".
+- A pick badge on another page of a paged grid now switches to that page.
 
 ### Removed
 

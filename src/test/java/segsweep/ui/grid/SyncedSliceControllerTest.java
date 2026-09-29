@@ -35,6 +35,31 @@ public class SyncedSliceControllerTest {
         assertEquals(3, shallow.currentZForTest());
     }
 
+    /** Regression: each registration used to update every cell (n squared). */
+    @Test
+    public void registrationDoesNotMoveCellsUntilTheSliceIsSet() throws Exception {
+        final SyncedSliceController controller = new SyncedSliceController();
+        final VariationCellPanel first = cellWithSlices(4);
+        final VariationCellPanel second = cellWithSlices(4);
+
+        SwingUtilities.invokeAndWait(new Runnable() {
+            @Override public void run() {
+                controller.register(first);
+                controller.setSlice(3);
+                controller.register(second);
+            }
+        });
+        assertEquals(3, first.currentZForTest());
+        assertEquals(1, second.currentZForTest());
+
+        SwingUtilities.invokeAndWait(new Runnable() {
+            @Override public void run() {
+                controller.setSlice(controller.currentSlice());
+            }
+        });
+        assertEquals(3, second.currentZForTest());
+    }
+
     @Test
     public void unregisterUpdatesControllerSize() {
         SyncedSliceController controller = new SyncedSliceController();
