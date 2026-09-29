@@ -52,7 +52,9 @@ public class VariationCellPanelLazyLabelTest {
         paint(cell);
 
         assertEquals(1, labelMap.materializationCount());
-        assertEquals(1, materialised.get());
+        // Regression: a display-only slice build used to be reported as label
+        // materialisation, overwriting the grid's pick text on every slice.
+        assertEquals(0, materialised.get());
         assertNull(cell.cachedLabelForTest());
         assertEquals(1, cell.currentPreviewImageForTest().getStackSize());
         ImagePlus fullLabels = cell.materialiseForDisplay();

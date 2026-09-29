@@ -65,8 +65,12 @@ public class VariationCellPanelHoldToPeekTest {
         });
     }
 
+    /**
+     * Regression: a hold used to select the tile on press and then swallow the
+     * next real click. A hold is now a look only, and the click after it selects.
+     */
     @Test
-    public void longHoldSuppressesFollowingClickOnce() throws Exception {
+    public void holdThenClickSelectsOnTheClick() throws Exception {
         final AtomicInteger accepts = new AtomicInteger();
         SwingUtilities.invokeAndWait(new Runnable() {
             @Override public void run() {
@@ -76,11 +80,16 @@ public class VariationCellPanelHoldToPeekTest {
                 press(cell, 8, 8);
                 cell.firePeekDelayForTest();
                 release(cell, 8, 8);
+                assertEquals("a hold does not select", 0, accepts.get());
+
+                press(cell, 8, 8);
+                assertEquals("selection waits for the release", 0, accepts.get());
+                release(cell, 8, 8);
+                assertEquals("the click after a hold selects", 1, accepts.get());
+
                 press(cell, 8, 8);
                 release(cell, 8, 8);
-
-                assertEquals(1, accepts.get());
-                assertFalse(cell.suppressNextClickForTest());
+                assertEquals(2, accepts.get());
             }
         });
     }

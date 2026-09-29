@@ -49,6 +49,8 @@ public final class ImagePreviewPanel extends JPanel {
     }
 
     private final JLabel titleLabel = new JLabel("No image selected.");
+    /** Text drawn on an empty canvas; grid cells say why they are empty. */
+    private volatile String emptyText = "No image selected";
     private final JLabel detailLabel = new JLabel(" ");
     private final JLabel statusLabel = new JLabel(" ");
     private final JLabel sliceLabel = new JLabel(" ");
@@ -411,6 +413,19 @@ public final class ImagePreviewPanel extends JPanel {
         }
     }
 
+    /** Sets the text drawn when there is no image; null restores the default. */
+    public void setEmptyText(String text) {
+        String next = text == null || text.trim().isEmpty() ? "No image selected" : text;
+        if (!next.equals(emptyText)) {
+            emptyText = next;
+            canvas.repaint();
+        }
+    }
+
+    public String emptyText() {
+        return emptyText;
+    }
+
     private void applyEmptyState(boolean repaintCanvas) {
         currentC = 1;
         currentZ = 1;
@@ -679,7 +694,7 @@ public final class ImagePreviewPanel extends JPanel {
                 ImageProcessor processor = currentProcessor();
                 if (processor == null) {
                     resetDrawMetrics();
-                    drawCenteredText(g2, "No image selected");
+                    drawCenteredText(g2, emptyText);
                     return;
                 }
                 Image awtImage = processor.createImage();

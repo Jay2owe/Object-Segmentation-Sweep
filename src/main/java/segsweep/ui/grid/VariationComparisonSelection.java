@@ -20,7 +20,7 @@ final class VariationComparisonSelection {
     private static final String PICK_SECOND = "Shift-click a second tile to compare.";
     private static final String CANCELLED = "Comparison cancelled.";
 
-    private final Consumer<String> statusSink;
+    private Consumer<String> statusSink;
     private final Opener opener;
     private VariationCellPanel pendingCell;
 
@@ -33,7 +33,7 @@ final class VariationComparisonSelection {
         if (cell == null) {
             return;
         }
-        if (!cell.hasCachedLabel()) {
+        if (!cell.hasFinishedPreview()) {
             setStatus(WAIT_FOR_RENDERING);
             return;
         }
@@ -47,7 +47,7 @@ final class VariationComparisonSelection {
             clearWithStatus(CANCELLED);
             return;
         }
-        if (!pendingCell.hasCachedLabel()) {
+        if (!pendingCell.hasFinishedPreview()) {
             clearSelection();
             setStatus(WAIT_FOR_RENDERING);
             return;
@@ -57,6 +57,11 @@ final class VariationComparisonSelection {
         if (opener != null) {
             opener.openComparison(left, cell);
         }
+    }
+
+    /** Where "Shift-click a second tile" and similar prompts are shown. */
+    void setStatusSink(Consumer<String> statusSink) {
+        this.statusSink = statusSink;
     }
 
     void clearForAccept() {

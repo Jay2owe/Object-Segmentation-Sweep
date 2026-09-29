@@ -25,7 +25,6 @@ import segsweep.ui.render.PreviewDisplaySettings;
 import javax.swing.BorderFactory;
 import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
-import javax.swing.Timer;
 import java.awt.BasicStroke;
 import java.awt.BorderLayout;
 import java.awt.Color;
@@ -78,8 +77,8 @@ public final class VariationCellPanel extends JPanel {
     private final ImagePreviewPanel preview = new ImagePreviewPanel("Variation");
     private final List<ParameterKey> footerParameterKeys =
             new ArrayList<ParameterKey>();
-    private final Timer haloTimer;
-    private final Timer peekDelayTimer;
+    private final HoldDelay peekDelay;
+    private VariationComparisonSelection comparisonSelection;
 
     private Consumer<ParameterCombo> onPickCommit;
     private Consumer<ParameterCombo> selectionListener;
@@ -109,7 +108,10 @@ public final class VariationCellPanel extends JPanel {
     private boolean errorState;
     private boolean hover;
     private boolean peeking;
-    private boolean suppressNextClick;
+    /** A left press (no Shift) is waiting for its release to count as a click. */
+    private boolean clickPending;
+    /** The current press turned into a hold-to-peek, so its release is not a click. */
+    private boolean holdHappened;
     private boolean disposed;
     private int currentZ = 1;
     private int renderedPreviewZ = -1;
@@ -133,10 +135,11 @@ public final class VariationCellPanel extends JPanel {
         this.onAccept = onAccept;
         this.onCompare = onCompare;
         this.placeholderIndex = placeholderIndex;
-        this.haloTimer = new Timer(33, e -> repaint());
-        this.haloTimer.setInitialDelay(0);
-        this.peekDelayTimer = new Timer(PEEK_DELAY_MS, e -> beginPeek());
-        this.peekDelayTimer.setRepeats(false);
+        this.peekDelay = new HoldDelay(PEEK_DELAY_MS, new Runnable() {
+            @Override public void run() {
+                beginPeek();
+            }
+        });
 
         setOpaque(false);
         setBackground(CARD_BACKGROUND);
@@ -238,6 +241,7 @@ public final class VariationCellPanel extends JPanel {
                 errorText = "";
                 acceptEnabled = false;
                 stateText = state == null || state.trim().isEmpty() ? "pending" : state;
+                preview.setEmptyText(emptyCaption());
                 showPreviewImage(null);
                 refreshTooltip();
                 repaint();
@@ -266,6 +270,7 @@ public final class VariationCellPanel extends JPanel {
                 errorText = errorState ? errorDetails(next.error()) : "";
                 acceptEnabled = !errorState;
                 stateText = errorState ? "failed" : String.valueOf(objectCount);
+                preview.setEmptyText(emptyCaption());
                 showPreviewImage(null);
                 refreshTooltip();
                 repaint();
@@ -417,12 +422,9 @@ public final class VariationCellPanel extends JPanel {
     public void setPickBadge(final PickBadge nextBadge) {
         runOnEdt(new Runnable() {
             @Override public void run() {
+                // The badge is static: repaint once when it changes. A 30 Hz
+                // timer used to repaint every badged cell continuously.
                 badge = nextBadge;
-                if (badge == null) {
-                    haloTimer.stop();
-                } else if (!haloTimer.isRunning()) {
-                    haloTimer.start();
-                }
                 refreshTooltip();
                 repaint();
             }
@@ -488,7 +490,6 @@ public final class VariationCellPanel extends JPanel {
         }
         disposed = true;
         cancelPeek(false);
-        haloTimer.stop();
         releaseOwnedImages();
         cachedLabel = null;
         displayedPreviewImage = null;
@@ -518,13 +519,46 @@ public final class VariationCellPanel extends JPanel {
             ImagePlus rendered = renderObjectPreviewSlice(labelSlice, currentZ);
             renderedPreviewZ = currentZ;
             setDisplayedPreviewImage(rendered, true);
-            if (materialisationListener != null) materialisationListener.run();
+            // Display-only: not reported as label materialisation progress, which
+            // used to overwrite the pick text and warnings on every slice change.
         } finally {
             labelSlice.changes = false;
             labelSlice.close();
             labelSlice.flush();
         }
         refreshTooltip();
+    }
+
+    /**
+     * True once this cell has a finished, displayable result. Compare used to
+     * require a fully built label stack, which only tests created, so Shift-click
+     * never opened a comparison in real use.
+     */
+    boolean hasFinishedPreview() {
+        if (baseline || errorState) return false;
+        if (cachedLabel != null) return true;
+        return result != null && !result.hasError() && result.hasLabelMap();
+    }
+
+    void setComparisonSelection(VariationComparisonSelection selection) {
+        this.comparisonSelection = selection;
+    }
+
+    VariationComparisonSelection comparisonSelection() {
+        return comparisonSelection;
+    }
+
+    /** What an empty tile says: why there is no image, not "No image selected". */
+    String emptyCaption() {
+        if (errorState) {
+            Throwable error = result == null ? null : result.error();
+            return error instanceof java.util.concurrent.CancellationException
+                    ? "Cancelled" : "Failed";
+        }
+        if (result == null && cachedLabel == null) {
+            return "cancelled".equalsIgnoreCase(stateText) ? "Cancelled" : "Waiting";
+        }
+        return "Preview unavailable";
     }
 
     ImagePlus previewImageForComparison() {
@@ -653,13 +687,6 @@ public final class VariationCellPanel extends JPanel {
                     return;
                 }
                 handleMousePressed(e);
-                if (suppressNextClick) {
-                    suppressNextClick = false;
-                    if (e != null) {
-                        e.consume();
-                    }
-                    return;
-                }
                 if (e == null || !SwingUtilities.isLeftMouseButton(e)) {
                     return;
                 }
@@ -667,7 +694,17 @@ public final class VariationCellPanel extends JPanel {
                     if (onCompare != null) {
                         onCompare.accept(combo, VariationCellPanel.this);
                     }
-                } else if (acceptEnabled) {
+                } else {
+                    // Selection waits for the release: a press that becomes a
+                    // hold-to-peek is a look, not a choice.
+                    clickPending = true;
+                }
+            }
+
+            @Override public void mouseReleased(MouseEvent e) {
+                boolean click = clickPending && !holdHappened && !peeking;
+                handleMouseReleased();
+                if (click && acceptEnabled) {
                     if (selectionListener != null) {
                         selectionListener.accept(combo);
                     }
@@ -675,10 +712,6 @@ public final class VariationCellPanel extends JPanel {
                         onAccept.accept(combo);
                     }
                 }
-            }
-
-            @Override public void mouseReleased(MouseEvent e) {
-                handleMouseReleased();
             }
 
             @Override public void mouseEntered(MouseEvent e) {
@@ -711,16 +744,20 @@ public final class VariationCellPanel extends JPanel {
     private void handleMousePressed(MouseEvent e) {
         cancelPeek(true);
         pressPoint = null;
+        clickPending = false;
+        holdHappened = false;
         if (e == null || !SwingUtilities.isLeftMouseButton(e) || !canPeek()) {
             return;
         }
         pressPoint = pointInCell(e);
-        peekDelayTimer.restart();
+        peekDelay.restart();
     }
 
     private void handleMouseReleased() {
         cancelPeek(true);
         pressPoint = null;
+        clickPending = false;
+        holdHappened = false;
     }
 
     private void handleMouseDragged(MouseEvent e) {
@@ -744,19 +781,19 @@ public final class VariationCellPanel extends JPanel {
     }
 
     private void beginPeek() {
-        peekDelayTimer.stop();
+        peekDelay.stop();
         if (pressPoint == null || !canPeek()) {
             return;
         }
         peeking = true;
-        suppressNextClick = true;
+        holdHappened = true;
         showPreviewImage(rawSourceImage);
         preview.setCurrentZ(currentZ);
         repaint();
     }
 
     private void cancelPeek(boolean restoreImage) {
-        peekDelayTimer.stop();
+        peekDelay.stop();
         if (restoreImage && peeking) {
             peeking = false;
             showPreviewImage(displayedPreviewImage);
@@ -829,7 +866,6 @@ public final class VariationCellPanel extends JPanel {
 
     @Override public void removeNotify() {
         cancelPeek(true);
-        haloTimer.stop();
         super.removeNotify();
     }
 
@@ -1099,12 +1135,14 @@ public final class VariationCellPanel extends JPanel {
         return peeking;
     }
 
-    boolean isPeekDelayRunningForTest() {
-        return peekDelayTimer.isRunning();
+    void commitPickForTest() {
+        if (onPickCommit != null) {
+            onPickCommit.accept(combo);
+        }
     }
 
-    boolean suppressNextClickForTest() {
-        return suppressNextClick;
+    boolean isPeekDelayRunningForTest() {
+        return peekDelay.isRunning();
     }
 
     boolean isBaselineForTest() {
@@ -1113,10 +1151,6 @@ public final class VariationCellPanel extends JPanel {
 
     boolean isAcceptEnabledForTest() {
         return acceptEnabled;
-    }
-
-    boolean isHaloTimerRunningForTest() {
-        return haloTimer.isRunning();
     }
 
     PickBadge badgeForTest() {
