@@ -107,6 +107,7 @@ public final class VariationGridWindow extends JDialog {
     private ParameterCombo selectedCombo;
     private Dimension fitGridSize;
     private double zoom = 1.0;
+    private boolean reviewControlsEnabled = true;
 
     public VariationGridWindow(Window owner,
                                String title,
@@ -256,6 +257,7 @@ public final class VariationGridWindow extends JDialog {
             cell.setResult(result);
             resultArrived = true;
             setPickSelectedEnabled(selectedCombo != null);
+            cell.setPickAvailable(reviewControlsEnabled);
         }
     }
 
@@ -324,7 +326,29 @@ public final class VariationGridWindow extends JDialog {
     }
 
     public void setPickSelectedEnabled(boolean enabled) {
-        pickSelectedButton.setEnabled(enabled);
+        pickSelectedButton.setEnabled(enabled && reviewControlsEnabled);
+    }
+
+    /**
+     * Enables or disables everything that acts on finished results: the object
+     * overlay and source choice, LUT and brightness, Pick selected and each
+     * cell's Pick pill. The progress grid shown while a sweep runs has no
+     * handlers for them, so they are disabled there rather than inert.
+     */
+    public void setReviewControlsEnabled(boolean enabled) {
+        reviewControlsEnabled = enabled;
+        objectOverlayCheckBox.setEnabled(enabled);
+        objectOverlaySourceChoice.setEnabled(enabled);
+        lutToggleButton.setEnabled(enabled);
+        brightnessButton.setEnabled(enabled);
+        pickSelectedButton.setEnabled(enabled && selectedCombo != null);
+        for (int i = 0; i < cells.size(); i++) {
+            cells.get(i).setPickAvailable(enabled);
+        }
+    }
+
+    public boolean reviewControlsEnabledForTest() {
+        return reviewControlsEnabled;
     }
 
     public void setActionStatus(String text) {

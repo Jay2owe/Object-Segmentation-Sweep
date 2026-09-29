@@ -103,6 +103,8 @@ public final class VariationCellPanel extends JPanel {
     private PickBadge badge;
     private boolean selectedForCompare;
     private boolean acceptEnabled;
+    /** False while the sweep is still running: the pill has nothing to pick yet. */
+    private boolean pickAvailable = true;
     private boolean baseline;
     private boolean errorState;
     private boolean hover;
@@ -773,7 +775,14 @@ public final class VariationCellPanel extends JPanel {
     }
 
     private boolean pickPillVisible() {
-        return acceptEnabled && !baseline;
+        return acceptEnabled && !baseline && pickAvailable;
+    }
+
+    /** Shows or hides the Pick pill independently of the cell's own state. */
+    public void setPickAvailable(boolean available) {
+        if (pickAvailable == available) return;
+        pickAvailable = available;
+        repaint();
     }
 
     private Rectangle pickPillBounds() {

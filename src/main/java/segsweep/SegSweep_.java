@@ -40,6 +40,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
@@ -231,32 +232,43 @@ public class SegSweep_ implements PlugIn {
         final ImagePlus image = lease.image();
         final ImagePlus progressSource = SourceImageView.selectedChannelAndCrop(
                 image, options.channel(), options.crop());
-        final VariationGridWindow progressGrid = new VariationGridWindow(
-                null, COMMAND_NAME, displayWindow(options), progressSource);
         final AtomicBoolean cancelled = new AtomicBoolean();
         final AtomicBoolean finished = new AtomicBoolean();
-        progressGrid.attachCancelActionListener(new java.awt.event.ActionListener() {
-            @Override public void actionPerformed(java.awt.event.ActionEvent e) {
-                cancelled.set(true);
-                progressGrid.setCancelEnabled(false);
-                progressGrid.setActionStatus("Cancelling sweep...");
+        // Swing components are built, filled and shown on the event thread only.
+        final VariationGridWindow progressGrid = onEdt(new Callable<VariationGridWindow>() {
+            @Override public VariationGridWindow call() {
+                final VariationGridWindow grid = new VariationGridWindow(
+                        null, COMMAND_NAME, displayWindow(options), progressSource);
+                // Overlay, LUT, brightness and Pick have no handlers until the
+                // final grid replaces this one; disable them rather than leave
+                // them inert.
+                grid.setReviewControlsEnabled(false);
+                grid.attachCancelActionListener(new java.awt.event.ActionListener() {
+                    @Override public void actionPerformed(java.awt.event.ActionEvent e) {
+                        cancelled.set(true);
+                        grid.setCancelEnabled(false);
+                        grid.setActionStatus("Cancelling sweep...");
+                    }
+                });
+                grid.addWindowListener(new WindowAdapter() {
+                    @Override public void windowClosed(WindowEvent e) {
+                        if (!finished.get()) cancelled.set(true);
+                        progressSource.changes = false;
+                        progressSource.close();
+                        progressSource.flush();
+                    }
+                });
+                grid.setVisible(true);
+                return grid;
             }
         });
-        progressGrid.addWindowListener(new WindowAdapter() {
-            @Override public void windowClosed(WindowEvent e) {
-                if (!finished.get()) cancelled.set(true);
-                progressSource.changes = false;
-                progressSource.close();
-                progressSource.flush();
-            }
-        });
-        progressGrid.setVisible(true);
 
         new Thread(new Runnable() {
             @Override public void run() {
+                SegSweepResult result;
                 try {
                     IJ.showStatus(COMMAND_NAME + ": running sweep...");
-                    SegSweepResult result = SegSweepAnalysis.run(options.toParameters(image),
+                    result = SegSweepAnalysis.run(options.toParameters(image),
                             new Consumer<SweepProgress>() {
                                 @Override public void accept(final SweepProgress progress) {
                                     SwingUtilities.invokeLater(new Runnable() {
@@ -270,37 +282,15 @@ public class SegSweep_ implements PlugIn {
                                     return cancelled.get();
                                 }
                             }, new Consumer<VariationResult>() {
-                                @Override public void accept(final VariationResult result) {
+                                @Override public void accept(final VariationResult cell) {
                                     SwingUtilities.invokeLater(new Runnable() {
                                         @Override public void run() {
-                                            if (!cancelled.get()) progressGrid.setResult(result);
+                                            if (!cancelled.get()) progressGrid.setResult(cell);
                                         }
                                     });
                                 }
                             });
                     if (cancelled.get()) throw new CancellationException("Sweep cancelled.");
-                    final SegSweepResult completed = result;
-                    finished.set(true);
-                    SwingUtilities.invokeLater(new Runnable() {
-                        @Override public void run() {
-                            progressGrid.setCancelEnabled(false);
-                            progressGrid.dispose();
-                            boolean retainedByGrid = false;
-                            try {
-                                if (shouldAutoSaveImmediately(options)) {
-                                    autoSaveOrSkip(completed, options, image, null, null);
-                                }
-                                retainedByGrid = showMacroResult(completed, options, lease);
-                                IJ.showStatus(COMMAND_NAME + ": done.");
-                            } catch (Exception ex) {
-                                reportError(ex.getMessage());
-                            } finally {
-                                if (!retainedByGrid) {
-                                    lease.close();
-                                }
-                            }
-                        }
-                    });
                 } catch (CancellationException ex) {
                     lease.close();
                     SwingUtilities.invokeLater(new Runnable() {
@@ -310,24 +300,53 @@ public class SegSweep_ implements PlugIn {
                         }
                     });
                     IJ.showStatus(COMMAND_NAME + ": cancelled.");
+                    return;
                 } catch (final Exception ex) {
                     lease.close();
                     finished.set(true);
                     SwingUtilities.invokeLater(new Runnable() {
                         @Override public void run() {
                             progressGrid.dispose();
-                            reportError(ex.getMessage());
                         }
                     });
+                    reportError(ex.getMessage());
+                    return;
+                }
+                finished.set(true);
+                SwingUtilities.invokeLater(new Runnable() {
+                    @Override public void run() {
+                        progressGrid.setCancelEnabled(false);
+                        progressGrid.dispose();
+                    }
+                });
+                // Autosave and the final grid are prepared on this worker; only
+                // the Swing parts hop to the event thread.
+                boolean retainedByGrid = false;
+                try {
+                    if (shouldAutoSaveImmediately(options)) {
+                        autoSaveOrSkip(result, options, image, null, null);
+                    }
+                    retainedByGrid = showMacroResult(result, options, lease);
+                    IJ.showStatus(COMMAND_NAME + ": done.");
+                } catch (Exception ex) {
+                    reportError(ex.getMessage());
+                } finally {
+                    if (!retainedByGrid) {
+                        lease.close();
+                    }
                 }
             }
         }, "SegSweep-Analysis").start();
     }
 
+    /**
+     * Shows tables and the review grid for a finished sweep. Called from a
+     * macro thread or a worker, never for heavy work on the event thread: the
+     * grid is built on the event thread, the rendered-grid autosave runs here.
+     */
     private boolean showMacroResult(final SegSweepResult result,
-                                    SegSweepMacroOptions options,
+                                    final SegSweepMacroOptions options,
                                     final ImageLease lease) {
-        final ImagePlus image = lease.image();
         boolean display = !GraphicsEnvironment.isHeadless()
                 && options != null && !options.hideDisplay();
         if (!display) {
@@ -344,6 +363,64 @@ public class SegSweep_ implements PlugIn {
             logWarnings(result);
             return false;
         }
+        final VariationGridWindow grid = onEdt(new Callable<VariationGridWindow>() {
+            @Override public VariationGridWindow call() {
+                return buildResultGrid(result, options, lease);
+            }
+        });
+        if (shouldAutoSaveRenderedGrid(options)) {
+            final BufferedImage snapshot = autoSaveDestinationMissing(options, lease.image())
+                    ? null : grid.renderGridSnapshot();
+            lease.retain();
+            offEdt("SegSweep-Autosave", new Runnable() {
+                @Override public void run() {
+                    try {
+                        saveInitialGrid(result, options, lease.image(), grid, snapshot);
+                    } finally {
+                        lease.close();
+                    }
+                }
+            });
+        }
+        return true;
+    }
+
+    private void saveInitialGrid(SegSweepResult result, SegSweepMacroOptions options,
+                                 ImagePlus image, final VariationGridWindow grid,
+                                 BufferedImage snapshot) {
+        final String status;
+        if (snapshot == null) {
+            // An unsaved image is normal in interactive use; say so once in
+            // the grid rather than raising a modal error after every run.
+            log(COMMAND_NAME + ": autosave skipped: " + NO_FILE_LOCATION_HINT);
+            status = "Not saved: " + NO_FILE_LOCATION_HINT;
+        } else {
+            String text;
+            try {
+                File output = autoSaveIfRequested(result, options, image, snapshot);
+                log(COMMAND_NAME + ": saved initial reviewed grid to "
+                        + output.getAbsolutePath());
+                text = null;
+            } catch (Exception ex) {
+                text = "Could not save sweep: " + QuietImageOpener.oneLine(ex.getMessage());
+                log(COMMAND_NAME + ": " + text);
+            }
+            status = text;
+        }
+        if (status != null) {
+            SwingUtilities.invokeLater(new Runnable() {
+                @Override public void run() {
+                    grid.setActionStatus(status);
+                }
+            });
+        }
+    }
+
+    /** Builds, fills and shows the review grid. Event thread only. */
+    private VariationGridWindow buildResultGrid(final SegSweepResult result,
+                                                final SegSweepMacroOptions options,
+                                                final ImageLease lease) {
+        final ImagePlus image = lease.image();
         final ImagePlus displaySource = SourceImageView.selectedChannelAndCrop(
                 image, result.parameters().channel(), result.parameters().crop());
         final VariationGridWindow grid = new VariationGridWindow(null, COMMAND_NAME,
@@ -367,10 +444,10 @@ public class SegSweep_ implements PlugIn {
         if (warnings.length() > 0) {
             grid.setActionStatus(warnings);
         }
+        // Seed with the source's own colour table; "Grays" here used to turn a
+        // coloured channel grey on the first LUT toggle or brightness edit.
         final PreviewDisplaySettings[] displaySettings =
-                new PreviewDisplaySettings[] { PreviewDisplaySettings.of(
-                        displaySource.getDisplayRangeMin(), displaySource.getDisplayRangeMax(),
-                        PreviewDisplaySettings.LutMode.CHANNEL, "Grays") };
+                new PreviewDisplaySettings[] { initialDisplaySettings(displaySource) };
         grid.attachObjectOverlayActionListener(new java.awt.event.ActionListener() {
             @Override public void actionPerformed(java.awt.event.ActionEvent e) {
                 boolean enabled = grid.isObjectOverlaySelected();
@@ -421,57 +498,121 @@ public class SegSweep_ implements PlugIn {
         });
         grid.attachPickSelectedActionListener(new java.awt.event.ActionListener() {
             @Override public void actionPerformed(java.awt.event.ActionEvent e) {
-                ParameterCombo selected = grid.selectedCombo();
-                if (selected == null) {
-                    grid.setActionStatus("Select a completed cell before picking it.");
-                    return;
-                }
-                String token = settingsTokenForSelected(result, selected);
-                SegSweepResult chosenResult = result.withPickedSelection(selected, token);
-                IJ.log(COMMAND_NAME + ": picked " + selected);
-                IJ.log(token);
-                if (chosenResult.pickedLabelMap() != null) {
-                    ImagePlus labels = chosenResult.pickedLabelMap().get();
-                    labels.setTitle(COMMAND_NAME + " - picked labels");
-                    labels.show();
-                }
-                if (autoSaveDestinationMissing(options, image)) {
-                    grid.setActionStatus("Picked " + selected + "; not saved: "
-                            + NO_FILE_LOCATION_HINT);
-                    return;
-                }
-                try {
-                    BufferedImage reviewedGrid = grid.renderGridSnapshot();
-                    File output = autoSaveIfRequested(
-                            chosenResult, options, image, reviewedGrid);
-                    IJ.log(COMMAND_NAME + ": saved manual pick to " + output.getAbsolutePath());
-                } catch (Exception ex) {
-                    IJ.error(COMMAND_NAME, "Could not save manual pick: " + ex.getMessage());
-                }
+                pickSelected(grid, result, options, lease);
             }
         });
         grid.setVisible(true);
-        if (shouldAutoSaveRenderedGrid(options)) {
-            if (autoSaveDestinationMissing(options, image)) {
-                // An unsaved image is normal in interactive use; say so once in
-                // the grid rather than raising a modal error after every run.
-                log(COMMAND_NAME + ": autosave skipped: " + NO_FILE_LOCATION_HINT);
-                grid.setActionStatus("Not saved: " + NO_FILE_LOCATION_HINT);
-            } else {
+        return grid;
+    }
+
+    static PreviewDisplaySettings initialDisplaySettings(ImagePlus displaySource) {
+        return PreviewDisplaySettings.of(
+                displaySource.getDisplayRangeMin(), displaySource.getDisplayRangeMax(),
+                PreviewDisplaySettings.LutMode.CHANNEL,
+                PreviewDisplaySettings.lutNameOf(displaySource));
+    }
+
+    /**
+     * Pick selected: materialising the label stack and writing the autosave
+     * tree take seconds on a 3D stack, so they run on a worker. The button is
+     * disabled until the worker finishes, and the image lease is held so a
+     * window close cannot close the image under the writer.
+     */
+    private void pickSelected(final VariationGridWindow grid,
+                              final SegSweepResult result,
+                              final SegSweepMacroOptions options,
+                              final ImageLease lease) {
+        final ParameterCombo selected = grid.selectedCombo();
+        if (selected == null) {
+            grid.setActionStatus("Select a completed cell before picking it.");
+            return;
+        }
+        grid.setPickSelectedEnabled(false);
+        grid.setActionStatus("Picking " + selected + "...");
+        final boolean destinationMissing = autoSaveDestinationMissing(options, lease.image());
+        final BufferedImage reviewedGrid = destinationMissing ? null : grid.renderGridSnapshot();
+        lease.retain();
+        new Thread(new Runnable() {
+            @Override public void run() {
+                String status;
                 try {
-                    File output = autoSaveIfRequested(
-                            result, options, image, grid.renderGridSnapshot());
-                    log(COMMAND_NAME + ": saved initial reviewed grid to "
-                            + output.getAbsolutePath());
+                    String token = settingsTokenForSelected(result, selected);
+                    SegSweepResult chosenResult = result.withPickedSelection(selected, token);
+                    log(COMMAND_NAME + ": picked " + selected);
+                    log(token);
+                    if (chosenResult.pickedLabelMap() != null) {
+                        ImagePlus labels = chosenResult.pickedLabelMap().get();
+                        labels.setTitle(COMMAND_NAME + " - picked labels");
+                        labels.show();
+                    }
+                    if (destinationMissing) {
+                        status = "Picked " + selected + "; not saved: " + NO_FILE_LOCATION_HINT;
+                    } else {
+                        File output = autoSaveIfRequested(
+                                chosenResult, options, lease.image(), reviewedGrid);
+                        log(COMMAND_NAME + ": saved manual pick to " + output.getAbsolutePath());
+                        status = "Picked " + selected + "; saved to " + output.getAbsolutePath();
+                    }
                 } catch (Exception ex) {
-                    log(COMMAND_NAME + ": could not save sweep: "
-                            + QuietImageOpener.oneLine(ex.getMessage()));
-                    grid.setActionStatus("Could not save sweep: "
-                            + QuietImageOpener.oneLine(ex.getMessage()));
+                    status = "Could not save manual pick: "
+                            + QuietImageOpener.oneLine(ex.getMessage());
+                    showError(status);
+                } finally {
+                    lease.close();
                 }
+                final String finalStatus = status;
+                SwingUtilities.invokeLater(new Runnable() {
+                    @Override public void run() {
+                        grid.setActionStatus(finalStatus);
+                        grid.setPickSelectedEnabled(grid.selectedCombo() != null);
+                    }
+                });
+            }
+        }, "SegSweep-Pick").start();
+    }
+
+    /** Runs {@code work} on the event thread and waits for its value. */
+    static <T> T onEdt(final Callable<T> work) {
+        if (SwingUtilities.isEventDispatchThread()) {
+            try {
+                return work.call();
+            } catch (RuntimeException ex) {
+                throw ex;
+            } catch (Exception ex) {
+                throw new IllegalStateException(ex);
             }
         }
-        return true;
+        final List<T> value = new java.util.ArrayList<T>(1);
+        final Throwable[] failure = new Throwable[1];
+        try {
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override public void run() {
+                    try {
+                        value.add(work.call());
+                    } catch (Throwable t) {
+                        failure[0] = t;
+                    }
+                }
+            });
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new CancellationException("Interrupted while waiting for the event thread.");
+        } catch (java.lang.reflect.InvocationTargetException ex) {
+            throw new IllegalStateException(ex.getCause());
+        }
+        if (failure[0] instanceof RuntimeException) throw (RuntimeException) failure[0];
+        if (failure[0] instanceof Error) throw (Error) failure[0];
+        if (failure[0] != null) throw new IllegalStateException(failure[0]);
+        return value.get(0);
+    }
+
+    /** Runs {@code work} here when off the event thread, else on a named worker. */
+    static void offEdt(String name, Runnable work) {
+        if (SwingUtilities.isEventDispatchThread()) {
+            new Thread(work, name).start();
+        } else {
+            work.run();
+        }
     }
 
     private static ParameterSweep displayWindow(SegSweepResult result) {
@@ -662,10 +803,16 @@ public class SegSweep_ implements PlugIn {
         return current == null ? null : ImageLease.borrowed(current);
     }
 
+    /**
+     * An image the run is using, closed when the last holder lets go. Owned
+     * images (opened from a file) are closed then; borrowed ones never are.
+     * Workers that outlive the grid window (autosave, Pick) take their own hold.
+     */
     static final class ImageLease {
         private final ImagePlus image;
         private final boolean owned;
-        private final AtomicBoolean closed = new AtomicBoolean();
+        private final java.util.concurrent.atomic.AtomicInteger holds =
+                new java.util.concurrent.atomic.AtomicInteger(1);
 
         private ImageLease(ImagePlus image, boolean owned) {
             this.image = image;
@@ -684,8 +831,18 @@ public class SegSweep_ implements PlugIn {
             return image;
         }
 
+        /** Takes another hold; each hold is released by one {@link #close()}. */
+        ImageLease retain() {
+            holds.incrementAndGet();
+            return this;
+        }
+
+        boolean isClosedForTest() {
+            return holds.get() <= 0;
+        }
+
         void close() {
-            if (!owned || image == null || !closed.compareAndSet(false, true)) {
+            if (holds.decrementAndGet() != 0 || !owned || image == null) {
                 return;
             }
             image.changes = false;

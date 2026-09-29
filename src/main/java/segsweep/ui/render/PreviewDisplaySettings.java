@@ -57,6 +57,41 @@ public final class PreviewDisplaySettings {
         return new PreviewDisplaySettings(displayMin, displayMax, lutMode, channelLutName);
     }
 
+    /**
+     * The name of {@code image}'s colour table when it is one this renderer can
+     * reproduce (grey or a primary/secondary colour ramp), else "Grays". Used
+     * to seed the grid's display settings, which used to pair a coloured
+     * channel with the name "Grays" and turned tiles grey on the first edit.
+     */
+    public static String lutNameOf(ij.ImagePlus image) {
+        if (image == null) return "Grays";
+        try {
+            java.awt.image.ColorModel model = image.isComposite()
+                    ? ((ij.CompositeImage) image).getChannelLut()
+                    : image.getProcessor().getColorModel();
+            if (!(model instanceof java.awt.image.IndexColorModel)) return "Grays";
+            java.awt.image.IndexColorModel lut = (java.awt.image.IndexColorModel) model;
+            if (lut.getMapSize() < 256) return "Grays";
+            if (lut.getRed(0) > 8 || lut.getGreen(0) > 8 || lut.getBlue(0) > 8) return "Grays";
+            boolean r = lut.getRed(255) > 200;
+            boolean g = lut.getGreen(255) > 200;
+            boolean b = lut.getBlue(255) > 200;
+            boolean rOff = lut.getRed(255) < 56;
+            boolean gOff = lut.getGreen(255) < 56;
+            boolean bOff = lut.getBlue(255) < 56;
+            if (r && g && b) return "Grays";
+            if (r && gOff && bOff) return "Red";
+            if (g && rOff && bOff) return "Green";
+            if (b && rOff && gOff) return "Blue";
+            if (g && b && rOff) return "Cyan";
+            if (r && b && gOff) return "Magenta";
+            if (r && g && bOff) return "Yellow";
+            return "Grays";
+        } catch (RuntimeException ex) {
+            return "Grays";
+        }
+    }
+
     static String normalizeLutName(String value) {
         if (value == null) return "Grays";
         String normalized = value.trim().toLowerCase();

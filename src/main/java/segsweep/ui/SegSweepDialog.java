@@ -236,6 +236,68 @@ public final class SegSweepDialog {
                 && restored.crop().mode() == CropSpec.Mode.CUSTOM;
         selectItem(state.cropChoice,
                 wantsRoi && roiAvailable ? "Sweep in ROI" : "Whole image");
+        // The remembered channel may not exist in this image (a 3-channel
+        // session restored onto a single-channel image). The channel row is
+        // hidden for single-channel images, so an unclamped value would fail
+        // at Run with no visible field to correct.
+        state.refreshInputMetadata();
+    }
+
+    /**
+     * The crop for "Sweep in ROI": the selection's bounding box clipped to the
+     * image. Non-rectangular selections and selections that extend past the
+     * edge used to be accepted silently and then fail at Run.
+     */
+    static java.awt.Rectangle roiCropBounds(ImagePlus image) {
+        if (image == null || image.getRoi() == null) {
+            throw new IllegalArgumentException("The selected image does not have an ROI to sweep.");
+        }
+        java.awt.Rectangle bounds = image.getRoi().getBounds();
+        java.awt.Rectangle clipped = bounds.intersection(
+                new java.awt.Rectangle(0, 0, image.getWidth(), image.getHeight()));
+        if (clipped.width <= 0 || clipped.height <= 0) {
+            throw new IllegalArgumentException("The ROI lies outside the image.");
+        }
+        return clipped;
+    }
+
+    /** What the user should know about how the ROI becomes a crop, or "" when nothing. */
+    static String roiCropNote(ImagePlus image) {
+        if (image == null || image.getRoi() == null) return "";
+        ij.gui.Roi roi = image.getRoi();
+        java.awt.Rectangle bounds = roi.getBounds();
+        boolean rectangular = roi.getType() == ij.gui.Roi.RECTANGLE
+                && roi.getCornerDiameter() == 0;
+        boolean clipped = !new java.awt.Rectangle(0, 0, image.getWidth(), image.getHeight())
+                .contains(bounds);
+        if (rectangular && !clipped) return "";
+        StringBuilder note = new StringBuilder("The bounding box of the selection is used");
+        if (clipped) note.append(", clipped to the image");
+        note.append('.');
+        return note.toString();
+    }
+
+    /** Parses a number field, naming the field when the text is not a number. */
+    static double parseNumberField(JTextField field, String name) {
+        String text = field == null ? "" : field.getText().trim();
+        try {
+            double value = Double.parseDouble(text);
+            if (Double.isFinite(value)) return value;
+        } catch (NumberFormatException ignored) {
+            // Named message below.
+        }
+        throw new IllegalArgumentException(name + " must be a number"
+                + (text.isEmpty() ? "." : " (got \"" + text + "\")."));
+    }
+
+    static int parseWholeNumberField(JTextField field, String name) {
+        String text = field == null ? "" : field.getText().trim();
+        try {
+            return Integer.parseInt(text);
+        } catch (NumberFormatException ex) {
+            throw new IllegalArgumentException(name + " must be a whole number"
+                    + (text.isEmpty() ? "." : " (got \"" + text + "\")."));
+        }
     }
 
     private static void selectItem(JComboBox<String> choice, String value) {
@@ -486,30 +548,49 @@ public final class SegSweepDialog {
         state.costLine.setForeground(WARNING_COLOR);
         suggest.addActionListener(new ActionListener() {
             @Override public void actionPerformed(ActionEvent e) {
-                ImagePlus image = selectedImage(state);
+                final ImagePlus image = selectedImage(state);
                 if (image == null) return;
+                final SegSweepMacroOptions current;
+                final ParameterId axis;
                 try {
-                    SegSweepMacroOptions current = state.optionsFromFields();
-                    ParameterId axis = ParameterId.fromStableKey((String) state.axisChoice.getSelectedItem());
-                    SegSweepMacroOptions suggested = applySuggestedRange(image, current, axis);
-                    ParameterValueList list = suggested.primaryAxis().valueList();
-                    state.suggestedPrimaryAxis = axis;
-                    state.suggestedPrimaryValues = list;
-                    state.showSuggestedPrimaryValues();
-                    state.applyingSuggestedPrimaryValues = true;
-                    try {
-                        state.fromField.setText(format(list.get(0)));
-                        state.toField.setText(format(list.get(list.size() - 1)));
-                        state.stepField.setText(list.size() > 1
-                                ? format(stepBetween(list))
-                                : "1");
-                    } finally {
-                        state.applyingSuggestedPrimaryValues = false;
-                    }
-                    state.refreshCostLine();
+                    current = state.optionsFromFields();
+                    axis = ParameterId.fromStableKey((String) state.axisChoice.getSelectedItem());
                 } catch (RuntimeException ex) {
                     IJ.error("Object Segmentation Sweep", ex.getMessage());
+                    return;
                 }
+                // The histogram of a large stack takes seconds; compute it off
+                // the event thread so the dialog keeps painting.
+                final java.awt.Component root = javax.swing.SwingUtilities.getRoot(suggest);
+                suggest.setEnabled(false);
+                state.suggestionRunning = true;
+                if (root != null) root.setCursor(
+                        java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.WAIT_CURSOR));
+                new javax.swing.SwingWorker<ParameterValueList, Void>() {
+                    @Override protected ParameterValueList doInBackground() {
+                        state.suggestionComputedOnEdt = javax.swing.SwingUtilities.isEventDispatchThread();
+                        return applySuggestedRange(image, current, axis).primaryAxis().valueList();
+                    }
+
+                    @Override protected void done() {
+                        try {
+                            suggest.setEnabled(supportsRangeSuggestion(ParameterId.fromStableKey(
+                                    (String) state.axisChoice.getSelectedItem())));
+                            if (root != null) root.setCursor(java.awt.Cursor.getDefaultCursor());
+                            ParameterValueList list;
+                            try {
+                                list = get();
+                            } catch (Exception ex) {
+                                Throwable cause = ex.getCause() == null ? ex : ex.getCause();
+                                IJ.error("Object Segmentation Sweep", cause.getMessage());
+                                return;
+                            }
+                            applySuggestedValues(state, axis, list);
+                        } finally {
+                            state.suggestionRunning = false;
+                        }
+                    }
+                }.execute();
             }
         });
         ActionListener refresh = new ActionListener() {
@@ -538,6 +619,25 @@ public final class SegSweepDialog {
         installTextRefresh(state.from2Field, state);
         installTextRefresh(state.to2Field, state);
         installTextRefresh(state.step2Field, state);
+    }
+
+    /** Shows suggested values in the range fields; runs on the event thread. */
+    static void applySuggestedValues(DialogState state, ParameterId axis,
+                                     ParameterValueList list) {
+        state.suggestedPrimaryAxis = axis;
+        state.suggestedPrimaryValues = list;
+        state.showSuggestedPrimaryValues();
+        state.applyingSuggestedPrimaryValues = true;
+        try {
+            state.fromField.setText(format(list.get(0)));
+            state.toField.setText(format(list.get(list.size() - 1)));
+            state.stepField.setText(list.size() > 1
+                    ? format(stepBetween(list))
+                    : "1");
+        } finally {
+            state.applyingSuggestedPrimaryValues = false;
+        }
+        state.refreshCostLine();
     }
 
     private static void addOutputSection(JPanel content, DialogState state) {
@@ -774,6 +874,9 @@ public final class SegSweepDialog {
         ParameterId suggestedPrimaryAxis;
         ParameterValueList suggestedPrimaryValues;
         boolean applyingSuggestedPrimaryValues;
+        /** True from Suggest range until its result is shown; read by tests. */
+        volatile boolean suggestionRunning;
+        volatile boolean suggestionComputedOnEdt;
 
         DialogState(ImagePlus image) {
             this.image = image;
@@ -837,7 +940,7 @@ public final class SegSweepDialog {
             if (selectedImage != null && !NONE.equals(selectedImage)) {
                 options.setImage(selectedImage);
             }
-            options.setChannel(Integer.parseInt(channelField.getText().trim()));
+            options.setChannel(parseWholeNumberField(channelField, "Channel"));
             ParameterId primaryAxis = ParameterId.fromStableKey(
                     (String) axisChoice.getSelectedItem());
             if (suggestedPrimaryValues != null && primaryAxis == suggestedPrimaryAxis) {
@@ -846,27 +949,23 @@ public final class SegSweepDialog {
             } else {
                 options.setPrimaryAxis(SegSweepMacroOptions.AxisSpec.range(
                         primaryAxis,
-                        Double.parseDouble(fromField.getText().trim()),
-                        Double.parseDouble(toField.getText().trim()),
-                        Double.parseDouble(stepField.getText().trim())));
+                        parseNumberField(fromField, "From"),
+                        parseNumberField(toField, "To"),
+                        parseNumberField(stepField, "Step")));
             }
             String axis2 = (String) axis2Choice.getSelectedItem();
             if (axis2 != null && !NONE.equals(axis2)) {
                 options.setSecondaryAxis(SegSweepMacroOptions.AxisSpec.range(
                         ParameterId.fromStableKey(axis2),
-                        Double.parseDouble(from2Field.getText().trim()),
-                        Double.parseDouble(to2Field.getText().trim()),
-                        Double.parseDouble(step2Field.getText().trim())));
+                        parseNumberField(from2Field, "Second axis From"),
+                        parseNumberField(to2Field, "Second axis To"),
+                        parseNumberField(step2Field, "Second axis Step")));
             }
             options.setPickCriterion(SegSweepParameters.PickCriterion.valueOf(
                     ((String) pickChoice.getSelectedItem()).toUpperCase(Locale.ROOT)));
             ImagePlus chosenImage = selectedImage(this);
             if (cropChoice != null && "Sweep in ROI".equals(cropChoice.getSelectedItem())) {
-                if (chosenImage == null || chosenImage.getRoi() == null) {
-                    throw new IllegalArgumentException(
-                            "The selected image does not have an ROI to sweep.");
-                }
-                options.setCrop(CropSpec.custom(chosenImage.getRoi().getBounds()));
+                options.setCrop(CropSpec.custom(roiCropBounds(chosenImage)));
             }
             if (autosaveField != null && autosaveField.getText().trim().length() > 0
                     && !SegSweepMacroOptions.AUTOSAVE_ALONGSIDE_INPUT.equalsIgnoreCase(
@@ -901,8 +1000,13 @@ public final class SegSweepDialog {
         void refreshCostLine() {
             if (costLine == null) return;
             try {
+                ImagePlus chosen = selectedImage(this);
+                String note = cropChoice != null
+                        && "Sweep in ROI".equals(cropChoice.getSelectedItem())
+                        ? roiCropNote(chosen) : "";
                 costLine.setText("<html><body style='width:430px;'>"
-                        + costEstimateText(selectedImage(this), optionsFromFields())
+                        + (note.isEmpty() ? "" : note + "<br>")
+                        + costEstimateText(chosen, optionsFromFields())
                         + "</body></html>");
             } catch (RuntimeException e) {
                 costLine.setText("<html><body style='width:430px;'>" + e.getMessage()

@@ -36,6 +36,20 @@ All notable changes to Object Segmentation Sweep are documented here. The format
 - The memory guard now accounts for bit depth; 32-bit images with many distinct values could pass
   the guard and then run out of memory.
 - Histogram bin counts saturate instead of overflowing on very large stacks.
+- A remembered channel that does not exist in the chosen image is reset to 1; Run used to fail with
+  the channel field hidden.
+- "Sweep in ROI" clips the selection to the image and says that the bounding box of a
+  non-rectangular selection is used.
+- Letters in a number field give a message naming the field.
+- The grid is built on the Swing event thread; Suggest range, Pick selected and autosave run on
+  workers, so Fiji stays responsive on large stacks.
+- The first LUT toggle or brightness edit no longer turns coloured channels grey.
+- While a sweep runs, the grid's overlay, LUT, brightness and Pick controls are disabled instead of
+  doing nothing.
+
+### Removed
+
+- The unused `CustomCropPicker` dialog.
 
 ## [0.2.0] - 2026-08-07
 

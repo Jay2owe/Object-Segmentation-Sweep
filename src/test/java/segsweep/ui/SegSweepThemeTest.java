@@ -111,6 +111,18 @@ public class SegSweepThemeTest {
         state.axisChoice.setSelectedItem("min_size");
 
         state.suggestButton.doClick();
+        // The suggestion is computed off the event thread (stage 05); wait for
+        // its result to be applied before reading the fields.
+        long deadline = System.currentTimeMillis() + 30000L;
+        while (state.suggestionRunning && System.currentTimeMillis() < deadline) {
+            try {
+                Thread.sleep(10L);
+            } catch (InterruptedException ex) {
+                throw new AssertionError(ex);
+            }
+        }
+        assertFalse("suggestion finished", state.suggestionRunning);
+        assertFalse("histogram computed off the event thread", state.suggestionComputedOnEdt);
 
         SegSweepMacroOptions suggested = state.optionsFromFields();
         assertTrue(suggested.primaryAxis().hasExplicitValues());
