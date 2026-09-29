@@ -197,6 +197,71 @@ public class MacroHardeningTest {
         }
     }
 
+    /** The sweep a macro reaches through {@link #runFromInterpreter}; test-only. */
+    static CapturingSweep interpreterSweep;
+
+    /**
+     * Called from a macro with {@code call()}: runs a capturing sweep with macro
+     * options on the interpreter's own thread, as {@code run(...)} would.
+     */
+    public static String runFromInterpreter(String options) {
+        Thread thread = Thread.currentThread();
+        String name = thread.getName();
+        thread.setName("Run$_" + name);
+        Macro.setOptions(options);
+        try {
+            interpreterSweep.run("");
+        } finally {
+            Macro.setOptions(null);
+            thread.setName(name);
+        }
+        return "";
+    }
+
+    /**
+     * Regression: in Fiji ({@code -macro}, {@code IJ.runMacro}) the macro thread
+     * is not named {@code ...Macro$}, so {@code Macro.abort()} only set a flag and
+     * the macro carried on after "OBJECT SEGMENTATION SWEEP ERROR".
+     */
+    @Test
+    public void errorStopsAMacroRunOnAnOrdinaryThread() throws Exception {
+        final File after = new File(tmp.getRoot(), "after.txt");
+        final String macro = "call(\"segsweep.MacroHardeningTest.runFromInterpreter\", "
+                + "\"sweep=nonsense from=10 to=60 step=10\");\n"
+                + "File.saveString(\"continued\", \"" + slashes(after) + "\");\n";
+        interpreterSweep = new CapturingSweep();
+        final AtomicReference<Throwable> thrown = new AtomicReference<Throwable>();
+        Thread fijiMain = new Thread(new Runnable() {
+            @Override public void run() {
+                try {
+                    IJ.runMacro(macro);
+                } catch (Throwable t) {
+                    thrown.set(t);
+                }
+            }
+        }, "main");
+        fijiMain.start();
+        fijiMain.join(60000L);
+
+        assertFalse("macro thread finished", fijiMain.isAlive());
+        assertNull(String.valueOf(thrown.get()), thrown.get());
+        List<String> reports = new ArrayList<String>(interpreterSweep.errors);
+        reports.addAll(interpreterSweep.logs);
+        assertEquals(reports.toString(), 1, reports.size());
+        assertTrue(reports.get(0), reports.get(0).contains("nonsense"));
+        assertFalse("the macro must stop after the error", after.exists());
+    }
+
+    @Test
+    public void numberErrorsNameTheRejectedValue() {
+        try {
+            SegSweepMacroOptionsParser.parse("sweep=threshold from=abc to=60 step=10");
+            fail("from=abc must be refused");
+        } catch (IllegalArgumentException expected) {
+            assertEquals("from must be a finite number (got \"abc\").", expected.getMessage());
+        }
+    }
+
     @Test
     public void outsideAMacroErrorsReturnNullWithoutAborting() {
         CapturingSweep sweep = new CapturingSweep();

@@ -271,7 +271,7 @@ public final class SegSweepMacroOptionsParser {
         try {
             return Integer.parseInt(value.trim());
         } catch (RuntimeException e) {
-            throw new IllegalArgumentException(optionName + " must be an integer.");
+            throw new IllegalArgumentException(optionName + " must be an integer" + got(value) + ".");
         }
     }
 
@@ -279,7 +279,7 @@ public final class SegSweepMacroOptionsParser {
         try {
             return Long.parseLong(value.trim());
         } catch (RuntimeException e) {
-            throw new IllegalArgumentException(optionName + " must be an integer.");
+            throw new IllegalArgumentException(optionName + " must be an integer" + got(value) + ".");
         }
     }
 
@@ -292,7 +292,12 @@ public final class SegSweepMacroOptionsParser {
         } catch (RuntimeException ignored) {
             // Typed message below.
         }
-        throw new IllegalArgumentException(optionName + " must be a finite number.");
+        throw new IllegalArgumentException(optionName + " must be a finite number" + got(value) + ".");
+    }
+
+    /** Names the rejected value so a macro error says what to fix. */
+    private static String got(String value) {
+        return value == null ? "" : " (got \"" + value.trim() + "\")";
     }
 
     /**

@@ -37,6 +37,10 @@ All notable changes to Object Segmentation Sweep are documented here. The format
 - A macro or headless run on an image with no file location and no `autosave` returned nothing
   although the sweep succeeded; autosave is now skipped with a Log line. The grid no longer shows a
   modal error for this after every run.
+- In Fiji (`-macro`, `runMacro`) a refused sweep printed its error but the calling macro carried
+  on; it now stops there.
+- A bad number in the macro options names the value it rejected, for example
+  `from must be a finite number (got "abc").`
 - The recorder also wrote a bare `run("Object Segmentation Sweep");` after the full call.
 - Unreadable files in a batch no longer raise ImageJ's own error dialog per file.
 - An image title containing `[`, `]` or `"` stopped the dialog settings being remembered.

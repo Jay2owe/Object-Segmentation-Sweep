@@ -11,6 +11,7 @@ package segsweep;
 import ij.IJ;
 import ij.ImagePlus;
 import ij.Macro;
+import ij.macro.Interpreter;
 import ij.WindowManager;
 import ij.gui.GenericDialog;
 import ij.io.FileInfo;
@@ -917,7 +918,7 @@ public class SegSweep_ implements PlugIn {
             showError(text);
         }
         if (headless || inMacro()) {
-            abortMacro();
+            abortMacro(text);
         }
     }
 
@@ -937,11 +938,22 @@ public class SegSweep_ implements PlugIn {
     }
 
     /**
-     * Aborts the calling macro. {@code Macro.abort()} throws
-     * {@code RuntimeException(Macro.MACRO_CANCELED)} on a macro thread, which
-     * ImageJ treats as a quiet stop; elsewhere it only sets ImageJ's abort flag.
+     * Stops the calling macro after the one-line message has been shown.
+     *
+     * <p>{@code Macro.abort()} alone was not enough: it throws only on a thread
+     * whose name ends in {@code Macro$}, and {@code IJ.run} ignores the abort
+     * flag while an interpreter is attached. Fiji's {@code -macro} runner and
+     * {@code IJ.runMacro} use other threads, so the macro carried on after the
+     * error. The interpreter is stopped directly, with errors ignored so ImageJ
+     * does not add its own multi-line "Macro Error" report; {@code Macro.abort()}
+     * still stops Java callers of {@code IJ.run}.</p>
      */
-    void abortMacro() {
+    void abortMacro(String message) {
+        Interpreter interpreter = Interpreter.getInstance();
+        if (interpreter != null) {
+            interpreter.setIgnoreErrors(true);
+            interpreter.abort(message);
+        }
         Macro.abort();
     }
 
