@@ -289,7 +289,7 @@ public final class SegSweepBatch {
         });
         close.addActionListener(e -> dialog.dispose());
 
-        ij.gui.GUI.scale(dialog.getContentPane());
+        SegSweepDialog.scaleFonts(dialog.getContentPane());
         dialog.pack();
         dialog.setLocationRelativeTo(null);
         dialog.setVisible(true);

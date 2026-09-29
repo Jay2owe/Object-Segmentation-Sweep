@@ -138,7 +138,7 @@ public final class SegSweepDialog {
         });
 
         // Honour Edit > Options > Appearance > GUI scale, as ImageJ's own dialogs do.
-        ij.gui.GUI.scale(dialog.getContentPane());
+        scaleFonts(dialog.getContentPane());
 
         applyRestoredOptions(state, SweepStateStore.restoreFor(selectedImage(state)));
 
@@ -157,6 +157,36 @@ public final class SegSweepDialog {
             return accepted[0];
         } finally {
             state.disposeBrowsedImage();
+        }
+    }
+
+    /**
+     * Enlarges the text of every control under {@code root} by ImageJ's GUI
+     * scale. {@code ij.gui.GUI.scale(Component)} only reaches AWT leaves, and
+     * every Swing control is a Container, so it left this dialog's text at the
+     * unscaled size. All fonts are read before any is set, so a control that
+     * inherits its parent's font is scaled once, not twice.
+     */
+    public static void scaleFonts(java.awt.Component root) {
+        double scale = ij.Prefs.getGuiScale();
+        if (!(scale > 1.0d) || Double.isInfinite(scale)) return;
+        java.util.List<java.awt.Component> components = new java.util.ArrayList<java.awt.Component>();
+        collect(root, components);
+        java.awt.Font[] fonts = new java.awt.Font[components.size()];
+        for (int i = 0; i < fonts.length; i++) fonts[i] = components.get(i).getFont();
+        for (int i = 0; i < fonts.length; i++) {
+            if (fonts[i] != null) {
+                components.get(i).setFont(fonts[i].deriveFont((float) (fonts[i].getSize2D() * scale)));
+            }
+        }
+    }
+
+    private static void collect(java.awt.Component component, java.util.List<java.awt.Component> out) {
+        if (component == null) return;
+        out.add(component);
+        if (component instanceof java.awt.Container) {
+            java.awt.Component[] children = ((java.awt.Container) component).getComponents();
+            for (int i = 0; i < children.length; i++) collect(children[i], out);
         }
     }
 

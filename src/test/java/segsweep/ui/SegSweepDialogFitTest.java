@@ -54,6 +54,35 @@ public class SegSweepDialogFitTest {
         }
     }
 
+    /**
+     * The GUI check measured 12 pt text at GUI scale 1.5: ImageJ's
+     * GUI.scale(Component) skips Swing controls. Each control is now scaled
+     * once, including one that inherits its parent's font.
+     */
+    @Test
+    public void fontsGrowOnceWithTheGuiScale() {
+        double before = Prefs.getGuiScale();
+        try {
+            Prefs.setGuiScale(1.5);
+            JPanel panel = new JPanel();
+            panel.setFont(new java.awt.Font("SansSerif", java.awt.Font.PLAIN, 12));
+            javax.swing.JLabel own = new javax.swing.JLabel("Image:");
+            own.setFont(new java.awt.Font("SansSerif", java.awt.Font.PLAIN, 10));
+            javax.swing.JLabel inherits = new javax.swing.JLabel("From:");
+            inherits.setFont(null);
+            panel.add(own);
+            panel.add(inherits);
+
+            SegSweepDialog.scaleFonts(panel);
+
+            assertEquals(18.0f, panel.getFont().getSize2D(), 0.01f);
+            assertEquals(15.0f, own.getFont().getSize2D(), 0.01f);
+            assertEquals(18.0f, inherits.getFont().getSize2D(), 0.01f);
+        } finally {
+            Prefs.setGuiScale(before);
+        }
+    }
+
     @Test
     public void tallContentScrollsInsideAWindowThatFitsTheScreen() throws Exception {
         Assume.assumeFalse(GraphicsEnvironment.isHeadless());
