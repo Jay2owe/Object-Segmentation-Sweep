@@ -106,6 +106,50 @@ public class MacroHardeningTest {
         assertTrue(new File(out, "grid.png").isFile());
     }
 
+    // ---- grid autosave failure in a macro ----
+
+    /**
+     * Found in review of 0.2.0: with the grid shown, a macro whose autosave
+     * failed (here the Save to folder lies under a file) only logged it and the
+     * macro carried on. It now stops the macro, as a run without the grid does.
+     */
+    @Test
+    public void failedGridAutosaveInAMacroStopsTheMacro() throws Exception {
+        File input = saveKneeImage("grid-save-fails.tif");
+        CapturingSweep ran = new CapturingSweep();
+        SegSweepResult result = ran.runFromMacro("image=[" + slashes(input)
+                + "] sweep=threshold values=[" + valuesOneTo(3) + "] pick=none hide_display");
+        assertNotNull("errors: " + ran.errors, result);
+
+        File blocker = tmp.newFile("a-file");
+        SegSweepMacroOptions options = SegSweepMacroOptionsParser.parse("image=["
+                + slashes(input) + "] sweep=threshold values=[" + valuesOneTo(3)
+                + "] pick=none autosave=[" + slashes(new File(blocker, "out")) + "]");
+        final List<String> aborted = new ArrayList<String>();
+        CapturingSweep inMacro = new CapturingSweep() {
+            @Override boolean inMacro() {
+                return true;
+            }
+
+            @Override void abortMacro(String message) {
+                aborted.add(message);
+            }
+        };
+        inMacro.saveInitialGrid(result, options, IJ.openImage(input.getPath()), null, false, null);
+
+        assertEquals(inMacro.reports().toString(), 1, inMacro.reports().size());
+        assertTrue(inMacro.reports().get(0), inMacro.reports().get(0).startsWith("Could not save sweep"));
+        assertEquals(1, aborted.size());
+
+        CapturingSweep interactive = new CapturingSweep() {
+            @Override boolean inMacro() {
+                return false;
+            }
+        };
+        interactive.saveInitialGrid(result, options, IJ.openImage(input.getPath()), null, false, null);
+        assertTrue(interactive.reports().toString(), interactive.reports().isEmpty());
+    }
+
     // ---- backslash paths ----
 
     @Test

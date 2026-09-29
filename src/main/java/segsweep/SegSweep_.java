@@ -228,6 +228,23 @@ public class SegSweep_ implements PlugIn {
         }, "SegSweep-Analysis").start();
     }
 
+    /**
+     * Cancel check for a sweep shown in the progress grid: the grid's Cancel
+     * button or Escape key set {@code cancelled}; Escape in the ImageJ window
+     * sets it through {@code escape}.
+     */
+    static BooleanSupplier progressGridCancel(final AtomicBoolean cancelled,
+                                              final BooleanSupplier escape) {
+        return new BooleanSupplier() {
+            @Override public boolean getAsBoolean() {
+                if (!cancelled.get() && escape != null && escape.getAsBoolean()) {
+                    cancelled.set(true);
+                }
+                return cancelled.get();
+            }
+        };
+    }
+
     private void runInteractiveWithProgressGrid(final SegSweepMacroOptions options,
                                                 final ImageLease lease) {
         final ImagePlus image = lease.image();
@@ -267,6 +284,11 @@ public class SegSweep_ implements PlugIn {
         new Thread(new Runnable() {
             @Override public void run() {
                 SegSweepResult result;
+                // Escape in the ImageJ window cancels too, as it does for a
+                // run without the grid; 0.2.0 only listened to the grid's own
+                // Cancel button and Escape key.
+                final BooleanSupplier escape = escapeCancel();
+                final BooleanSupplier cancelCheck = progressGridCancel(cancelled, escape);
                 try {
                     IJ.showStatus(COMMAND_NAME + ": running sweep...");
                     result = SegSweepAnalysis.run(options.toParameters(image),
@@ -278,11 +300,8 @@ public class SegSweep_ implements PlugIn {
                                         }
                                     });
                                 }
-                            }, new BooleanSupplier() {
-                                @Override public boolean getAsBoolean() {
-                                    return cancelled.get();
-                                }
-                            }, new Consumer<VariationResult>() {
+                            }, cancelCheck,
+                            new Consumer<VariationResult>() {
                                 @Override public void accept(final VariationResult cell) {
                                     SwingUtilities.invokeLater(new Runnable() {
                                         @Override public void run() {
@@ -291,7 +310,7 @@ public class SegSweep_ implements PlugIn {
                                     });
                                 }
                             });
-                    if (cancelled.get()) throw new CancellationException("Sweep cancelled.");
+                    if (cancelCheck.getAsBoolean()) throw new CancellationException("Sweep cancelled.");
                 } catch (CancellationException ex) {
                     lease.close();
                     SwingUtilities.invokeLater(new Runnable() {
@@ -325,10 +344,12 @@ public class SegSweep_ implements PlugIn {
                 boolean retainedByGrid = false;
                 try {
                     if (shouldAutoSaveImmediately(options)) {
-                        autoSaveOrSkip(result, options, image, null, null);
+                        autoSaveOrSkip(result, options, image, null, cancelCheck);
                     }
                     retainedByGrid = showMacroResult(result, options, lease);
                     IJ.showStatus(COMMAND_NAME + ": done.");
+                } catch (CancellationException ex) {
+                    IJ.showStatus(COMMAND_NAME + ": cancelled.");
                 } catch (Exception ex) {
                     reportError(ex.getMessage());
                 } finally {
@@ -387,7 +408,12 @@ public class SegSweep_ implements PlugIn {
         return true;
     }
 
-    private void saveInitialGrid(SegSweepResult result, SegSweepMacroOptions options,
+    /**
+     * Saves the reviewed grid's first output. In a macro a failed save stops
+     * the macro, as it does without the grid; 0.2.0 only logged it and the
+     * macro carried on as if the results were on disk.
+     */
+    void saveInitialGrid(SegSweepResult result, SegSweepMacroOptions options,
                                  ImagePlus image, final VariationGridWindow grid,
                                  boolean destinationMissing, BufferedImage snapshot) {
         final String status;
@@ -409,12 +435,15 @@ public class SegSweep_ implements PlugIn {
             }
             status = text;
         }
-        if (status != null) {
+        if (status != null && grid != null) {
             SwingUtilities.invokeLater(new Runnable() {
                 @Override public void run() {
                     grid.setActionStatus(status);
                 }
             });
+        }
+        if (status != null && !destinationMissing && inMacro()) {
+            reportError(status);
         }
     }
 
@@ -460,7 +489,8 @@ public class SegSweep_ implements PlugIn {
         grid.setPickResult(result.pick());
         String warnings = SegSweepDialog.warningsStatusText(result);
         if (warnings.length() > 0) {
-            grid.setActionStatus(warnings);
+            if (result.pick() != null) grid.appendActionStatus(warnings);
+            else grid.setActionStatus(warnings);
         }
         // Seed with the source's own colour table; "Grays" here used to turn a
         // coloured channel grey on the first LUT toggle or brightness edit.
@@ -532,37 +562,37 @@ public class SegSweep_ implements PlugIn {
 
     /**
      * Pick selected: materialising the label stack and writing the autosave
-     * tree take seconds on a 3D stack, so they run on a worker. The button is
-     * disabled until the worker finishes, and the image lease is held so a
-     * window close cannot close the image under the writer.
+     * tree take seconds on a 3D stack, so they run on a worker. Pick stays
+     * disabled until the worker finishes, even if another tile is selected, and
+     * the image lease is held so a window close cannot close the image under
+     * the writer. The save runs first and frees its label stack before the
+     * shown copy is built, so two full stacks are never held at once, and an
+     * OutOfMemoryError is reported and re-enables Pick instead of leaving it
+     * disabled for good.
      */
     private void pickSelected(final VariationGridWindow grid,
                               final SegSweepResult result,
                               final SegSweepMacroOptions options,
                               final ImageLease lease) {
+        if (grid.isPickRunning()) return;
         final ParameterCombo selected = grid.selectedCombo();
         if (selected == null) {
             grid.setActionStatus("Select a completed cell before picking it.");
             return;
         }
-        grid.setPickSelectedEnabled(false);
+        grid.setPickRunning(true);
         grid.setActionStatus("Picking " + selected + "...");
         final boolean destinationMissing = autoSaveDestinationMissing(options, lease.image());
         final BufferedImage reviewedGrid = destinationMissing ? null : reviewedGridOrNull(grid);
         lease.retain();
         new Thread(new Runnable() {
             @Override public void run() {
-                String status;
+                String status = "Pick did not finish.";
                 try {
                     String token = settingsTokenForSelected(result, selected);
                     SegSweepResult chosenResult = result.withPickedSelection(selected, token);
                     log(COMMAND_NAME + ": picked " + selected);
                     log(token);
-                    if (chosenResult.pickedLabelMap() != null) {
-                        ImagePlus labels = chosenResult.pickedLabelMap().get();
-                        labels.setTitle(COMMAND_NAME + " - picked labels");
-                        labels.show();
-                    }
                     if (destinationMissing) {
                         status = "Picked " + selected + "; not saved: " + NO_FILE_LOCATION_HINT;
                     } else {
@@ -571,20 +601,30 @@ public class SegSweep_ implements PlugIn {
                         log(COMMAND_NAME + ": saved manual pick to " + output.getAbsolutePath());
                         status = "Picked " + selected + "; saved to " + output.getAbsolutePath();
                     }
+                    if (chosenResult.pickedLabelMap() != null) {
+                        ImagePlus labels = chosenResult.pickedLabelMap().get();
+                        labels.setTitle(COMMAND_NAME + " - picked labels");
+                        segsweep.ui.render.LabelMapStyler.styleForViewing(labels);
+                        labels.show();
+                    }
                 } catch (Exception ex) {
                     status = "Could not save manual pick: "
                             + QuietImageOpener.oneLine(ex.getMessage());
                     showError(status);
+                } catch (OutOfMemoryError ex) {
+                    status = "Could not pick " + selected + ": not enough memory for its "
+                            + "label stack. Increase Fiji's memory (Edit > Options > Memory).";
+                    showError(status);
                 } finally {
                     lease.close();
+                    final String finalStatus = status;
+                    SwingUtilities.invokeLater(new Runnable() {
+                        @Override public void run() {
+                            grid.setActionStatus(finalStatus);
+                            grid.setPickRunning(false);
+                        }
+                    });
                 }
-                final String finalStatus = status;
-                SwingUtilities.invokeLater(new Runnable() {
-                    @Override public void run() {
-                        grid.setActionStatus(finalStatus);
-                        grid.setPickSelectedEnabled(grid.selectedCombo() != null);
-                    }
-                });
             }
         }, "SegSweep-Pick").start();
     }

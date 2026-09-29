@@ -121,6 +121,8 @@ public final class VariationGridWindow extends JDialog {
     private Dimension fitGridSize;
     private double zoom = 1.0;
     private boolean reviewControlsEnabled = true;
+    /** True while a Pick is being built and saved; Pick stays disabled until it ends. */
+    private boolean pickRunning;
     /** Cells whose result failed; counted once however often a result arrives. */
     private final Set<VariationCellPanel> failedCells =
             java.util.Collections.newSetFromMap(new IdentityHashMap<VariationCellPanel, Boolean>());
@@ -374,7 +376,22 @@ public final class VariationGridWindow extends JDialog {
     }
 
     public void setPickSelectedEnabled(boolean enabled) {
-        pickSelectedButton.setEnabled(enabled && reviewControlsEnabled);
+        pickSelectedButton.setEnabled(enabled && reviewControlsEnabled && !pickRunning);
+    }
+
+    /**
+     * Marks a Pick as running. Selecting another tile re-enabled Pick selected
+     * while the first pick was still building its label stack, so a second
+     * click (or a tile's Pick pill) could start a second pick into the same
+     * output; Pick now stays disabled until the running one ends.
+     */
+    public void setPickRunning(boolean running) {
+        pickRunning = running;
+        setPickSelectedEnabled(selectedCombo != null);
+    }
+
+    public boolean isPickRunning() {
+        return pickRunning;
     }
 
     /**
@@ -389,7 +406,7 @@ public final class VariationGridWindow extends JDialog {
         objectOverlaySourceChoice.setEnabled(enabled);
         lutToggleButton.setEnabled(enabled);
         brightnessButton.setEnabled(enabled);
-        pickSelectedButton.setEnabled(enabled && selectedCombo != null);
+        pickSelectedButton.setEnabled(enabled && selectedCombo != null && !pickRunning);
         for (int i = 0; i < cells.size(); i++) {
             cells.get(i).setPickAvailable(enabled);
         }
@@ -400,7 +417,22 @@ public final class VariationGridWindow extends JDialog {
     }
 
     public void setActionStatus(String text) {
-        statusLabel.setText(text == null || text.trim().length() == 0 ? " " : text);
+        String shown = text == null || text.trim().length() == 0 ? " " : text;
+        statusLabel.setText(shown);
+        // The footer can be narrower than a pick report plus warnings.
+        statusLabel.setToolTipText(shown.trim().isEmpty() ? null : shown);
+    }
+
+    /**
+     * Adds warnings after the current status instead of replacing it. The
+     * image-is-uncalibrated warning, common on unsaved images, used to replace
+     * the knee and stability report the moment the grid opened.
+     */
+    public void appendActionStatus(String text) {
+        if (text == null || text.trim().isEmpty()) return;
+        String current = statusLabel.getText();
+        setActionStatus(current == null || current.trim().isEmpty()
+                ? text : current + "  |  " + text);
     }
 
     public boolean isObjectOverlaySelected() {

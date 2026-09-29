@@ -21,6 +21,20 @@ public final class LabelMapStyler {
         return labelImage;
     }
 
+    /**
+     * Styles a label map about to be shown in an image window: the grid's own
+     * categorical table, with the display range starting at 0 and at least 255
+     * wide so labels 1-255 get exactly the colour their tile showed. The shown
+     * picked label map used to open with ImageJ's grey table, where labels
+     * 1..N of a 16-bit map are all but black.
+     */
+    public static ImagePlus styleForViewing(ImagePlus labelImage) {
+        if (labelImage == null) return null;
+        labelImage.setLut(CATEGORICAL_LUT);
+        labelImage.setDisplayRange(0, Math.max(255, maxDisplayValue(labelImage)));
+        return labelImage;
+    }
+
     public static int rgbForLabel(int label) {
         if (label <= 0) return 0x000000;
         Color color = colorForIndex(categoricalIndex(label));

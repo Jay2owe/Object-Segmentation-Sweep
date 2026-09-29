@@ -25,6 +25,52 @@ public class LabelMapStylerTest {
         assertEquals(0x000000, LabelMapStyler.rgbForLabel(0));
     }
 
+    /**
+     * Found by the GUI checks of 0.2.0: the picked label map opened with the
+     * grey table, so a 16-bit map's labels 1..N were near-black. Shown maps now
+     * carry the tile colours: label k is drawn exactly as its tile drew it.
+     */
+    @Test
+    public void viewedSixteenBitLabelMapShowsTileColoursPerLabel() {
+        ij.ImageStack stack = new ij.ImageStack(4, 1);
+        for (int z = 0; z < 2; z++) {
+            ij.process.ShortProcessor slice = new ij.process.ShortProcessor(4, 1);
+            slice.set(0, 0, 1);
+            slice.set(1, 0, 5);
+            slice.set(2, 0, 9);
+            stack.addSlice(slice);
+        }
+        ImagePlus labels = new ImagePlus("labels", stack);
+
+        LabelMapStyler.styleForViewing(labels);
+
+        assertEquals(0.0, labels.getDisplayRangeMin(), 0.0001);
+        assertEquals(255.0, labels.getDisplayRangeMax(), 0.0001);
+        for (int z = 1; z <= 2; z++) {
+            labels.setSlice(z);
+            java.awt.image.BufferedImage shown = labels.getProcessor().getBufferedImage();
+            for (int x = 0; x < 3; x++) {
+                int label = labels.getProcessor().get(x, 0);
+                assertEquals("slice " + z + " label " + label,
+                        LabelMapStyler.rgbForLabel(label), shown.getRGB(x, 0) & 0xffffff);
+            }
+            assertEquals(0x000000, shown.getRGB(3, 0) & 0xffffff);
+        }
+    }
+
+    @Test
+    public void viewedLabelMapWithMoreThan255LabelsKeepsEveryLabelInRange() {
+        ij.process.ShortProcessor slice = new ij.process.ShortProcessor(2, 1);
+        slice.set(0, 0, 1);
+        slice.set(1, 0, 700);
+        ImagePlus labels = new ImagePlus("many", slice);
+
+        LabelMapStyler.styleForViewing(labels);
+
+        assertEquals(700.0, labels.getDisplayRangeMax(), 0.0001);
+        assertTrue(labels.getProcessor().getColorModel() instanceof IndexColorModel);
+    }
+
     @Test
     public void applySetsCategoricalLutAndDisplayRangeFromLabels() {
         ByteProcessor labels = new ByteProcessor(3, 1);
