@@ -137,6 +137,42 @@ public class SegSweepThemeTest {
         assertFalse(state.explicitValuesLabel.isVisible());
     }
 
+    /**
+     * Found in review of 0.2.0: a suggestion still being computed when the
+     * axis changed was written into the range fields for the new axis. Both
+     * steps run in one event-thread task, so the suggestion cannot finish in
+     * between; the stale result is then dropped.
+     */
+    @Test
+    public void suggestionFinishingAfterAnAxisChangeIsDropped() throws Exception {
+        ImagePlus image = irregularComponentSizes();
+        final SegSweepDialog.DialogState state = SegSweepDialog.analysisStateForTest(image);
+        javax.swing.SwingUtilities.invokeAndWait(new Runnable() {
+            @Override public void run() {
+                state.axisChoice.setSelectedItem("min_size");
+                state.fromField.setText("10");
+                state.toField.setText("60");
+                state.stepField.setText("5");
+                state.suggestButton.doClick();
+                state.axisChoice.setSelectedItem("max_size");
+            }
+        });
+        long deadline = System.currentTimeMillis() + 30000L;
+        while (state.suggestionRunning && System.currentTimeMillis() < deadline) {
+            Thread.sleep(10L);
+        }
+        javax.swing.SwingUtilities.invokeAndWait(new Runnable() {
+            @Override public void run() {
+            }
+        });
+        assertFalse("suggestion finished", state.suggestionRunning);
+        assertEquals("10", state.fromField.getText());
+        assertEquals("60", state.toField.getText());
+        assertEquals("5", state.stepField.getText());
+        assertFalse(state.optionsFromFields().primaryAxis().hasExplicitValues());
+        assertFalse(state.explicitValuesLabel.isVisible());
+    }
+
     private static ImagePlus irregularComponentSizes() {
         ByteProcessor pixels = new ByteProcessor(80, 3);
         int[] sizes = { 2, 5, 8, 18, 23 };

@@ -34,6 +34,9 @@ import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.ScrollPaneConstants;
+import javax.swing.BorderFactory;
 import javax.swing.JTextField;
 import javax.swing.WindowConstants;
 import javax.swing.border.EmptyBorder;
@@ -84,7 +87,16 @@ public final class SegSweepDialog {
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
         content.setBackground(BG_COLOR);
         content.setBorder(new EmptyBorder(15, 20, 10, 20));
-        dialog.getContentPane().add(content, BorderLayout.CENTER);
+        // Scrolls rather than squeezes: rows appear while the dialog is open
+        // (channel, explicit values, ROI note), and a fixed-height box used to
+        // push the OUTPUT section and Save to off the bottom.
+        final JScrollPane scroll = new JScrollPane(content,
+                ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
+                ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        scroll.setBorder(BorderFactory.createEmptyBorder());
+        scroll.getViewport().setBackground(BG_COLOR);
+        scroll.getVerticalScrollBar().setUnitIncrement(scaled(16));
+        dialog.getContentPane().add(scroll, BorderLayout.CENTER);
 
         addInputSection(content, state);
         addAnalysisSection(content, state);
@@ -107,8 +119,11 @@ public final class SegSweepDialog {
         run.addActionListener(new ActionListener() {
             @Override public void actionPerformed(ActionEvent e) {
                 try {
-                    SegSweepMacroOptions options = state.optionsFromFields();
                     ImagePlus image = selectedImage(state);
+                    if (image == null) {
+                        throw new IllegalArgumentException(NO_IMAGE_MESSAGE);
+                    }
+                    SegSweepMacroOptions options = state.optionsFromFields();
                     if (!confirmFeasible(dialog, image, options)) {
                         return;
                     }
@@ -122,18 +137,64 @@ public final class SegSweepDialog {
             }
         });
 
+        // Honour Edit > Options > Appearance > GUI scale, as ImageJ's own dialogs do.
+        ij.gui.GUI.scale(dialog.getContentPane());
+
         applyRestoredOptions(state, SweepStateStore.restoreFor(selectedImage(state)));
 
         state.refreshCostLine();
         dialog.pack();
-        Dimension pref = dialog.getPreferredSize();
-        dialog.setSize(Math.max(560, pref.width), Math.min(620, Math.max(460, pref.height)));
+        fitToScreen(dialog, scroll, true);
         dialog.setLocationRelativeTo(null);
+        fitToScreen(dialog, scroll, false);
+        state.relayout = new Runnable() {
+            @Override public void run() {
+                fitToScreen(dialog, scroll, false);
+            }
+        };
         try {
             dialog.setVisible(true);
             return accepted[0];
         } finally {
             state.disposeBrowsedImage();
+        }
+    }
+
+    /** A pixel size multiplied by ImageJ's GUI scale, so fixed sizes grow with the text. */
+    public static int scaled(int pixels) {
+        double scale = ij.Prefs.getGuiScale();
+        if (!(scale > 0.0d) || Double.isInfinite(scale)) scale = 1.0d;
+        return (int) Math.round(pixels * Math.max(1.0d, scale));
+    }
+
+    /**
+     * Sizes the dialog to its content, within the usable screen (taskbar
+     * excluded); beyond that the content scrolls. After the first fit the
+     * dialog only grows, so typing in a field does not make it jump.
+     */
+    static void fitToScreen(java.awt.Window dialog, JScrollPane scroll, boolean initial) {
+        Rectangle screen = ij.gui.GUI.getMaxWindowBounds(dialog);
+        Dimension pref = dialog.getPreferredSize();
+        int width = Math.max(scaled(560), pref.width);
+        int height = pref.height;
+        if (height > screen.height && scroll != null) {
+            // The vertical scroll bar takes width from the rows.
+            width += scroll.getVerticalScrollBar().getPreferredSize().width;
+        }
+        if (!initial) {
+            width = Math.max(width, dialog.getWidth());
+            height = Math.max(height, dialog.getHeight());
+        }
+        width = Math.min(width, screen.width);
+        height = Math.min(height, screen.height);
+        if (width != dialog.getWidth() || height != dialog.getHeight()) {
+            dialog.setSize(width, height);
+            dialog.validate();
+        }
+        int x = Math.max(screen.x, Math.min(dialog.getX(), screen.x + screen.width - width));
+        int y = Math.max(screen.y, Math.min(dialog.getY(), screen.y + screen.height - height));
+        if (x != dialog.getX() || y != dialog.getY()) {
+            dialog.setLocation(x, y);
         }
     }
 
@@ -318,7 +379,18 @@ public final class SegSweepDialog {
         }
     }
 
+    /**
+     * Shown in the cost line and on Run when no image is chosen. With no image
+     * open the dialog used to say "No parameter sweep was provided.", which
+     * sent the user to the range fields instead of the Image row.
+     */
+    static final String NO_IMAGE_MESSAGE = "No image is selected. Open an image in ImageJ, "
+            + "or choose a file with Browse...";
+
     public static String costEstimateText(ImagePlus image, SegSweepMacroOptions options) {
+        if (image == null) {
+            return NO_IMAGE_MESSAGE;
+        }
         ResourceGuard.Feasibility feasibility = feasibility(image, options);
         long combinations = combinationCount(options);
         boolean gridRequested = options == null
@@ -455,7 +527,7 @@ public final class SegSweepDialog {
         JPanel imageRow = row("Image:");
         state.imageChoice = new JComboBox<String>(imageTitles());
         state.imageChoice.setSelectedItem(defaultImageTitle());
-        state.imageChoice.setMaximumSize(new Dimension(300, 24));
+        state.imageChoice.setMaximumSize(new Dimension(scaled(300), scaled(24)));
         imageRow.add(state.imageChoice);
         JButton browse = new JButton("Browse...");
         state.browseButton = browse;
@@ -562,6 +634,7 @@ public final class SegSweepDialog {
                 // The histogram of a large stack takes seconds; compute it off
                 // the event thread so the dialog keeps painting.
                 final java.awt.Component root = javax.swing.SwingUtilities.getRoot(suggest);
+                final int generation = state.suggestionGeneration;
                 suggest.setEnabled(false);
                 state.suggestionRunning = true;
                 if (root != null) root.setCursor(
@@ -577,6 +650,7 @@ public final class SegSweepDialog {
                             suggest.setEnabled(supportsRangeSuggestion(ParameterId.fromStableKey(
                                     (String) state.axisChoice.getSelectedItem())));
                             if (root != null) root.setCursor(java.awt.Cursor.getDefaultCursor());
+                            if (state.suggestionGeneration != generation) return;
                             ParameterValueList list;
                             try {
                                 list = get();
@@ -666,7 +740,7 @@ public final class SegSweepDialog {
         JPanel row = row(label);
         JComboBox<String> combo = new JComboBox<String>(items);
         combo.setSelectedItem(selected);
-        combo.setMaximumSize(new Dimension(260, 24));
+        combo.setMaximumSize(new Dimension(scaled(260), scaled(24)));
         row.add(combo);
         content.add(row);
         return combo;
@@ -690,7 +764,7 @@ public final class SegSweepDialog {
     }
 
     private static JLabel addMessage(JPanel content, String text) {
-        JLabel label = new JLabel("<html><body style='width:430px;'>" + text + "</body></html>");
+        JLabel label = new JLabel("<html><body style='width:" + scaled(430) + "px;'>" + text + "</body></html>");
         label.setForeground(LABEL_COLOR);
         content.add(label);
         return label;
@@ -747,7 +821,7 @@ public final class SegSweepDialog {
         row.setOpaque(false);
         JLabel label = new JLabel(labelText);
         label.setForeground(LABEL_COLOR);
-        label.setPreferredSize(new Dimension(112, 22));
+        label.setPreferredSize(new Dimension(scaled(112), scaled(22)));
         row.add(label);
         return row;
     }
@@ -877,6 +951,19 @@ public final class SegSweepDialog {
         /** True from Suggest range until its result is shown; read by tests. */
         volatile boolean suggestionRunning;
         volatile boolean suggestionComputedOnEdt;
+        /**
+         * Bumped whenever a shown suggestion stops applying (another axis,
+         * image, crop or channel, or typed range values). A suggestion that
+         * finishes after such a change is dropped rather than written into the
+         * fields for the wrong axis or image.
+         */
+        int suggestionGeneration;
+        /** Refits the shown dialog when rows appear or text grows; null until shown. */
+        Runnable relayout;
+
+        void relayout() {
+            if (relayout != null) relayout.run();
+        }
 
         DialogState(ImagePlus image) {
             this.image = image;
@@ -980,21 +1067,24 @@ public final class SegSweepDialog {
 
         void clearSuggestedPrimaryValues() {
             if (applyingSuggestedPrimaryValues) return;
+            suggestionGeneration++;
             suggestedPrimaryAxis = null;
             suggestedPrimaryValues = null;
             if (explicitValuesLabel != null) {
                 explicitValuesLabel.setText("");
                 explicitValuesLabel.setVisible(false);
             }
+            relayout();
         }
 
         void showSuggestedPrimaryValues() {
             if (explicitValuesLabel == null || suggestedPrimaryValues == null) return;
-            explicitValuesLabel.setText("<html><body style='width:430px;'><b>Using explicit values:</b> "
+            explicitValuesLabel.setText("<html><body style='width:" + scaled(430) + "px;'><b>Using explicit values:</b> "
                     + suggestedPrimaryValues.toCanonicalJson()
                     + ". From/To/Step summarize the list; editing any field switches to a regular range."
                     + "</body></html>");
             explicitValuesLabel.setVisible(true);
+            relayout();
         }
 
         void refreshCostLine() {
@@ -1004,14 +1094,15 @@ public final class SegSweepDialog {
                 String note = cropChoice != null
                         && "Sweep in ROI".equals(cropChoice.getSelectedItem())
                         ? roiCropNote(chosen) : "";
-                costLine.setText("<html><body style='width:430px;'>"
+                costLine.setText("<html><body style='width:" + scaled(430) + "px;'>"
                         + (note.isEmpty() ? "" : note + "<br>")
                         + costEstimateText(chosen, optionsFromFields())
                         + "</body></html>");
             } catch (RuntimeException e) {
-                costLine.setText("<html><body style='width:430px;'>" + e.getMessage()
+                costLine.setText("<html><body style='width:" + scaled(430) + "px;'>" + e.getMessage()
                         + "</body></html>");
             }
+            relayout();
         }
 
         void refreshInputMetadata() {
@@ -1035,6 +1126,7 @@ public final class SegSweepDialog {
             if (calibrationLabel != null) {
                 calibrationLabel.setText(calibrationReadout(chosen));
             }
+            relayout();
         }
     }
 
