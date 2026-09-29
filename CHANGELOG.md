@@ -6,10 +6,14 @@ All notable changes to Object Segmentation Sweep are documented here. The format
 
 ## [Unreleased]
 
-## [0.2.1] - Unreleased
+## [0.2.1] - 2026-09-29
 
 Fixes found by driving 0.2.0 in a real Fiji window and by a review of the 0.2.0 changes. Measurement
 outputs (tables, picks, label values) are unchanged.
+
+### Changed
+
+- Settings tokens and saved-file headers record version 0.2.1.
 
 ### Fixed
 

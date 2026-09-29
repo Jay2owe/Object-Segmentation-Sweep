@@ -49,8 +49,8 @@ upload; until then use the JAR below.
 
 ### Manual JAR
 
-Download `Object-Segmentation-Sweep-0.2.0.jar` from the
-[GitHub release](https://github.com/Jay2owe/Object-Segmentation-Sweep/releases/tag/v0.2.0), put it
+Download `Object-Segmentation-Sweep-0.2.1.jar` from the
+[GitHub release](https://github.com/Jay2owe/Object-Segmentation-Sweep/releases/tag/v0.2.1), put it
 in Fiji's `plugins/` folder and restart Fiji. Install only that JAR: `oc3d-core` is already inside
 it, relocated under `segsweep.internal.core`.
 
@@ -131,7 +131,7 @@ Options (every key the command accepts):
 | --- | --- | --- |
 | `image` | active image | Open-window title or file path |
 | `channel` | `1` | One-based channel |
-| `engine` | `classical` | The only executable v0.2.0 engine |
+| `engine` | `classical` | The only executable engine in v0.2.1 |
 | `sweep`, `from`, `to`, `step` | threshold, 10, 60, 5 | Primary axis; each missing value takes its default |
 | `values` | none | Explicit comma-separated primary values instead of `from`/`to`/`step` |
 | `sweep2`, `from2`, `to2`, `step2`, `values2` | none | Optional secondary axis (no defaults) |
@@ -236,7 +236,7 @@ mvn -f oc3d-core/pom.xml clean install
 .\mvnw.cmd clean verify
 ```
 
-The plugin is written to `target/Object-Segmentation-Sweep-0.2.0.jar`. `verify` also loads the
+The plugin is written to `target/Object-Segmentation-Sweep-0.2.1.jar`. `verify` also loads the
 packaged JAR in an isolated class loader to check the relocated core, and GitHub Actions repeats
 the same bootstrap from a fresh checkout.
 
@@ -266,12 +266,12 @@ the same bootstrap from a fresh checkout.
 See [`CITATION.cff`](CITATION.cff) (GitHub's "Cite this repository" button reads it). Until an
 archived DOI is minted, cite the version and source:
 
-> Malcolm, J. (2026). Object Segmentation Sweep (v0.2.0) [Software]. GitHub.
+> Malcolm, J. (2026). Object Segmentation Sweep (v0.2.1) [Software]. GitHub.
 > https://github.com/Jay2owe/Object-Segmentation-Sweep
 
 Suggested methods sentence:
 
-> Segmentation thresholds were reviewed with Object Segmentation Sweep (v0.2.0), recording the
+> Segmentation thresholds were reviewed with Object Segmentation Sweep (v0.2.1), recording the
 > object-count knee and neighbour-IoU stability together with the crop and parameter range;
 > object-based colocalization was measured with CPC (v1.4.0).
 
