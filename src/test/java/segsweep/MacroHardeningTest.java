@@ -65,6 +65,19 @@ public class MacroHardeningTest {
         @Override void showError(String text) {
             errors.add(text);
         }
+
+        /**
+         * Every error report, wherever it went: the dialog when a display exists,
+         * the Log (as "... ERROR: text") when headless, as on CI.
+         */
+        List<String> reports() {
+            List<String> all = new ArrayList<String>(errors);
+            for (String line : logs) {
+                int at = line.indexOf(" ERROR: ");
+                if (at >= 0) all.add(line.substring(at + " ERROR: ".length()));
+            }
+            return all;
+        }
     }
 
     // ---- allow_oversized honoured by the macro and autosave checks ----
@@ -79,8 +92,8 @@ public class MacroHardeningTest {
 
         CapturingSweep refused = new CapturingSweep();
         assertNull(refused.runFromMacro(base));
-        assertEquals(1, refused.errors.size());
-        assertTrue(refused.errors.get(0), refused.errors.get(0).contains("150 cells"));
+        assertEquals(refused.reports().toString(), 1, refused.reports().size());
+        assertTrue(refused.reports().get(0), refused.reports().get(0).contains("150 cells"));
 
         SegSweepMacroOptions recorded = SegSweepMacroOptionsParser.parse(base + " allow_oversized");
         String replay = recorded.toMacroOptions();
@@ -266,7 +279,7 @@ public class MacroHardeningTest {
     public void outsideAMacroErrorsReturnNullWithoutAborting() {
         CapturingSweep sweep = new CapturingSweep();
         assertNull(sweep.runFromMacro("sweep=threshold bogus=1"));
-        assertEquals(1, sweep.errors.size());
+        assertEquals(sweep.reports().toString(), 1, sweep.reports().size());
     }
 
     // ---- recorder ----
