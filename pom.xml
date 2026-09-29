@@ -86,6 +86,8 @@
 		<oc3d-core.version>0.1.0</oc3d-core.version>
 		<license.licenseName>bsd_3</license.licenseName>
 		<license.copyrightOwners>Jamie Malcolm</license.copyrightOwners>
+		<!-- Filled by the jdk9+ profile; Java 8 refuses to start with add-opens. -->
+		<segsweep.surefire.jdk9.args />
 	</properties>
 
 	<repositories>
@@ -192,13 +194,13 @@
 				     test builds a 256x256x64 tree (~160 B/voxel up front), so the
 				     fork needs more; everything else still fits in 512m. -->
 				<configuration>
-					<argLine>@{argLine} -Xms512m -Xmx1536m -Dapple.awt.UIElement=true --add-opens=java.base/java.lang=ALL-UNNAMED</argLine>
+					<argLine>@{argLine} -Xms512m -Xmx1536m -Dapple.awt.UIElement=true ${segsweep.surefire.jdk9.args} ${scijava.surefire.args}</argLine>
 				</configuration>
 				<executions>
 					<execution>
 						<id>default-test</id>
 						<configuration>
-							<argLine>@{argLine} -Xms512m -Xmx1536m -Dapple.awt.UIElement=true --add-opens=java.base/java.lang=ALL-UNNAMED</argLine>
+							<argLine>@{argLine} -Xms512m -Xmx1536m -Dapple.awt.UIElement=true ${segsweep.surefire.jdk9.args} ${scijava.surefire.args}</argLine>
 						</configuration>
 					</execution>
 				</executions>
@@ -229,4 +231,16 @@
 			</plugin>
 		</plugins>
 	</build>
+
+	<profiles>
+		<profile>
+			<id>segsweep-jdk9-test-args</id>
+			<activation>
+				<jdk>[9,)</jdk>
+			</activation>
+			<properties>
+				<segsweep.surefire.jdk9.args>--add-opens=java.base/java.lang=ALL-UNNAMED</segsweep.surefire.jdk9.args>
+			</properties>
+		</profile>
+	</profiles>
 </project>
