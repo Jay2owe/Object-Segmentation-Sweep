@@ -267,6 +267,63 @@ public class AutoSaveWriterTest {
         assertTrue(containsBytes(bytes, new byte[] { (byte) 0xce, (byte) 0xbc }));
     }
 
+    /**
+     * Escape while the picked label stack was built used to leave the tables,
+     * grid.png and picked_settings.txt behind with no labels, which read as a
+     * finished pick. A cancel now leaves no folder at all.
+     */
+    @Test
+    public void cancelWhileLabelsAreBuiltLeavesNoPartialFolder() throws Exception {
+        File input = tmp.newFile("cancelled.tif");
+        SegSweepResult result = runPickedResult(SegSweepAnalysisTest.designedKneeStack(true));
+        assertNotNull(result.pickedLabelMap());
+        File desired = new File(tmp.getRoot(), "out");
+        final int[] polls = new int[1];
+        java.util.function.BooleanSupplier cancelOnFirstPoll = new java.util.function.BooleanSupplier() {
+            @Override public boolean getAsBoolean() {
+                polls[0]++;
+                return true;
+            }
+        };
+        try {
+            AutoSaveWriter.writeTo(desired, input, result, null, cancelOnFirstPoll);
+            org.junit.Assert.fail("a cancelled save must not complete");
+        } catch (java.util.concurrent.CancellationException expected) {
+            // Expected.
+        }
+        assertTrue(polls[0] > 0);
+        String[] left = desired.list();
+        assertTrue("cancelled save left " + java.util.Arrays.toString(left),
+                !desired.exists() || left == null || left.length == 0);
+    }
+
+    /** Escape pressed after the last combination, with nothing picked, still saves nothing. */
+    @Test
+    public void cancelBeforeSavingWithoutAPickWritesNothing() throws Exception {
+        File input = tmp.newFile("nopick.tif");
+        SegSweepResult result = SegSweep.run(SegSweepParameters.builder()
+                .image(SegSweepAnalysisTest.designedKneeStack(true))
+                .axis(ParameterId.THRESHOLD, 10, 60, 10)
+                .pickCriterion(SegSweepParameters.PickCriterion.NONE)
+                .build());
+        assertNull(result.pickedLabelMap());
+        File desired = new File(tmp.getRoot(), "out-nopick");
+        try {
+            AutoSaveWriter.writeTo(desired, input, result, null,
+                    new java.util.function.BooleanSupplier() {
+                        @Override public boolean getAsBoolean() {
+                            return true;
+                        }
+                    });
+            org.junit.Assert.fail("a cancelled save must not complete");
+        } catch (java.util.concurrent.CancellationException expected) {
+            // Expected.
+        }
+        String[] left = desired.list();
+        assertTrue("cancelled save left " + java.util.Arrays.toString(left),
+                !desired.exists() || left == null || left.length == 0);
+    }
+
     private static SegSweepResult runPickedResult(ImagePlus image) {
         return SegSweep.run(SegSweepParameters.builder()
                 .image(image)

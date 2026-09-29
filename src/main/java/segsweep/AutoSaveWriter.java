@@ -130,26 +130,53 @@ public final class AutoSaveWriter {
                                  BooleanSupplier cancelCheck) throws IOException {
         validate(outputDir, inputFile, result);
         if (reviewedGrid == null) ensureSyntheticGridFeasible(result);
-        mkdirs(outputDir);
-        File labelsDir = new File(outputDir, "labels");
-        mkdirs(labelsDir);
+        // The picked label stack is the only step that can be cancelled, so it
+        // is built before anything is written. Escape during it used to leave a
+        // folder holding the tables, grid.png and picked_settings.txt but no
+        // labels, which read as a finished pick.
+        ImagePlus pickedLabels = materialisePickedLabels(result, cancelCheck);
+        try {
+            // Escape pressed after the last combination still cancels the save.
+            if (cancelCheck != null && cancelCheck.getAsBoolean()) {
+                throw new java.util.concurrent.CancellationException(
+                        "Object Segmentation Sweep was cancelled before saving.");
+            }
+            mkdirs(outputDir);
+            File labelsDir = new File(outputDir, "labels");
+            mkdirs(labelsDir);
 
-        saveTable(result.sweepTable(), new File(outputDir, "sweep_results.csv"));
-        saveTable(result.pickTable(), new File(outputDir, "pick_summary.csv"));
-        if (result.pickedCombo() != null && !result.pickedSettingsToken().trim().isEmpty()) {
-            writeText(new File(outputDir, "picked_settings.txt"), result.pickedSettingsToken());
+            saveTable(result.sweepTable(), new File(outputDir, "sweep_results.csv"));
+            saveTable(result.pickTable(), new File(outputDir, "pick_summary.csv"));
+            if (result.pickedCombo() != null
+                    && !result.pickedSettingsToken().trim().isEmpty()) {
+                writeText(new File(outputDir, "picked_settings.txt"),
+                        result.pickedSettingsToken());
+            }
+            File gridFile = new File(outputDir, "grid.png");
+            if (reviewedGrid == null) {
+                writeGridPng(gridFile, result);
+            } else if (!ImageIO.write(reviewedGrid, "png", gridFile)) {
+                throw new IOException("No PNG writer was available for "
+                        + gridFile.getAbsolutePath());
+            }
+            writePickedLabels(new File(labelsDir, baseName(inputFile) + "_picked.tif"),
+                    pickedLabels);
+            writeText(new File(outputDir, "README.txt"), readmeText());
+            writeText(new File(labelsDir, "README.txt"), labelsReadmeText());
+        } finally {
+            if (pickedLabels != null) {
+                pickedLabels.changes = false;
+                pickedLabels.close();
+                pickedLabels.flush();
+            }
         }
-        File gridFile = new File(outputDir, "grid.png");
-        if (reviewedGrid == null) {
-            writeGridPng(gridFile, result);
-        } else if (!ImageIO.write(reviewedGrid, "png", gridFile)) {
-            throw new IOException("No PNG writer was available for "
-                    + gridFile.getAbsolutePath());
-        }
-        writePickedLabels(new File(labelsDir, baseName(inputFile) + "_picked.tif"), result,
-                cancelCheck);
-        writeText(new File(outputDir, "README.txt"), readmeText());
-        writeText(new File(labelsDir, "README.txt"), labelsReadmeText());
+    }
+
+    /** The picked label stack, or null when nothing was picked; honours {@code cancelCheck}. */
+    private static ImagePlus materialisePickedLabels(SegSweepResult result,
+                                                     BooleanSupplier cancelCheck) {
+        LazyLabelMap labelMap = result.pickedLabelMap();
+        return labelMap == null ? null : labelMap.get(cancelCheck);
     }
 
     static DirectoryReservation reserveDirectory(File desired) throws IOException {
@@ -287,27 +314,18 @@ public final class AutoSaveWriter {
         }
     }
 
-    private static void writePickedLabels(File file, SegSweepResult result,
-                                          BooleanSupplier cancelCheck) throws IOException {
-        LazyLabelMap labelMap = result.pickedLabelMap();
-        if (labelMap == null) {
+    private static void writePickedLabels(File file, ImagePlus labels) throws IOException {
+        if (labels == null) {
             return;
         }
-        ImagePlus labels = labelMap.get(cancelCheck);
-        try {
-            labels.setTitle(baseName(file));
-            FileSaver saver = new FileSaver(labels);
-            boolean ok = labels.getStackSize() > 1
-                    ? saver.saveAsTiffStack(file.getAbsolutePath())
-                    : saver.saveAsTiff(file.getAbsolutePath());
-            if (!ok) {
-                throw new IOException("ImageJ FileSaver refused to write "
-                        + file.getAbsolutePath());
-            }
-        } finally {
-            labels.changes = false;
-            labels.close();
-            labels.flush();
+        labels.setTitle(baseName(file));
+        FileSaver saver = new FileSaver(labels);
+        boolean ok = labels.getStackSize() > 1
+                ? saver.saveAsTiffStack(file.getAbsolutePath())
+                : saver.saveAsTiff(file.getAbsolutePath());
+        if (!ok) {
+            throw new IOException("ImageJ FileSaver refused to write "
+                    + file.getAbsolutePath());
         }
     }
 
