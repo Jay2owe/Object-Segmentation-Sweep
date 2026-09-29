@@ -15,37 +15,18 @@ import segsweep.SegSweepLabeller;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+/**
+ * Cost-shape checks that need no timing: one tree serves many queries without
+ * materialising label maps. Timings live in {@code segsweep.bench.SweepBenchmark}.
+ */
 public class ComponentTreeBenchmarkSmokeTest {
-    @Test
-    public void recordsBuildCostOnceAndQueryCostSeparately() {
-        ImagePlus image = ComponentTreeOracleFixtures.equivalenceStack();
-        long buildStarted = System.nanoTime();
-        ComponentTree tree = ComponentTree.build(image, SegSweepLabeller.Connectivity.SIX);
-        long buildNanos = System.nanoTime() - buildStarted;
-
-        long queryStarted = System.nanoTime();
-        int queryCount = 0;
-        for (int threshold = 0; threshold <= 80; threshold += 5) {
-            tree.query(ComponentTreeQuery.builder()
-                    .threshold(threshold)
-                    .minSize(1)
-                    .maxSize(Integer.MAX_VALUE)
-                    .build()).objectCount();
-            queryCount++;
-        }
-        long queryNanos = System.nanoTime() - queryStarted;
-
-        assertTrue(buildNanos >= 0L);
-        assertTrue(queryNanos >= 0L);
-        assertEquals(17, queryCount);
-    }
-
     @Test
     public void repeatedQueriesDoNotMaterialiseLabelMaps() {
         ImagePlus image = ComponentTreeOracleFixtures.equivalenceStack();
         ComponentTree tree = ComponentTree.build(image, SegSweepLabeller.Connectivity.TWENTY_SIX);
 
         ComponentTreeResult last = null;
+        int queries = 0;
         for (int threshold = 0; threshold <= 80; threshold += 10) {
             last = tree.query(ComponentTreeQuery.builder()
                     .threshold(threshold)
@@ -54,7 +35,23 @@ public class ComponentTreeBenchmarkSmokeTest {
                     .build());
             last.objectCount();
             assertEquals(0, last.labelMap().materializationCount());
+            queries++;
         }
+        assertEquals(9, queries);
         assertTrue(last != null);
+    }
+
+    @Test
+    public void aSliceCountsAsOneMaterialisationAndLeavesTheTreeIntact() {
+        ImagePlus image = ComponentTreeOracleFixtures.equivalenceStack();
+        ComponentTree tree = ComponentTree.build(image, SegSweepLabeller.Connectivity.SIX);
+        long storedBefore = tree.storedVoxelMembershipCount();
+        ComponentTreeResult result = tree.query(ComponentTreeQuery.builder()
+                .threshold(0).minSize(1).build());
+
+        result.labelMap().getSlice(1);
+
+        assertEquals(1, result.labelMap().materializationCount());
+        assertEquals(storedBefore, tree.storedVoxelMembershipCount());
     }
 }

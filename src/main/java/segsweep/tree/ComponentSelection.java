@@ -120,6 +120,10 @@ public final class ComponentSelection {
         return tree.voxelsByNodeId(nodeId, cancelCheck);
     }
 
+    void paintPlane(int nodeId, int z, short[] pixels, int label, BooleanSupplier cancelCheck) {
+        tree.paintPlane(nodeId, z, pixels, label, cancelCheck);
+    }
+
     Calibration calibrationCopy() {
         if (tree != null) return tree.calibrationCopy();
         return detachedCalibration == null ? null : detachedCalibration.copy();

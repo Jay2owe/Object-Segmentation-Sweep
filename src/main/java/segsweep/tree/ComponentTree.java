@@ -245,10 +245,66 @@ public final class ComponentTree {
     }
 
     int[] voxelsByNodeId(int nodeId, BooleanSupplier cancelCheck) {
+        return voxels(nodeData(nodeId), cancelCheck);
+    }
+
+    NodeData nodeData(int nodeId) {
         if (nodeId < 0 || nodeId >= nodes.size()) {
             throw new IllegalArgumentException("nodeId is outside this component tree");
         }
-        return voxels(nodes.get(nodeId), cancelCheck);
+        return nodes.get(nodeId);
+    }
+
+    /**
+     * Writes {@code label} into {@code pixels} (one Z plane) at every voxel of
+     * the node's component that lies in plane {@code z}. Subtrees whose Z range
+     * misses the plane are skipped, and each node's own voxels (stored in
+     * ascending index order) are narrowed to the plane by binary search, so the
+     * cost follows the voxels in the plane rather than the whole object.
+     */
+    void paintPlane(int nodeId, int z, short[] pixels, int label, BooleanSupplier cancelCheck) {
+        NodeData root = nodeData(nodeId);
+        if (z < root.minZ || z > root.maxZ) return;
+        int plane = width * height;
+        int low = z * plane;
+        int high = low + plane;
+        short value = (short) label;
+        int pops = 0;
+        int[] pending = new int[16];
+        int size = 0;
+        pending[size++] = nodeId;
+        while (size > 0) {
+            if ((pops++ & 63) == 0) {
+                checkCancelled(cancelCheck, "Label-map materialisation was cancelled.");
+            }
+            NodeData current = nodes.get(pending[--size]);
+            int[] voxels = current.voxels;
+            int from = lowerBound(voxels, low);
+            for (int i = from; i < voxels.length && voxels[i] < high; i++) {
+                pixels[voxels[i] - low] = value;
+            }
+            for (int i = 0; i < current.childIds.size(); i++) {
+                int childId = current.childIds.get(i).intValue();
+                NodeData child = nodes.get(childId);
+                if (z < child.minZ || z > child.maxZ) continue;
+                if (size == pending.length) pending = Arrays.copyOf(pending, size * 2);
+                pending[size++] = childId;
+            }
+        }
+    }
+
+    private static int lowerBound(int[] values, int target) {
+        int low = 0;
+        int high = values.length;
+        while (low < high) {
+            int middle = (low + high) >>> 1;
+            if (values[middle] < target) {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
+        return low;
     }
 
     Calibration calibrationCopy() {
@@ -397,19 +453,28 @@ public final class ComponentTree {
         return feretDiameterMax(data, null);
     }
 
-    synchronized double feretDiameterMax(NodeData data, BooleanSupplier cancelCheck) {
-        if (Double.isNaN(data.feretDiameterMax)) {
-            if (data.voxelCount > MAX_EXACT_FERET_VOXELS) {
-                throw new SweepRefusedException("Exact Feret diameter for a "
-                        + data.voxelCount + "-voxel object exceeds the bounded v0.2 limit of "
-                        + MAX_EXACT_FERET_VOXELS
-                        + ". Add a cheaper size/morphology filter or crop more tightly.");
-            }
-            data.feretDiameterMax = exactFeret(
-                    voxels(data, cancelCheck), cancelCheck);
-            feretComputationCount++;
+    /**
+     * Exact maximum Feret diameter, cached per node. The pairwise scan runs
+     * outside the tree's lock so parallel sweep workers do not queue behind one
+     * another; the value is deterministic, so the first result published wins.
+     */
+    double feretDiameterMax(NodeData data, BooleanSupplier cancelCheck) {
+        double cached = data.feretDiameterMax;
+        if (!Double.isNaN(cached)) return cached;
+        if (data.voxelCount > MAX_EXACT_FERET_VOXELS) {
+            throw new SweepRefusedException("Exact Feret diameter for a "
+                    + data.voxelCount + "-voxel object exceeds the bounded v0.2 limit of "
+                    + MAX_EXACT_FERET_VOXELS
+                    + ". Add a cheaper size/morphology filter or crop more tightly.");
         }
-        return data.feretDiameterMax;
+        double computed = exactFeret(voxels(data, cancelCheck), cancelCheck);
+        synchronized (this) {
+            if (Double.isNaN(data.feretDiameterMax)) {
+                data.feretDiameterMax = computed;
+                feretComputationCount++;
+            }
+            return data.feretDiameterMax;
+        }
     }
 
     int[] voxels(NodeData data) {
@@ -537,7 +602,8 @@ public final class ComponentTree {
         final double xzSum;
         final double yzSum;
         final int[] voxels;
-        double feretDiameterMax = Double.NaN;
+        /** Cached exact Feret diameter; NaN until computed. Volatile for the unlocked read. */
+        volatile double feretDiameterMax = Double.NaN;
 
         NodeData(int id,
                  float level,

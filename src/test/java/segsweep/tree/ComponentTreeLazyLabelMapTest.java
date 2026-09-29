@@ -69,6 +69,52 @@ public class ComponentTreeLazyLabelMapTest {
         assertEquals(0, distinctNonZero(labels));
     }
 
+    @Test
+    public void everySliceAndTheFullStackMatchAVoxelByVoxelReference() {
+        java.util.Random random = new java.util.Random(808L);
+        for (int volume = 0; volume < 40; volume++) {
+            int w = 3 + random.nextInt(10);
+            int h = 3 + random.nextInt(10);
+            int d = 1 + random.nextInt(7);
+            ImagePlus image = SegSweepLabellerFixtures.calibratedEmptyStack(w, h, d);
+            for (int z = 0; z < d; z++) {
+                for (int y = 0; y < h; y++) {
+                    for (int x = 0; x < w; x++) {
+                        SegSweepLabellerFixtures.setVoxel(image, x, y, z, random.nextInt(40));
+                    }
+                }
+            }
+            ComponentTree tree = ComponentTree.build(image, random.nextBoolean()
+                    ? SegSweepLabeller.Connectivity.SIX
+                    : SegSweepLabeller.Connectivity.TWENTY_SIX);
+            for (int threshold = 0; threshold < 40; threshold += 7) {
+                ComponentTreeResult result = tree.query(ComponentTreeQuery.builder()
+                        .threshold(threshold).minSize(1 + random.nextInt(3)).build());
+                short[][] expected = referenceLabels(result.selection(), w, h, d);
+                ImagePlus stack = result.labelMap().get();
+                for (int z = 0; z < d; z++) {
+                    String at = "volume " + volume + " threshold " + threshold + " z " + z;
+                    org.junit.Assert.assertArrayEquals(at + " (stack)", expected[z],
+                            (short[]) stack.getStack().getPixels(z + 1));
+                    org.junit.Assert.assertArrayEquals(at + " (slice)", expected[z],
+                            (short[]) result.labelMap().getSlice(z + 1).getProcessor().getPixels());
+                }
+            }
+        }
+    }
+
+    /** Labels written voxel by voxel from each selected object's full voxel list. */
+    private static short[][] referenceLabels(ComponentSelection selection, int w, int h, int d) {
+        short[][] planes = new short[d][w * h];
+        int[][] objects = selection.objectVoxelIndices();
+        for (int label = 1; label <= objects.length; label++) {
+            for (int voxel : objects[label - 1]) {
+                planes[voxel / (w * h)][voxel % (w * h)] = (short) label;
+            }
+        }
+        return planes;
+    }
+
     private static int distinctNonZero(ImagePlus image) {
         Set<Integer> values = new HashSet<Integer>();
         ImageProcessor processor = image.getStack().getProcessor(1);

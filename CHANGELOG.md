@@ -29,6 +29,21 @@ All notable changes to Object Segmentation Sweep are documented here. The format
 - A one-axis sweep wraps its tiles into rows that fit the screen instead of one long row.
 - The "Filtered/Raw image" chooser is hidden: for the classical engine both are the same crop.
 - Clicking a tile selects it on release; holding to peek no longer selects it.
+- Faster engine, outputs unchanged (median of 5 runs, 3 interleaved before/after rounds, 16 cpus):
+
+  | Step | 16-bit smoothed 128x128x64 | 32-bit all-distinct 128x128x32 |
+  |---|---|---|
+  | Tree build | 3718 -> 1555 ms (2.4x) | 2268 -> 1094 ms (2.1x) |
+  | Full label stack | 6544 -> 48 ms (137x) | 4221 -> 55 ms (76x) |
+  | One label slice for every z | 2011 -> 185 ms (10.9x) | 1029 -> 484 ms (2.1x) |
+
+  A 5x5 threshold by minimum-size sweep with stability scoring went from 1245 to 705 ms (1.8x);
+  threshold queries are unchanged. Values are now sorted without boxing (counting sort for 8- and
+  16-bit), a label slice skips objects that do not reach it, and exact Feret diameters are computed
+  outside the tree lock. Node numbering, labels and every measurement are identical: the new builder
+  is checked node by node against the previous one on more than 250 seeded 8-, 16- and 32-bit
+  volumes with ties, NaN, infinities and -0.0, and the golden outputs did not change. Build memory
+  fell by 1.5 to 7% per voxel and the memory guard's per-voxel estimates were lowered to match.
 
 ### Fixed
 
@@ -72,6 +87,11 @@ All notable changes to Object Segmentation Sweep are documented here. The format
 ### Removed
 
 - The unused `CustomCropPicker` dialog.
+
+### Notes
+
+- Known follow-ups for speed: neighbour-IoU stability rebuilds each object's voxel set up to four
+  times per tile, and the grid repaints previews and overlay colours without caching.
 
 ## [0.2.0] - 2026-08-07
 

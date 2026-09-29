@@ -48,8 +48,10 @@ public final class LazyLabelMap {
     public ImagePlus get(BooleanSupplier cancelCheck) {
         materializationCount.incrementAndGet();
         ImageStack stack = new ImageStack(width, height);
+        short[][] planes = new short[depth][];
         for (int z = 0; z < depth; z++) {
             stack.addSlice("z" + (z + 1), new ShortProcessor(width, height));
+            planes[z] = (short[]) stack.getPixels(z + 1);
         }
         int plane = width * height;
         int label = 1;
@@ -57,12 +59,12 @@ public final class LazyLabelMap {
              nodeId = selection.nextNodeId(nodeId)) {
             checkCancelled(cancelCheck);
             int[] voxels = selection.voxelIndices(nodeId, cancelCheck);
+            short value = (short) label;
             for (int i = 0; i < voxels.length; i++) {
                 if ((i & 0xFFFF) == 0xFFFF) checkCancelled(cancelCheck);
                 int voxel = voxels[i];
                 int z = voxel / plane;
-                int indexInPlane = voxel - z * plane;
-                ((ShortProcessor) stack.getProcessor(z + 1)).set(indexInPlane, label);
+                planes[z][voxel - z * plane] = value;
             }
             label++;
         }
@@ -84,19 +86,13 @@ public final class LazyLabelMap {
         int z = Math.max(1, Math.min(depth, oneBasedZ)) - 1;
         materializationCount.incrementAndGet();
         ShortProcessor processor = new ShortProcessor(width, height);
-        int plane = width * height;
+        short[] pixels = (short[]) processor.getPixels();
         int label = 1;
         for (int nodeId = selection.firstNodeId(); nodeId >= 0;
              nodeId = selection.nextNodeId(nodeId)) {
             checkCancelled(cancelCheck);
-            int[] voxels = selection.voxelIndices(nodeId, cancelCheck);
-            for (int i = 0; i < voxels.length; i++) {
-                int voxel = voxels[i];
-                int voxelZ = voxel / plane;
-                if (voxelZ == z) {
-                    processor.set(voxel - voxelZ * plane, label);
-                }
-            }
+            // Objects whose Z range misses this plane are skipped inside paintPlane.
+            selection.paintPlane(nodeId, z, pixels, label, cancelCheck);
             label++;
         }
         ImagePlus image = new ImagePlus("Object Segmentation Sweep labels z" + (z + 1), processor);

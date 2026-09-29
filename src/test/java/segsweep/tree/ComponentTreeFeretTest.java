@@ -72,6 +72,41 @@ public class ComponentTreeFeretTest {
     }
 
     @Test
+    public void concurrentWorkersAgreeOnOneCachedFeretValue() throws Exception {
+        ImagePlus image = SegSweepLabellerFixtures.emptyStack(40, 40, 1);
+        for (int i = 0; i < 40; i++) {
+            SegSweepLabellerFixtures.setVoxel(image, i, i, 0, 20);
+            SegSweepLabellerFixtures.setVoxel(image, i, 39 - i, 0, 20);
+        }
+        final ComponentTree tree = ComponentTree.build(image,
+                SegSweepLabeller.Connectivity.TWENTY_SIX);
+        final ComponentTree.NodeData node = tree.nodeData(tree.nodes().size() - 1);
+        final double[] seen = new double[8];
+        Thread[] workers = new Thread[seen.length];
+        final java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+        for (int t = 0; t < workers.length; t++) {
+            final int slot = t;
+            workers[t] = new Thread(new Runnable() {
+                @Override public void run() {
+                    try {
+                        start.await();
+                    } catch (InterruptedException e) {
+                        return;
+                    }
+                    seen[slot] = tree.feretDiameterMax(node);
+                }
+            });
+            workers[t].start();
+        }
+        start.countDown();
+        for (Thread worker : workers) worker.join(10000L);
+
+        double expected = Math.sqrt(2.0 * 39.0 * 39.0);
+        for (double value : seen) assertEquals(expected, value, 0.0);
+        assertEquals(1, tree.feretComputationCount());
+    }
+
+    @Test
     public void exactFeretRefusesObjectsAboveTheBoundedLimit() {
         ImagePlus image = SegSweepLabellerFixtures.emptyStack(65, 65, 1);
         for (int y = 0; y < 65; y++) {

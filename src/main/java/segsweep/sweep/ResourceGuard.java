@@ -21,14 +21,15 @@ public final class ResourceGuard {
     /**
      * Peak component-tree build heap per voxel, excluding the source copy and
      * the label map, set to the measured minimum {@code -Xmx} x 1.25
-     * (2026-09-28, 96x96x32, fresh JVM per trial; see CHANGELOG). 8-bit uniform
-     * noise measured 191 B, 16-bit uniform noise 261 B (smoothed noise 197 B),
-     * 32-bit unique values 465 B. The union-find, node and child terms above are
-     * fixed; the attribute term carries the bit-depth-dependent remainder.
+     * (re-measured 2026-09-29 after the primitive-sort builder, 96x96x32, fresh
+     * JVM per trial; see CHANGELOG). 8-bit uniform noise measured 177 B, 16-bit
+     * uniform noise 247 B (smoothed noise 183 B), 32-bit unique values 458 B.
+     * The union-find, node and child terms above are fixed; the attribute term
+     * carries the bit-depth-dependent remainder.
      */
-    static final long BUILD_BYTES_PER_VOXEL_8_BIT = 239L;
-    static final long BUILD_BYTES_PER_VOXEL_16_BIT = 326L;
-    static final long BUILD_BYTES_PER_VOXEL_32_BIT = 581L;
+    static final long BUILD_BYTES_PER_VOXEL_8_BIT = 222L;
+    static final long BUILD_BYTES_PER_VOXEL_16_BIT = 309L;
+    static final long BUILD_BYTES_PER_VOXEL_32_BIT = 573L;
     private static final long LABEL_MAP_BYTES_PER_VOXEL = 2L;
     private static final long RGB_PREVIEW_BYTES_PER_PIXEL = 4L;
     private static final long MONTAGE_CELL_BYTES = 220L * 210L * RGB_PREVIEW_BYTES_PER_PIXEL;
