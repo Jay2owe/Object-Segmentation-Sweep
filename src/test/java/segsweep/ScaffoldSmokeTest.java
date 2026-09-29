@@ -13,28 +13,42 @@ import org.junit.Test;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+/**
+ * The public release files exist in a clean checkout and agree on the version
+ * the pom builds. {@code PUBLISHING_AUDIT.md} is a local, ignored file and is
+ * deliberately not required.
+ */
 public class ScaffoldSmokeTest {
     @Test
-    public void testHarnessRuns() {
-        assertTrue(true);
-    }
-
-    @Test
-    public void releaseFurnitureMatchesVersion() throws Exception {
+    public void releaseFilesAgreeOnTheBuiltVersion() throws Exception {
         File root = new File(System.getProperty("basedir", "."));
         for (String name : new String[] {
-                "README.md", "CITATION.cff", "CHANGELOG.md", "PUBLISHING_AUDIT.md"
+                "README.md", "CITATION.cff", "CHANGELOG.md", "VERSIONING.md", "LICENSE"
         }) {
             assertTrue(name + " should exist", new File(root, name).isFile());
         }
-        String pom = new String(Files.readAllBytes(
-                new File(root, "pom.xml").toPath()), StandardCharsets.UTF_8);
-        String citation = new String(Files.readAllBytes(
-                new File(root, "CITATION.cff").toPath()), StandardCharsets.UTF_8);
-        assertTrue(pom.contains("<version>0.2.0</version>"));
-        assertTrue(citation.contains("version: \"0.2.0\""));
+        String version = projectVersion(read(root, "pom.xml"));
+        assertFalse("a release is built without -SNAPSHOT", version.endsWith("-SNAPSHOT"));
+        assertTrue(read(root, "CITATION.cff").contains("version: \"" + version + "\""));
+        assertTrue(read(root, "CHANGELOG.md").contains("## [" + version + "] - "));
+        assertTrue(read(root, "README.md").contains("Object-Segmentation-Sweep-" + version + ".jar"));
+    }
+
+    private static String projectVersion(String pom) {
+        Matcher m = Pattern.compile(
+                "<artifactId>Object-Segmentation-Sweep</artifactId>\\s*<version>([^<]+)</version>")
+                .matcher(pom);
+        assertTrue("project version in pom.xml", m.find());
+        return m.group(1).trim();
+    }
+
+    private static String read(File root, String name) throws Exception {
+        return new String(Files.readAllBytes(new File(root, name).toPath()), StandardCharsets.UTF_8);
     }
 }
