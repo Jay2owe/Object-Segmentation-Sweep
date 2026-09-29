@@ -107,6 +107,8 @@ everything since 0.1.0.
 - Failed tiles were never counted, so "(n failed)" never appeared.
 - Empty tiles said "No image selected"; they now say "Waiting", "Failed" or "Cancelled".
 - A pick badge on another page of a paged grid now switches to that page.
+- The JAR manifest listed `ij` and `oc3d-core` JARs on a `Class-Path`, although the core is
+  bundled and Fiji supplies ImageJ; the entry is gone.
 
 ### Removed
 

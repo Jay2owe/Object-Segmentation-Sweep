@@ -23,6 +23,7 @@ import java.util.jar.JarFile;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public class PackagingIT {
@@ -50,6 +51,10 @@ public class PackagingIT {
 
             Attributes attributes = jar.getManifest().getMainAttributes();
             assertEquals(gitHead(project), attributes.getValue("Implementation-Build"));
+            // The core is shaded in, so a Class-Path naming oc3d-core-*.jar (or ij) points at
+            // jars a user never installs.
+            assertNull("manifest must not declare Class-Path",
+                    attributes.getValue("Class-Path"));
         } finally {
             jar.close();
         }

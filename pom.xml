@@ -177,6 +177,12 @@
 				<configuration>
 					<!-- SCM manifest values change even when classes do not. -->
 					<forceCreation>true</forceCreation>
+					<archive>
+						<manifest>
+							<!-- oc3d-core is shaded and Fiji supplies ImageJ; users install this jar alone. -->
+							<addClasspath>false</addClasspath>
+						</manifest>
+					</archive>
 				</configuration>
 			</plugin>
 			<plugin>
