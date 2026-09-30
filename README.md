@@ -40,9 +40,9 @@ value is strictly greater than the threshold.
 ### Fiji update site
 
 In Fiji choose **Help > Update... > Manage update sites > Add unlisted site**, enter the name
-`ObjectSegmentationSweep` and the URL
+`Object-Segmentation-Sweep` and the URL
 
-`https://sites.imagej.net/ObjectSegmentationSweep/`
+`https://sites.imagej.net/Object-Segmentation-Sweep/`
 
 then **Apply and Close**, **Apply changes**, and restart Fiji. The site opens with its first
 upload; until then use the JAR below.
