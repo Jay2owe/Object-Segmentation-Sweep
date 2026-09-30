@@ -19,7 +19,7 @@ on:
         type: boolean
         default: false
       confirm_live_upload:
-        description: "Required when dry_run=false: type UPLOAD Object-Segmentation-Sweep"
+        description: "Required when dry_run=false: type UPLOAD ObjectSegmentationSweep"
         required: false
         type: string
         default: ""
@@ -39,8 +39,8 @@ jobs:
 
     env:
       FIJI_DOWNLOAD_URL: "https://downloads.imagej.net/fiji/latest/fiji-latest-linux64-jdk.zip"
-      IMAGEJ_UPDATE_SITE_NAME: "Object-Segmentation-Sweep"
-      IMAGEJ_UPDATE_SITE_URL: "https://sites.imagej.net/Object-Segmentation-Sweep/"
+      IMAGEJ_UPDATE_SITE_NAME: "ObjectSegmentationSweep"
+      IMAGEJ_UPDATE_SITE_URL: "https://sites.imagej.net/ObjectSegmentationSweep/"
       GH_TOKEN: ${{ github.token }}
       RELEASE_TAG: "v0.2.1"
       RELEASE_COMMIT: "463dbaaff39d5518fe8d844e0225911a3c5ca646"
@@ -53,7 +53,7 @@ jobs:
       ARTIFACT_GLOB: "release-artifact/Object-Segmentation-Sweep-0.2.1.jar"
       INSTALL_DIR: "plugins"
       REPLACE_GLOB: "plugins/Object-Segmentation-Sweep-*.jar"
-      LIVE_UPLOAD_CONFIRMATION: "UPLOAD Object-Segmentation-Sweep"
+      LIVE_UPLOAD_CONFIRMATION: "UPLOAD ObjectSegmentationSweep"
       DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'true' }}
       CLEAR_STALE_LOCK: ${{ github.event_name == 'workflow_dispatch' && inputs.clear_stale_lock || 'false' }}
 
